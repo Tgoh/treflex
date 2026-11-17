@@ -887,7 +887,7 @@ describe("cancellation: the close", () => {
 
 				expect(
 					failures.map((failure) => [
-						failure.ActionName,
+						failure.Label,
 						String(failure.Error),
 						failure.Status,
 						failure.Close

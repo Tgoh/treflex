@@ -1,8 +1,8 @@
-import type { IDataSourceKey, IDataSourceValue, ITreeDataSourceKey } from "../Registries/IDataSourceRegistry";
+import type { IDataSourceKey, IDataSourceValue } from "../Registries/IDataSourceRegistry";
 import type { IEntity } from "../Types/IEntity";
 import type { IReadGenerator } from "../Types/ISelector";
 
-export function* getData<K extends ITreeDataSourceKey>(from: IEntity, key: K): IReadGenerator<IDataSourceValue<K> | undefined> {
+export function* getData<K extends IDataSourceKey>(from: IEntity, key: K): IReadGenerator<IDataSourceValue<K> | undefined> {
 	const result = yield {
 		Type: "getData",
 		Key: key,

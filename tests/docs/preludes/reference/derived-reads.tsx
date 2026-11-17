@@ -1,4 +1,4 @@
-import { entity, filterGen, inFlight, mapGen, select, someGen, type IActionGenerator, type IEntity, type ISelectorGenerator } from "treflex";
+import { entity, external, filterGen, inFlight, mapGen, select, someGen, type IActionGenerator, type IEntity, type IRuntime, type ISelectorGenerator } from "treflex";
 
 interface ITodo {
 	Done: boolean;
@@ -14,4 +14,7 @@ interface IBoard extends IEntity {
 	Docs: IDoc[];
 	Rows: { Open: boolean }[];
 	Summary: string;
+}
+interface IInbox extends IEntity {
+	Pending: string[];
 }

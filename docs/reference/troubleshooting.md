@@ -40,8 +40,10 @@ What an action throws is not a diag: it is a failure, heard through the `failure
 |---|---|---|---|
 | [`action/large-read-copy`](#actionlarge-read-copy) | warn | development | [Reads](./derived-reads.md#reads-in-an-action) |
 | [`action/long-hold`](#actionlong-hold) | warn | all | [Holds](./actions.md#a-long-hold-warns) |
+| [`action/name-collision`](#actionname-collision) | warn | production | [Durable names](./actions.md#durable-names) |
 | [`action/refusal-loop`](#actionrefusal-loop) | warn | all | [The tree rule](./state-tree.md#the-tree-rule) |
 | [`action/refusal-swallowed`](#actionrefusal-swallowed) | warn | development | [Refusals](./failure.md#refusals) |
+| [`action/unnamed`](#actionunnamed) | warn | production | [`requireNames`](./runtime.md#requirenames) |
 | [`action/unrouted-throw`](#actionunrouted-throw) | warn | all | [Failure](./failure.md#a-stopped-actions-failure) |
 | [`cancel/finally-yield`](#cancelfinally-yield) | warn | all | [The close](./fibers.md#the-close) |
 | [`cancel/finally-yield-limit`](#cancelfinally-yield-limit) | warn | all | [The close](./fibers.md#the-close) |
@@ -51,6 +53,8 @@ What an action throws is not a diag: it is a failure, heard through the `failure
 | [`effect/sync-returned-promise`](#effectsync-returned-promise) | warn | all | [Sync effects](./effects.md#sync-effects) |
 | [`entity/replaced-by-plain-data`](#entityreplaced-by-plain-data) | warn | all | [The write path](./write-path.md#refreshing-rows) |
 | [`entity/written-while-held`](#entitywritten-while-held) | info | development | [Holds](./actions.md#writing-into-a-child-entity) |
+| [`external/replaced`](#externalreplaced) | warn | all | [Providing a value](./derived-reads.md#providing-a-value) |
+| [`external/unprovided`](#externalunprovided) | warn | development | [Reading a value](./derived-reads.md#reading-a-value) |
 | [`receiver/id-collision`](#receiverid-collision) | warn | production | [Receivers](./messaging.md#receivers) |
 | [`receiver/unresolved`](#receiverunresolved) | warn | all | [Messaging](./messaging.md#a-receiver-that-isnt-registered) |
 | [`resource/ended`](#resourceended) | warn | all | [Resources](./live-sources.md#ending) |
@@ -75,13 +79,17 @@ What an action throws is not a diag: it is a failure, heard through the `failure
 
 ### `action/large-read-copy`
 
-One read in an action copied more than 10,000 objects and arrays out of state. A read in an action is a frozen copy of everything it returns; a `transient` and `pendingAsks` are exempt. Once per action name. Data: `{ actionName, type, copied }`, `type` being the read. **Do:** read only what the action needs, with a narrow `select`.
+One read in an action copied more than 10,000 objects and arrays. A read in an action is a frozen copy of everything it returns; a `transient` and `pendingAsks` are exempt. An `external` read copies the whole value, inside a `select` too. Once per action name, and per key for an `external` read. Data: `{ actionName, type, copied }`, `type` being the read, and `key` for an `external` read. **Do:** read only what the action needs, with a narrow `select`; for an `external` read, provide what the action needs under a narrower key.
 
 ### `action/long-hold`
 
 An action holding its entity has had work queued behind it for over a second, counted from when work first queued behind this hold, or from the hold's start if work was already waiting when it began. Checked every second while that lasts, and reported once per hold for each set of effect types the holder is found waiting on, so a loop around one wait reports once; a new hold reports afresh. Data: `{ entityId, holder, holderId, waitingOn, queued }`, the queued work by name. **Do:** if other work should run during the wait, write `yield* open(...)` around it; if the queued work belongs to a part with a life of its own, make that part a child entity; if the wait is on work queued behind the holder's own hold, it never ends, since waits point down ([`actions.md`](./actions.md#waits-point-down)).
 
 The symptom: a dispatch, a receiver, a timer tick or an error boundary's delivery runs later than expected, after another action on the same entity finished.
+
+### `action/name-collision`
+
+A second function was given a durable name another already had, in a production build, where it means two modules claim one name; in a development build the mark throws instead, unless it comes from the same module, which is a hot reload. Both functions keep recording the name, so their records can't be told apart by it, and the name resolves to neither. The page's names are shared by every runtime on it, so every live runtime hears it, and a runtime created later hears the ones raised before it. Every such mark. Data: `{ name }`. **Do:** give one of the two another name ([`actions.md`](./actions.md#durable-names)).
 
 ### `action/refusal-loop`
 
@@ -90,6 +98,10 @@ An action was refused 100 times running at its yields for writes that broke the 
 ### `action/refusal-swallowed`
 
 An action caught a refusal its own code was refused with, and ended without rethrowing it, so the broken rule went unheard. Judged when the action and all its branches have ended. Once per action run. Data: `{ actionName, actionId, entityId, refusal, count }`: the first refusal serialized, and how many there were. **Do:** `if (isRefusal(error)) throw error;` in a `catch` that can meet one ([`failure.md`](./failure.md#refusals)).
+
+### `action/unnamed`
+
+A runtime with `requireNames` ran an action that would be saved and has no durable name, in a production build; a development build refuses it with `UnnamedActionError` instead. The action runs, and its records and any snapshot entry carry `Name: null`, so a later restore can say only which entity it ran on. Once per function in each runtime. Data: `{ label }`, the function's own name or `null`. **Do:** name it with `named(action, "Feature/Action")` in its module, or run [`npx treflex-eslint name`](../../packages/eslint/README.md#treflex-eslint-name) which names the unnamed actions it can find in the project ([`runtime.md`](./runtime.md#requirenames)).
 
 ### `action/unrouted-throw`
 
@@ -147,11 +159,21 @@ A write replaced entities with plain data carrying no `$Id`, and something was a
 
 One run of a selector tracked more than 50,000 reads, so a change to any of them re-runs all of it. Once per selector function. Data: `{ selector, trackedReads }`, `selector` being the function's name. **Do:** read less per run, or derive per row with a selector on each row, memoized per entity ([`derived-reads.md`](./derived-reads.md#memos)).
 
+## Outside values
+
+### `external/unprovided`
+
+A selector or an action read `external(key)` and nothing provides the key on this runtime, so it read `undefined`. Once per key. Data: `{ key }`. **Do:** provide the key in `setup`, the function a fresh boot and a restore both call ([providing a value](./derived-reads.md#providing-a-value)).
+
+### `external/replaced`
+
+`provideExternal` was called for a key already provided. The first provider's subscription is stopped and its handle does nothing, and the key's readers re-run on the new provider's value. Every replacement. Data: `{ key }`. **Do:** provide each key once, in `setup`.
+
 ## Receivers
 
 ### `receiver/unresolved`
 
-Something names a receiver that isn't registered, or claims a topic it can't serve, so nothing ran for it. Nothing is removed, and registering the receiver heals it. `data.kind` tells the producers apart:
+Something names a receiver that isn't registered, so nothing ran for it. Nothing is removed, and registering the receiver heals it. `data.kind` tells the producers apart:
 
 | `kind` | When | Once per | Data |
 |---|---|---|---|
@@ -159,7 +181,6 @@ Something names a receiver that isn't registered, or claims a topic it can't ser
 | `"publish"` | A `publishToNearest` walk stopped at an ancestor bound to an unregistered receiver | Topic, stopping entity and receiver | `{ topic, ownerId, receiverId, shadowedId }`, `shadowedId` the nearest handler above it, or `null` |
 | `"timer"` | A tick found its receiver unregistered, skipped, and re-armed | Key, owner and receiver, cleared by a tick that reaches it | `{ key, ownerId, receiverId }` |
 | `"resource"` | A resource row's receiver is unregistered; the resource waits unconnected | Key, owner and receiver | `{ key, ownerId, receiverId }` |
-| `"source"` | An external source declares the topic and has no `receivePublish` | Topic and source | `{ topic, ownerId, receiverId }`, both the source's `Id` |
 
 **Do:** register the receiver at startup with `runtime.registerReceiver(Receiver)`.
 
@@ -231,7 +252,7 @@ Restored bindings, timer rows or resource rows name receivers this build hasn't 
 
 ### `runtime/callback-threw`
 
-Code the runtime calls outside any action threw. Only that call is lost: a tap or subscriber stays attached, and the runtime goes on. The code: a record tap, a `runtime.on` subscriber, a cached read's dispose, a resource's release of an exposed value, a resource manager task, a dispose callback, an `onDrained` listener, a React view's store listener, a view reading `inFlight` or `pendingAsks`, or an external source's `dispose`. Every throw. Data: `{ source, error }`, the live error, with `kind`, `entityId`, `ownerId`, `key` or `sourceId` where there is one.
+Code the runtime calls outside any action threw. Only that call is lost: a tap or subscriber stays attached, and the runtime goes on. The code: a record tap, a `runtime.on` subscriber, a cached read's dispose, a resource's release of an exposed value, a resource manager task, a dispose callback, an `onDrained` listener, a React view's store listener, a view reading `inFlight` or `pendingAsks`, or the function an outside value's `subscribe` returned. Every throw. Data: `{ source, error }`, the live error, with `kind`, `entityId`, `ownerId` or `key` where there is one.
 
 ## Console warnings
 
@@ -244,7 +265,6 @@ These go to the console only, with no code and no `diag` event:
 | `getData(...)` or `getDataPath(...)` called from an entity not in the state tree | `from`'s `$Id` isn't in the tree; the read answers `undefined` |
 | `startTimer` called from an entity not in the state tree | The row is written, and its first tick removes it |
 | `publishToNearest` called from an entity not in the state tree | Nothing is delivered, and no record lands |
-| External source already registered, or a key already served | The second registration, or that key of it, is ignored |
 | Implementation for an effect being overwritten | `registerImplementation` for a type that has one |
 | Effect declared again with different options | `defineEffect` for a type declared with other options, which replaces them |
 | `draft/stale-path-write`, `draft/stale-path-delete` | With a record tap attached: a write through a held reference to a node that has since moved, so its record names a path another node holds. Once per node |

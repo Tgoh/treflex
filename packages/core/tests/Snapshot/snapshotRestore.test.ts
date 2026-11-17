@@ -227,10 +227,10 @@ describe("snapshot/restore (restart-only)", () => {
 				const parsed = JSON.parse(createSnapshot(a)) as any;
 				const names = (
 					parsed.InFlight as {
-						Name: string | null;
+						Label: string | null;
 					}[]
 				)
-					.map((entry) => entry.Name)
+					.map((entry) => entry.Label)
 					.sort();
 				expect(names).toEqual([
 					"hangNamed",
@@ -241,7 +241,7 @@ describe("snapshot/restore (restart-only)", () => {
 					rootId: "Root",
 					options: {}
 				});
-				expect(result.dropped.map((e) => e.name).sort()).toEqual([
+				expect(result.dropped.map((e) => e.label).sort()).toEqual([
 					"hangNamed",
 					null
 				]);
@@ -252,11 +252,11 @@ describe("snapshot/restore (restart-only)", () => {
 		});
 	});
 
-	it("names a drop from a legacy row's Key when the row carries no Name", async () => {
+	it("labels a drop from a version 7 row's legacy Key when the row carries no Name", async () => {
 		await createRoot(async (dispose) => {
 			try {
 				const legacy = {
-					Version: SNAPSHOT_FORMAT_VERSION,
+					Version: 7,
 					AppState: initialState(),
 					DataSources: [],
 					Timers: [],
@@ -278,9 +278,20 @@ describe("snapshot/restore (restart-only)", () => {
 					rootId: "Root",
 					options: {}
 				});
-				expect(result.dropped.map((e) => e.name)).toEqual([
-					"Features/Feature/Actions.ts#hangDurable",
-					null
+				expect(
+					result.dropped.map((e) => [
+						e.name,
+						e.label
+					])
+				).toEqual([
+					[
+						null,
+						"Features/Feature/Actions.ts#hangDurable"
+					],
+					[
+						null,
+						null
+					]
 				]);
 			} finally {
 				dispose();
@@ -316,7 +327,8 @@ describe("snapshot/restore (restart-only)", () => {
 				expect(result.dropped).toEqual([
 					{
 						actionId: parsed.InFlight[0].ActionId,
-						name: "hangs",
+						name: null,
+						label: "hangs",
 						entityId: "Root"
 					}
 				]);
@@ -353,7 +365,9 @@ describe("snapshot/restore (restart-only)", () => {
 				expect(result).toStrictEqual({
 					dropped: [],
 					unresolved: [],
-					sweptOrphanedRows: 0
+					sweptOrphanedRows: 0,
+					savedBuild: null,
+					sameBuild: false
 				});
 				b.dispose();
 			} finally {

@@ -1,5 +1,5 @@
 import type { IActionGenerator, IEntity, IReceiverId, ISelectorGenerator } from "treflex";
-import { receiver } from "treflex";
+import { named, receiver } from "treflex";
 
 export interface ITour extends IEntity {
 	readonly $Receiver?: IReceiverId<ITour>;
@@ -57,6 +57,7 @@ export function getDefaultState(id: string): ITour {
 export function* skipTour(draft: ITour): IActionGenerator {
 	draft.Skipped = true;
 }
+named(skipTour, "Tour/Skip");
 
 export const actions = {
 	skipTour

@@ -43,7 +43,8 @@ function harness(onError?: (error: unknown) => void) {
 		},
 		onError
 			? {
-					onError
+					onError,
+					allowFailures: true
 				}
 			: undefined
 	);
@@ -838,7 +839,7 @@ describe("a stop dispatched any number of microtasks after a fan-out's last answ
 	}
 });
 
-function world(state: object) {
+function world(state: object, allowDiags?: readonly string[]) {
 	const log: string[] = [];
 	const d: Record<string, IDeferred> = {};
 	const get = (key: string): IDeferred => {
@@ -851,7 +852,9 @@ function world(state: object) {
 			wait: (e: any) => get(e.Key).promise
 		},
 		{
-			onError: (error: any) => log.push(`onError ${error?.Error?.Message ?? error?.message ?? String(error)}`)
+			onError: (error: any) => log.push(`onError ${error?.Error?.Message ?? error?.message ?? String(error)}`),
+			allowFailures: true,
+			allowDiags
 		}
 	);
 	runtime.on("diag", (diag: any) => log.push(`diag ${diag.code}`));
@@ -1345,9 +1348,14 @@ describe("an action that returns a promise or a thenable fails with NonPlainData
 
 describe("parallelSettled hands back a branch refused before it waits, and the action is replaced in the same tick", () => {
 	it("the refusal is registered at the branch's end, ahead of the stop, so action/refusal-swallowed is reported", async () => {
-		const h = world({
-			$Id: "e1"
-		});
+		const h = world(
+			{
+				$Id: "e1"
+			},
+			[
+				"action/refusal-swallowed"
+			]
+		);
 		let run = 0;
 		function* br(draft: any): IActionGenerator {
 			yield* ask(draft, {

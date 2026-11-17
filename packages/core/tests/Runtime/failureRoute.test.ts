@@ -168,7 +168,7 @@ describe("an error boundary", () => {
 		expect(unhandled).toEqual([]);
 		expect(
 			heard.map((failure) => [
-				failure.ActionName,
+				failure.Label,
 				messageOf(failure.Error)
 			])
 		).toEqual([
@@ -215,7 +215,7 @@ describe("an error boundary", () => {
 		await settled();
 		expect(
 			above.map(([failure, publisher]) => [
-				failure.ActionName,
+				failure.Label,
 				messageOf(failure.Error),
 				failure.Cause,
 				publisher
@@ -244,7 +244,8 @@ describe("an error boundary", () => {
 			[
 				boom,
 				{
-					ActionName: "fails",
+					Name: null,
+					Label: "fails",
 					EntityId: "child"
 				}
 			]
@@ -267,7 +268,7 @@ describe("an error boundary", () => {
 		await settled();
 		expect(
 			above.map((failure) => [
-				failure.ActionName,
+				failure.Label,
 				messageOf(failure.Error),
 				messageOf(failure.Cause)
 			])
@@ -294,7 +295,8 @@ describe("an error boundary", () => {
 			[
 				own,
 				{
-					ActionName: "MiddleErrorBoundary",
+					Name: null,
+					Label: "MiddleErrorBoundary",
 					EntityId: "middle",
 					Cause: boom
 				}
@@ -334,13 +336,13 @@ describe("an error boundary", () => {
 
 	it("is found from the entity an action on part of it holds, not from the id it was dispatched with", async () => {
 		const heard: [
-			string,
+			string | null,
 			string
 		][] = [];
 		const h = build({
 			middle: function* (_draft, failure, { publisher }) {
 				heard.push([
-					failure.ActionName,
+					failure.Label,
 					publisher.Id
 				]);
 			}
@@ -400,7 +402,8 @@ describe("onError", () => {
 			[
 				boom,
 				{
-					ActionName: "rootFails",
+					Name: null,
+					Label: "rootFails",
 					EntityId: "root"
 				}
 			]
@@ -417,7 +420,11 @@ describe("onError", () => {
 				wait: () => Promise.resolve()
 			},
 			{
-				onError
+				onError,
+				allowFailures: [
+					fails,
+					failsAfterAWait
+				]
 			}
 		);
 		function* failsAfterAWait(_draft: object): IActionGenerator {
@@ -598,7 +605,7 @@ describe("a stopped action", () => {
 		await settled();
 		expect(
 			heard.map((failure) => [
-				failure.ActionName,
+				failure.Label,
 				messageOf(failure.Error)
 			])
 		).toEqual([
@@ -609,7 +616,7 @@ describe("a stopped action", () => {
 		]);
 		expect(
 			h.failures.map((failure) => [
-				failure.ActionName,
+				failure.Label,
 				String(failure.Error),
 				failure.Status,
 				failure.Close,
@@ -659,7 +666,7 @@ describe("a stopped action", () => {
 		await settled();
 		expect(
 			heard.map((failure) => [
-				failure.ActionName,
+				failure.Label,
 				messageOf(failure.Error)
 			])
 		).toEqual([
@@ -715,7 +722,7 @@ describe("a stopped action", () => {
 					await settled();
 					expect(
 						heard.map((failure) => [
-							failure.ActionName,
+							failure.Label,
 							messageOf(failure.Error)
 						])
 					).toEqual([
@@ -821,7 +828,7 @@ describe("a stopped action", () => {
 			await settled();
 			expect(
 				heard.map((failure) => [
-					failure.ActionName,
+					failure.Label,
 					messageOf(failure.Error)
 				])
 			).toEqual([
@@ -906,7 +913,7 @@ describe("a stopped action", () => {
 					await settled();
 					expect(
 						heard.map((failure) => [
-							failure.ActionName,
+							failure.Label,
 							messageOf(failure.Error)
 						])
 					).toEqual([
@@ -983,7 +990,7 @@ describe("a stopped action", () => {
 				await settled();
 				expect(
 					heard.map((failure) => [
-						failure.ActionName,
+						failure.Label,
 						messageOf(failure.Error)
 					])
 				).toEqual([
@@ -1043,7 +1050,7 @@ describe("a stopped action", () => {
 		expect(h.errors).toEqual([]);
 		expect(
 			h.failures.map((failure) => [
-				failure.ActionName,
+				failure.Label,
 				failure.EntityId,
 				String(failure.Error),
 				failure.Status,

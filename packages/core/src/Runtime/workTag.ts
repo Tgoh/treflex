@@ -1,5 +1,6 @@
 import type { IMarkable, IOnEntity } from "./arrivalPolicy";
 import { DEV } from "../Utility/devMode";
+import { displayName } from "./named";
 
 // Symbol.for by the cross-module tag-symbol rule (see REGION_OP in open.ts).
 const WORK_TAG = Symbol.for("treflex.workTag");
@@ -41,6 +42,11 @@ export function noteArrival(fns: readonly object[]): void {
 	}
 }
 
+/** Development only: whether `fn` has been dispatched or delivered. */
+export function hasArrived(fn: object): boolean {
+	return arrived.has(fn);
+}
+
 /**
  * Defines a work tag. Identity is the object returned, so define it once, in a module every
  * marking module and every reader imports.
@@ -57,14 +63,14 @@ export function workTag(name: string): IWorkTag {
 				if (typeof action !== "function") {
 					throw new TypeError(`[treflex] work tag "${name}": mark() takes action functions.`);
 				}
-				const label = action.name || "(anonymous)";
+				const label = displayName(action);
 				if (tagsOf(action).includes(tag) || actions.indexOf(action) !== at) {
 					throw new Error(
 						`[treflex] work tag "${name}": action "${label}" is already marked with it. ` +
 							`A function takes each tag once, in the module that defines it.`
 					);
 				}
-				if (DEV && arrived.has(action)) {
+				if (DEV && hasArrived(action)) {
 					throw new Error(
 						`[treflex] work tag "${name}": action "${label}" has already been dispatched or delivered, so the work that arrived before ` +
 							`this mark isn't counted under the tag. Mark it in the module that defines it, straight after its declaration.`

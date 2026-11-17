@@ -20,8 +20,10 @@ export default defineConfig({
 	},
 	test: {
 		environment: "jsdom",
+		// Not "treflex/vitest": Vitest resolves a setup file by Node's conditions, to the dist the workspace doesn't build.
 		setupFiles: [
-			"./src/jsdom.setup.ts"
+			"./src/jsdom.setup.ts",
+			"../../packages/core/src/Testing/vitest.ts"
 		],
 		include: [
 			"src/**/*.test.ts",

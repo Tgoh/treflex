@@ -1,6 +1,6 @@
 # Testing
 
-`createTestRuntime(initialState, effectStubs?, options?)` builds a runtime with the same `createRuntime` the application boots, with a few choices made for tests. What a test pins is what production does: the write path, the index, the dispose cascade, holds, asks and failure routing are all the shipped ones. Everything a test needs comes from `treflex`, and snapshot and restore from `treflex/snapshot`.
+`createTestRuntime(initialState, effectStubs?, options?)` builds a runtime with the same `createRuntime` the application boots, with a few choices made for tests. What a test pins is what production does: the write path, the index, the dispose cascade, holds, asks and failure routing are all the shipped ones. Everything a test needs comes from `treflex`, snapshot and restore from `treflex/snapshot`, and the Vitest setup file is `treflex/vitest`.
 
 ## Usage
 
@@ -30,13 +30,17 @@ it("loads templates", async () => {
 });
 ```
 
-It passes `createRuntime` these, and nothing else differs:
+It passes `createRuntime` these and listens to its events, and nothing else differs:
 
 - **`effectStubs` as `implementations`**, so each yielded effect goes to the test's stub.
 - **`generateGuid` refused** unless stubbed, with an error that starts `No implementation registered for effect type: "generateGuid"` and names `guids`. A test that forgot it would otherwise draw a real uuid and pass. Any action that makes an entity yields it, so a test's stubs usually include `generateGuid: guids("row")`.
 - **`pauseTimers: true`**: rows record, nothing ticks ([below](#timers-and-resources-in-tests)).
 - **`pauseResources: true`** ([`live-sources.md`](./live-sources.md#restore-and-tests)), and the resource stubs from `options` installed, so methods and supplies answer from stubs ([below](#resources)).
-- **`onError`** and the **`inFlight` stub** from `options`, which takes those two and `resources`, nothing more.
+- **`verifyIndex: "always"`**, so every reconciliation checks the `$Id` index against the tree, and a write that bypassed the write path fails the test. The `TREFLEX_VERIFY_INDEX` environment variable overrides that default, and `options.verifyIndex` overrides both ([`runtime.md`](./runtime.md#options)).
+- **A diag or a failure fails the test**, unless the test allows it ([below](#failures-and-diags-fail-the-test)). Its `onError` is the test runtime's own, which calls `options.onError` when there is one.
+- **The `inFlight` stub** from `options`.
+
+**Load `treflex/vitest` in the Vitest config**, `test: { setupFiles: ["treflex/vitest"] }`, so that what the test runtime catches fails the test that caused it.
 
 **`guids(prefix)`** is a `generateGuid` stub answering `prefix-1`, `prefix-2` and so on, which `entity()` makes into the `$Id`s `~prefix-1`, `~prefix-2`. Take a new one per test, since each holds its own count.
 
@@ -138,9 +142,11 @@ test("the app loads", { timeout: 60_000 }, async () => {
 
 ### Beyond the preset
 
-`verifyIndex` is left to the environment: set `TREFLEX_VERIFY_INDEX=always` in a vitest config's `test.env` and every reconciliation checks the index against the tree, which makes every test a check that no write bypassed the write path. A bare `createRuntime` is the escape for what the preset decides against: real ticks under fake timers, a wired `generateGuid`, live resource types. `ITestRuntime<T>` is `IRuntime<T>`. A stub for a type declared `redact: true` redacts like any implementation of it. The activity log is off here as everywhere, unless a bare `createRuntime` turns it on.
+A bare `createRuntime` is the escape for what the preset decides against: real ticks under fake timers, a wired `generateGuid`, live resource types. `ITestRuntime<T>` is `IRuntime<T>`. A stub for a type declared `redact: true` redacts like any implementation of it. A test provides the [outside values](./derived-reads.md#outside-values) its selectors read with `provideExternal`, and after changing what `read` returns, calls the handle's `changed()`.
 
 A runtime needs no `createRoot` around it. `solid-js` must resolve to its browser build in the test environment, or construction throws `SolidServerBuildError` ([`runtime.md`](./runtime.md#the-solid-build)).
+
+**A topic a test declares is declared for the whole program.** A `declare module "treflex"` in one test file applies to every file the compiler sees with it, so give test topics a prefix the app never uses, as `Test/` above.
 
 ### Effects under the test's control
 
@@ -192,26 +198,39 @@ The stub only adds: a read the record answers true stays true. `leading` and `la
 
 What waits on something outside doesn't hold it up, so it always returns: an unanswered ask, a stub's unresolved promise, a timer. It is a test tool, not on the runtime, because a running app's open ask may never be answered.
 
-**A failing action rejects its dispatch,** even when `onError` takes the failure ([the dispatch promise](./failure.md#the-dispatch-promise)), so a test that expects a failure awaits `expect(runtime.dispatch(...)).rejects`, and one that only checks the state after it catches the promise.
+### Failures and diags fail the test
 
-**A failure the test doesn't await or catch needs `onError`.** The test runtime has no `onError` unless `options` gives one. So when work fails whose promise the test neither awaits nor catches, such as a discarded dispatch, a click in a component test, or a started action, the failure is raised as an unhandled rejection, which fails the run under Vitest. A test that fails such work on purpose passes one:
+The test runtime reports:
+
+- **every [diag](./troubleshooting.md)** whose code `options.allowDiags` doesn't list. `allowDiags: true` allows every code. It never reports [`state/view-write`](./troubleshooting.md#stateview-write): every live runtime hears that diag, and the write already throws at the writer.
+- **every failure** whose action `options.allowFailures` doesn't list, whatever took it, an awaited dispatch's included. `allowFailures: true` allows every failure. [`action/unrouted-throw`](./troubleshooting.md#actionunrouted-throw) is reported as the failure it reports.
+- **a throw out of `options.onError`**, whatever `allowFailures` says. The test runtime's own `onError` catches it, so the failure counts as taken: its `failure` event has `Taken: true`, where a bare `createRuntime` gives `Taken: false` ([the dispatch promise](./failure.md#the-dispatch-promise)).
+
+A dispatch refused before its action starts takes no route, so only its own promise and its diag report it: [`dispatch/unresolved-entity`](./troubleshooting.md#dispatchunresolved-entity) for an entity not in the tree is a diag.
+
+A report names the diag code, or the action and its entity, and the option that allows it, such as `allowFailures: [loadTemplates]`, and carries the diag event or the thrown value as its `cause`. Its stack starts at the line that built the runtime. An allowed diag still prints to the console.
+
+**With `treflex/vitest` loaded,** the test runtime holds each report and throws it from an `afterEach`, so the test that caused it fails, with an `AggregateError` holding them when there are several. A report made after the test's `afterEach`, such as a failure from a stub that answers from a real timer after the test ended, fails the next test, or the file's `afterAll` after its last test. One that lands after the file's last test can go unheard, so a test awaits its work, or calls `settled()` once its stubs have answered, before it ends.
+
+**Without it,** the test runtime raises each report as an unhandled rejection. Vitest then fails the run and no test, and names only the test that might have caused it.
+
+**A test that fails work on purpose lists the action:**
 
 ```ts
 it("keeps the list empty when the fetch fails", async () => {
     const runtime = createTestRuntime<IList>(
         { $Id: "List", Templates: [] },
         { "Api/FetchTemplates": () => Promise.reject(new Error("offline")) },
-        { onError: () => {} }
+        { allowFailures: [loadTemplates] }
     );
-    void runtime.dispatch(loadTemplates, "List");
-    await settled();
+    await expect(runtime.dispatch(loadTemplates, "List")).rejects.toThrow("offline");
     expect(runtime.state.Templates).toEqual([]);
 });
 ```
 
-**A test can pin "no diags"** by collecting them: `const diags: string[] = []; runtime.on("diag", (event) => diags.push(event.code));`, then `expect(diags).toEqual([])` at the end ([diags](./troubleshooting.md)).
+**The list matches by identity,** as it stands when the runtime is built: an entry is the function the runtime runs, the reference passed to `dispatch` or `start`. `leading` and `latest` return the function they mark, so the action is listed as it is exported. A function with the same name from elsewhere isn't matched, and an anonymous action can be listed only by holding its reference. A receiver case's failure, and an error boundary's own, are listed by the receiver's `handle`.
 
-**A topic a test declares is declared for the whole program.** A `declare module "treflex"` in one test file applies to every file the compiler sees with it, so give test topics a prefix the app never uses, as `Test/` above.
+**A test that causes a diag on purpose lists its code,** `{ allowDiags: ["resource/not-open"] }`, and can still collect diags with `runtime.on("diag", ...)` to assert on them. `restoreTestRuntime`'s `options` cover the restore's own diags, those of its table load included.
 
 ### Work on a held entity
 
@@ -249,7 +268,7 @@ it("closes once confirmed", async () => {
 });
 ```
 
-A dispatch queued behind a hold that never ends never resolves, so awaiting it times the test out. `action/long-hold` names the holder and what is queued ([troubleshooting](./troubleshooting.md#actionlong-hold)); collect diags in the test, as above, to see it in the failure.
+A dispatch queued behind a hold that never ends never resolves, so awaiting it times the test out. After a second, `action/long-hold` names the holder and what is queued ([troubleshooting](./troubleshooting.md#actionlong-hold)), and the test fails with it beside the timeout.
 
 **Cancellation** is tested the same way: an implementation that captures `action.signal` and settles only on abort, a dispatch on a child, a dispatched action that removes the child, and an assertion that the signal aborted. The stopped action's promise resolves `undefined`; `createTraceAggregator` tells a cancelled action from a completed one, `trace.cancelled === true` ([`restart-and-records.md`](./restart-and-records.md#traces)).
 
@@ -273,7 +292,7 @@ export const stubbed = createTestRuntime<IDoc>({ $Id: "doc-1", Title: "" }, {}, 
 ```
 
 - **`methods`** is keyed by key, then method; a stub is called `(ctx, ...args)` with `ctx` `{ ownerId }`. **`supplies`** answers a supply as `(ctx, value)`. **`exposes`** is the value a view reads, and **`statuses`** the status, so a view's "reconnecting" state tests with nothing else stubbed. Results are checked as plain data.
-- **A stub answers only when a row exists** for that owner and key. With none, the call takes the ordinary path: `undefined`, with [`resource/not-open`](./troubleshooting.md#resourcenot-open) for a method and [`resource/supply-dropped`](./troubleshooting.md#resourcesupply-dropped) for a supply. A feature that forgot `openResource` gets `undefined`, not the stubbed answer.
+- **A stub answers only when a row exists** for that owner and key. With none, the call takes the ordinary path: `undefined`, with [`resource/not-open`](./troubleshooting.md#resourcenot-open) for a method and [`resource/supply-dropped`](./troubleshooting.md#resourcesupply-dropped) for a supply, which fail the test ([above](#failures-and-diags-fail-the-test)). A feature that forgot `openResource` gets `undefined`, not the stubbed answer.
 - **A cell with a row reads** its `statuses` stub, else `live` when any stub exists for its key, else `pending` with `Waiting: "paused"`. A view gated on `live`, a picker say, is driven by stubbing its key.
 - **An unstubbed method or supply on a cell with a row throws**, so a test never passes on a silent `undefined`.
 
@@ -343,6 +362,7 @@ The vitest config runs `vite-plugin-solid` with hot reload off, `solid({ hot: fa
 
 ## Caveats
 
+- **The index walk runs on every reconciliation,** over the whole tree. A test that builds a large tree, a benchmark say, passes `verifyIndex: "budgeted"` or `false`.
 - **The `inFlight` stub reacts to nothing,** so a memoized selector re-derives only on the record's own changes; read through `processSelector`, which doesn't memoize, after changing what the stub answers.
 - **A stub answering from a real timer** hasn't answered yet: advance fake timers, under which `settled` still works, and then call it.
 - **A restored runtime's `guids` under the same prefix** counts from 1 again, so it mints an `$Id` a restored entity already holds, and writing that entity throws `EntityReplacedError`.

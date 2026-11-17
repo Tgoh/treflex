@@ -1,7 +1,7 @@
 import type { IActionGenerator, IRuntime } from "treflex";
 import type { IPortal } from "../portal/Portal";
 import type { ITour } from "../tour/Tour";
-import { createTestRuntime, guids, implementation, settled } from "treflex";
+import { createTestRuntime, guids, implementation, named, settled } from "treflex";
 import { createSnapshot, restoreTestRuntime } from "treflex/snapshot";
 import { afterEach, describe, expect, it } from "vitest";
 import { now } from "../backend/backend";
@@ -86,6 +86,7 @@ function* cameBack(draft: ITour): IActionGenerator {
 	draft.Answered = true;
 	draft.CameBack = true;
 }
+named(cameBack, "Aquarium/CameBack");
 
 const swimRows = (runtime: IRuntime<IPortal>) => runtime.timers().filter((row) => row.Key === "Fish/Swim");
 const factsOf = (runtime: IRuntime<IPortal>) => runtime.processSelector(tankFacts, () => runtime.state.Aquarium);

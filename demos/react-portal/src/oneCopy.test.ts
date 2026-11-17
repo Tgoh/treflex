@@ -89,8 +89,7 @@ describe("one copy of treflex", () => {
 		const nodeModules = slashed(join(repo, "node_modules"));
 		expect(packageFiles(modules, "solid-js")).toEqual({
 			[`${nodeModules}/solid-js`]: [
-				"dist/solid.js",
-				"store/dist/store.js"
+				"dist/solid.js"
 			]
 		});
 		expect(Object.keys(packageFiles(modules, "react"))).toEqual([

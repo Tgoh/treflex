@@ -445,10 +445,10 @@ describe("ComponentState: lifetime", () => {
 			["Action/Error" as any]: function* (
 				draft: IScreen,
 				e: {
-					ActionName: string;
+					Label: string;
 				}
 			) {
-				draft.Errors.push(e.ActionName);
+				draft.Errors.push(e.Label);
 			}
 		});
 		w.runtime.registerReceiver(ErrorBoundary);

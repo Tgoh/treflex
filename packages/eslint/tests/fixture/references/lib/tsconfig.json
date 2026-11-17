@@ -1,0 +1,24 @@
+{
+	"compilerOptions": {
+		"composite": true,
+		"target": "ES2022",
+		"module": "ESNext",
+		"moduleResolution": "bundler",
+		"strict": true,
+		"skipLibCheck": true,
+		"noEmit": true,
+		"paths": {
+			"treflex": [
+				"../../../../../core/src/index.ts"
+			]
+		}
+	},
+	"include": [
+		"store"
+	],
+	"references": [
+		{
+			"path": "../app"
+		}
+	]
+}

@@ -3,7 +3,7 @@ import type { IChatWait, IChatWaitFor } from "../backend/fakeBackend";
 import type { IPortal } from "../portal/Portal";
 import type { ITour } from "../tour/Tour";
 import type { IConversation } from "./Conversation";
-import { createRuntime, settled } from "treflex";
+import { createRuntime, named, settled } from "treflex";
 import { createSnapshot, restoreRuntime } from "treflex/snapshot";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { registerFakeBackend, replyLetters, replyText, sendFails } from "../backend/fakeBackend";
@@ -324,6 +324,7 @@ function* answerAndLeave(draft: ITour): IActionGenerator {
 	draft.Answered = true;
 	draft.CameBack = true;
 }
+named(answerAndLeave, "Chat/AnswerAndLeave");
 
 describe("the tour's reload step", () => {
 	it("names a streaming reply to watch, and ticks on the reload", async () => {

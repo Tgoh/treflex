@@ -241,11 +241,7 @@ function verifyCadenceFor(nodeCount: number): number {
 	return Math.min(VERIFY_MAX_CADENCE, Math.max(VERIFY_MIN_CADENCE, scaled));
 }
 
-// DEV alone would be "always": this package ships raw TypeScript, so a
-// consumer's dev server and test run compile these sources under the same
-// flag and would pay walks against their own trees. This repo's vitest config
-// sets TREFLEX_VERIFY_INDEX to `always`.
-function defaultVerifyMode(): IVerifyIndexMode {
+export function verifyModeFromEnv(): IVerifyIndexMode | undefined {
 	const flag = (
 		globalThis as {
 			process?: {
@@ -253,10 +249,11 @@ function defaultVerifyMode(): IVerifyIndexMode {
 			};
 		}
 	).process?.env?.TREFLEX_VERIFY_INDEX;
-	if (flag === "always" || flag === "budgeted" || flag === "off") {
-		return flag;
-	}
-	return DEV ? "budgeted" : "off";
+	return flag === "always" || flag === "budgeted" || flag === "off" ? flag : undefined;
+}
+
+function defaultVerifyMode(): IVerifyIndexMode {
+	return verifyModeFromEnv() ?? (DEV ? "budgeted" : "off");
 }
 
 type ILoopHit = {

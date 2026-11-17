@@ -90,6 +90,30 @@ latest(search);
 - **`leading` drops a repeat.** An arrival on an entity where the function is already running or queued runs nothing and resolves `undefined`, not the first run's result.
 - **`latest` replaces.** An arrival stops the instance running or queued on that entity, and the newest wins. The stopped one resolves `undefined`.
 
+### Durable names
+
+A bundler renames functions, so a function's own `name` is a label, never a key. `named(action, name)` gives an action a name the app owns, the same in every build, for every caller, and returns the action:
+
+```ts
+export function* save(draft: IEditor, title: string): IActionGenerator<boolean> {
+    draft.Title = title;
+    return yield* postRecord(draft.Id, title);
+}
+named(save, "Editor/Save");
+leading(save);
+```
+
+The name keys the action's records, its entry in a snapshot, and a restore's `dropped` entry, so a repair can say what a reload cut short ([restart and records](./restart-and-records.md#the-build-and-the-names)). It is any non-empty string, by convention `"Feature/Action"`, and a package that ships actions prefixes its own. Changing a name is like renaming a saved field: records and saves made before the change name the old one. The function's own identifier can change freely.
+
+- **Mark it in the module that defines it,** with a statement after the declaration, as an arrival mark. [`npx treflex-eslint name`](../../packages/eslint/README.md#treflex-eslint-name) writes the marks for the unnamed actions it can find in a project.
+- **A function takes one name, once.** Naming it again throws, with either name. In development, naming a function that has already been dispatched or delivered throws: the records made before carry no name.
+- **One action per name.** An action a factory makes on each call can't be named, since every call would claim the one name; write one action that takes the factory's parameters as arguments.
+- **Beside the other marks.** A named action can be `leading` or `latest` and carry work tags. Functions are still compared by identity: `inFlight` and the arrival marks don't read the name.
+- **The names live in one map for the page,** shared by two copies of treflex. A second function marked with a taken name, in development, replaces the first when the mark comes from the same module, as a hot reload does, and throws when it comes from another. In production both functions keep recording the name, it resolves to neither, and every runtime hears `action/name-collision`.
+- **A delivery has no name.** Its records name its receiver as `Receiver` ([messaging](./messaging.md#what-names-a-delivery)).
+
+A runtime created with [`requireNames`](./runtime.md#requirenames) refuses, in development, an action that would be saved and has no name.
+
 ### inFlight
 
 `yield* inFlight(action, owner)` is whether a dispatch of `action`, or a delivery whose receiver case is `action`, has arrived on `owner` and not ended: running, waiting inside `open(...)`, or queued. It is a [read](./derived-reads.md#the-reads), so it gives up no turn and a selector reacts to it. A view reads it with [`useInFlight`](./views.md#useinflight), from `treflex-solid` or `treflex-react`, on a node it holds:
@@ -127,7 +151,7 @@ A dispatch resolves `undefined` when:
 
 Where the action itself can return `undefined`, a caller can't tell any of these from that result.
 
-**An action returns plain data.** One that returns a promise or a thenable, a `parallel` or `parallelSettled` branch included, fails with `NonPlainDataError` instead: async work is an effect the action yields, so write `return yield* save(x)`, not `return api.save(x)`.
+**An action returns plain data.** One that returns a promise or a thenable, a `parallel` or `parallelSettled` branch included, fails with `NonPlainDataError` instead: async work is an effect the action yields, so write `return yield* save(x)`, not `return api.save(x)`. The [`treflex/no-returned-promise`](../../packages/eslint/README.md#treflexno-returned-promise) lint rule reports that `return` in the source.
 
 ### Steps
 
@@ -256,7 +280,7 @@ Work beside the rest of the action on its own entity is a `parallel` branch arou
 - **A dropped `leading` repeat** records an `action:start` and an `action:end` with `Status: "dropped"`.
 - **Per function and per entity.** Two marked actions on one entity don't affect each other, and one action on two entities doesn't block itself. Functions are compared by identity, not by name. The marks' bookkeeping is the runtime's, so a restore starts clear.
 - **Dispatches read the mark: a dispatch, a feature method and a `start`.** A `yield*` call doesn't, and neither does a message: a receiver case, timer tick or resource delivery reaching a marked case queues and runs.
-- **Mark it in the module that defines it,** with a statement after the declaration. A function takes one mark, once; marking it again throws. Prefer the declaration form: it keeps the exported name on the records, where `const save = leading(function* saveTitle(...) {...})` records `saveTitle`, and a `const` doesn't exist until its line runs, so an import cycle that reaches it earlier fails at load.
+- **Mark it in the module that defines it,** with a statement after the declaration. A function takes one mark, once; marking it again throws. Prefer the declaration form: a `const` doesn't exist until its line runs, so an import cycle that reaches it earlier fails at load.
 - **The types** take only an action whose draft is an entity.
 
 ### What inFlight counts
@@ -306,12 +330,18 @@ Held draft references and lookup results age in opposite directions. The draft i
 |---|---|
 | Call effects, reads and generators with `yield*` | The `require-yield-star` Biome plugin, for the shapes and names it knows, and `treflex/no-discarded-generator` for a generator called and dropped |
 | A normal action doesn't call an open function, and `open(x)` takes an `x` that doesn't open | The compiler, `treflex/no-hidden-open` for `any`, and a refusal at runtime |
+| An action returns plain data, not a promise or a thenable | `treflex/no-returned-promise`, and `NonPlainDataError` when it ends |
 | Don't use the draft after a wait inside `open(...)` until it ends | `DraftInsideOpenError` |
 | A `start`'s node is the tree's own, or what `entity()` returned | An `Error` in the starter, and `dispatch/node-mismatch` |
 | A `start`'s target is in the tree | `dispatch/unresolved-entity`; the start does nothing |
 | A write into a child another action holds goes to it as work | `entity/written-while-held`, in development; the write lands |
 | Waits point down | `action/long-hold` |
 | A function takes one arrival mark, and each tag once | Throws at the second mark |
+| A name is a string literal | `treflex/named`, which reports `named(save, save.name)` and every other non-literal |
+| A name names one function | `treflex/named` within a file; at runtime, a throw at the second module's mark in development, and `action/name-collision` in production |
+| Every saved action in a `requireNames` runtime has a name | `treflex/require-name`; at runtime, `UnnamedActionError` in development and `action/unnamed` in production |
+| A function takes one name, before its first dispatch | A throw at the second mark; a throw at a mark after a dispatch, in development |
+| A name is marked in the module that defines the action, by a statement after the declaration | `treflex/named`, which reports a `named` call inside a function or a block, or one whose result is used |
 | Re-find a held node where something can remove it during a wait | `DraftDetachedError` |
 | Re-check a premise where something can write it during the wait | Nothing: a write through a live reference is a valid write |
 

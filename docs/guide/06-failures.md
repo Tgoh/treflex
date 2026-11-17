@@ -97,7 +97,7 @@ const runtime = createRuntime<IReader>(seed, { onError: () => {} });
 runtime.registerImplementation(fetchFeedImpl);
 runtime.registerReceiver(ReaderReceiver);
 runtime.registerReceiver(StarredReceiver);
-runtime.on("failure", (event) => console.error(`${event.ActionName} failed`, event.Error));
+runtime.on("failure", (event) => console.error(`${event.Name ?? event.Label} failed`, event.Error));
 ```
 
 ## Two mistakes

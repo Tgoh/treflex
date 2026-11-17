@@ -1,7 +1,7 @@
 import type { IActionGenerator, IEntity, IReceiverId, ISelectorGenerator } from "treflex";
 import type { IConversation } from "./Conversation";
 import type { IMessage } from "./Message";
-import { entity, mapGen, publish, publishToNearest, receiver, start, startTimer, stopTimer } from "treflex";
+import { entity, mapGen, named, publish, publishToNearest, receiver, start, startTimer, stopTimer } from "treflex";
 import { chatCue, chatHistory } from "../backend/backend";
 import { paced } from "../backend/fast";
 import { plural } from "../text";
@@ -95,6 +95,7 @@ export function* init(draft: IChat): IActionGenerator {
 	draft.OpenId = draft.Conversations.find((c) => c.Key === FIRST_CONVERSATION)?.$Id ?? null;
 	yield* startTimer(draft, "Chat/Cue", ChatReceiver, CUE_MS);
 }
+named(init, "Chat/Init");
 
 function viewing(draft: IChat, conversationId: string): boolean {
 	return draft.Visible && draft.OpenId === conversationId;
@@ -111,10 +112,12 @@ export function* openConversation(draft: IChat, conversationId: string): IAction
 	markRead(draft);
 	yield* publishToNearest(draft, "Portal/Viewed");
 }
+named(openConversation, "Chat/OpenConversation");
 
 export function* dismissIntro(draft: IChat): IActionGenerator {
 	draft.Intro = false;
 }
+named(dismissIntro, "Chat/DismissIntro");
 
 /** Applies the travel voucher to the trips, once its message has finished streaming, and only once. */
 export function* applyVoucher(draft: IChat): IActionGenerator {
@@ -127,6 +130,7 @@ export function* applyVoucher(draft: IChat): IActionGenerator {
 		From: firstName(message.From)
 	});
 }
+named(applyVoucher, "Chat/ApplyVoucher");
 
 export const actions = {
 	openConversation,

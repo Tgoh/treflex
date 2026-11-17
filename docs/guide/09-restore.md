@@ -75,7 +75,7 @@ function setup(runtime: IRuntime<IReader>): void {
     runtime.registerReceiver(FeedReceiver);
     runtime.registerReceiver(StarredReceiver);
     registerPush(runtime);
-    runtime.on("failure", (event) => console.error(`${event.ActionName} failed`, event.Error));
+    runtime.on("failure", (event) => console.error(`${event.Name ?? event.Label} failed`, event.Error));
 }
 
 async function boot(): Promise<IRuntime<IReader>> {
@@ -103,6 +103,7 @@ addEventListener("pagehide", () => save(runtime));
 
 - **A restore doesn't run `init`.** What `init` did is already in the save: the push stream's row is there, so the stream reopens by itself, and each feed's poll timer arms for the time it was next due. A feed whose poll came due while the reader was closed polls once, straight away.
 - **Nothing that was running comes back.** An import interrupted by the reload is gone, with its progress; the feeds it had added stay, since they were written.
+- **To say what a reload cut short,** a repair matches the restore's dropped work on each action's durable name, which `named(importFeeds, "Reader/ImportFeeds")` gives. The reader doesn't, so it names nothing; an app that does sets `requireNames` and a `build` ([the build and the names](../reference/restart-and-records.md#the-build-and-the-names)).
 - **A save loads into the code that is running, as it was saved,** so a build that changes the shape of state versions what it saves, and discards or migrates an older save before `restoreRuntime` ([a newer build](../reference/restart-and-records.md#a-newer-build)).
 - **`SnapshotRejectedError` means the save can't become a runtime,** so the boot starts fresh. Anything else that fails would fail a fresh boot too, and is rethrown.
 

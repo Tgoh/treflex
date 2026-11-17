@@ -279,7 +279,7 @@ describe.each([
 			expect(got[0]).toBeUndefined();
 			expect(got[1]).toBe(2);
 			if (journal) {
-				const started = records.find((r) => r.Kind === "action:start" && r.Name === "child") as Extract<
+				const started = records.find((r) => r.Kind === "action:start" && r.Label === "child") as Extract<
 					IRecord,
 					{
 						Kind: "action:start";
@@ -459,7 +459,7 @@ describe.each([
 			await expect(runtime.dispatch(take, "kid-a", new Date(0))).rejects.toThrow(NonPlainDataError);
 			await tick();
 			expect(heard).toHaveLength(1);
-			expect(heard[0].ActionName).toBe("take");
+			expect(heard[0].Label).toBe("take");
 			expect(heard[0].Error.Name).toBe("NonPlainDataError");
 		});
 
@@ -857,29 +857,6 @@ describe.each([
 				}
 			]);
 			expect(rawOf(runtime.state.Kids[0].Saved)).not.toBe(rawOf(runtime.state.Kids[1].Saved));
-		});
-
-		it("freezes what an external source receives", async () => {
-			const { runtime } = build();
-			let got: unknown;
-			runtime.registerExternalSource({
-				Id: "crossing/source",
-				Topics: [
-					"Crossing/Said"
-				],
-				receivePublish(data) {
-					got = data;
-				}
-			});
-			function* sender(): IActionGenerator {
-				yield* publishAny("Crossing/Said", {
-					Deep: {
-						V: 1
-					}
-				});
-			}
-			await runtime.dispatch(sender, "root");
-			expect(isDeepFrozen(got)).toBe(true);
 		});
 	});
 

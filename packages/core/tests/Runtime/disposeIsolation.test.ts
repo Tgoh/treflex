@@ -3,7 +3,7 @@ import type { IRuntimeInternal } from "../../src/Runtime/internals";
 import type { ISetState } from "../../src/Runtime/sliceSetState";
 import type { IActionGenerator } from "../../src/Types/IAction";
 import type { IRecord } from "../../src/Types/IRecord";
-import { createEffect, createRoot, createSignal, onCleanup } from "solid-js";
+import { createEffect, createRoot, onCleanup } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getDataGlobal } from "../../src/Reads/getData";
 import { createGetDataCache } from "../../src/Runtime/createGetDataCache";
@@ -14,6 +14,12 @@ import { DraftDetachedError } from "../../src/Runtime/draftNode";
 import { rawOf } from "../../src/Runtime/viewProxy";
 import { consoleDiag } from "../../src/Types/IRuntimeEvent";
 import { createTreeState, treeWrite } from "../testHelpers";
+
+declare module "../../src/Registries/IExternalRegistry" {
+	interface IExternalRegistry {
+		"dispose/Key": number;
+	}
+}
 
 const PHASES: IDisposePhase[] = [
 	"cancel",
@@ -312,36 +318,49 @@ describe("a throwing dispose callback", () => {
 
 		it("lets createRuntime's dispose reach the steps after the cascade", async () => {
 			const reported = captureReported();
-			const [value, setValue] = createSignal(0);
-			let reads = 0;
-			const runtime = createRuntime<any>(nested());
+			const runtime = createRuntime<any>(nested()) as IRuntimeInternal<any>;
 			const boom = new Error("cleanup failed");
 			throwOn(gatewayOf(runtime), "first", boom);
-			runtime.registerExternalSource({
-				Id: "Source",
-				DataSourceKeys: [
-					"Key"
-				],
-				getData: () => {
-					reads++;
-					return value();
-				}
-			});
+			const dataSources = runtime.get("runtime/dataSources");
+			const resolveGlobal = vi.spyOn(dataSources, "resolveGlobal");
 			function* read(): IActionGenerator<unknown> {
-				return yield* (getDataGlobal as unknown as (key: string) => Generator<any, any, any>)("Key");
+				return yield* (getDataGlobal as unknown as (key: string) => Generator<any, any, any>)("dispose/Theme");
 			}
 			await runtime.dispatch(read, "root");
-			setValue(1);
-			expect(reads).toBe(2);
+			dataSources.add("dispose/Theme", "root", "other");
+			expect(resolveGlobal).toHaveBeenCalledTimes(2);
 
 			const thrown = attempt(() => runtime.dispose());
-			setValue(2);
+			const atDispose = resolveGlobal.mock.calls.length;
+			dataSources.add("dispose/Theme", "parent", "other");
 
 			expect(thrown).toBeUndefined();
-			expect(reads).toBe(2);
+			expect(resolveGlobal).toHaveBeenCalledTimes(atDispose);
 			expect(reported.surface()).toEqual([
 				boom
 			]);
+		});
+
+		it("stops every external subscription, and leaves changed doing nothing", () => {
+			const runtime = createRuntime<any>(nested());
+			let subscribed = 0;
+			let reads = 0;
+			const handle = runtime.provideExternal("dispose/Key", {
+				read: () => ++reads,
+				subscribe: () => {
+					subscribed++;
+					return () => {
+						subscribed--;
+					};
+				}
+			});
+
+			const thrown = attempt(() => runtime.dispose());
+			handle.changed();
+
+			expect(thrown).toBeUndefined();
+			expect(subscribed).toBe(0);
+			expect(reads).toBe(1);
 		});
 	});
 
@@ -796,53 +815,6 @@ describe("a throwing memo cleanup in the data cache", () => {
 		expect(attempt(() => world.cache.dispose())).toBeUndefined();
 		expect(world.cleaned).toEqual(everything);
 		expect(reported.surface()).toEqual([]);
-	});
-
-	it("disposes a sibling global memo through createRuntime's dispose", async () => {
-		const reported = captureReported();
-		const runtime = createRuntime<any>({
-			$Id: "root"
-		});
-		const boom = new Error("memo cleanup failed");
-		let siblingCleanups = 0;
-		runtime.registerExternalSource({
-			Id: "Thrower",
-			DataSourceKeys: [
-				"Thrower"
-			],
-			getData: () => {
-				onCleanup(() => {
-					throw boom;
-				});
-				return 1;
-			}
-		});
-		runtime.registerExternalSource({
-			Id: "Sibling",
-			DataSourceKeys: [
-				"Sibling"
-			],
-			getData: () => {
-				onCleanup(() => {
-					siblingCleanups++;
-				});
-				return 2;
-			}
-		});
-		const readGlobal = getDataGlobal as unknown as (key: string) => Generator<any, any, any>;
-		function* read(): IActionGenerator {
-			yield* readGlobal("Thrower");
-			yield* readGlobal("Sibling");
-		}
-		await runtime.dispatch(read, "root");
-
-		const thrown = attempt(() => runtime.dispose());
-
-		expect(thrown).toBeUndefined();
-		expect(siblingCleanups).toBe(1);
-		expect(reported.surface()).toEqual([
-			boom
-		]);
 	});
 });
 

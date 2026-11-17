@@ -43,6 +43,10 @@ export type IRead =
 	| {
 			readonly Type: "pendingAsks";
 			readonly Owner: IEntity;
+	  }
+	| {
+			readonly Type: "external";
+			readonly Key: string;
 	  };
 
 /** A read's generator, which an action and a selector can both `yield*`. */

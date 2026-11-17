@@ -7,5 +7,5 @@ const conditions = ["solid", "browser"];
 export default defineConfig({
 	resolve: { conditions },
 	ssr: { resolve: { conditions } },
-	test: { environment: "node" },
+	test: { environment: "node", setupFiles: ["treflex/vitest"] },
 });

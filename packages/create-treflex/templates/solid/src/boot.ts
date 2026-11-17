@@ -11,14 +11,19 @@ import { delayImpl } from "./counter/implementations/delay";
 const KEY = "app";
 const APP_VERSION = 1;
 
-// A failure nothing else takes is also thrown as an unhandled rejection
-// without an onError.
-const options: IRuntimeOptions = { onError: () => {} };
+const options: IRuntimeOptions = {
+	// A failure nothing else takes is also thrown as an unhandled rejection
+	// without an onError.
+	onError: () => {},
+	// Set by vite.config.ts for a production build only.
+	build: import.meta.env.VITE_BUILD_ID,
+	requireNames: true,
+};
 
 function setup(runtime: IRuntime<IApp>): void {
 	runtime.registerImplementation(delayImpl);
 	runtime.on("failure", (event) =>
-		console.error(`${event.ActionName} failed`, event.Error),
+		console.error(`${event.Name ?? event.Label} failed`, event.Error),
 	);
 }
 
@@ -55,9 +60,8 @@ async function restoreOrCreate(): Promise<IRuntime<IApp>> {
 				options,
 				setup,
 				repair: async (runtime, result) => {
-					const counter = runtime.state.Counter;
-					if (result.dropped.some((d) => d.entityId === counter.$Id)) {
-						await runtime.dispatch(interrupted, counter);
+					if (result.dropped.some((d) => d.name === "Counter/Increment")) {
+						await runtime.dispatch(interrupted, runtime.state.Counter);
 					}
 				},
 			});

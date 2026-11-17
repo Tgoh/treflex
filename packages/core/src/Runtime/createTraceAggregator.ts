@@ -5,10 +5,6 @@ type IObservable = {
 	on: IEventBus["on"];
 };
 
-function traceName(name: string | null): string {
-	return name ?? "(anonymous)";
-}
-
 export function createTraceAggregator(source: IObservable, onTrace: (trace: IActionTrace) => void): () => void {
 	const inFlight = new Map<string, IActionTrace>();
 	const openEffects = new Map<
@@ -30,7 +26,8 @@ export function createTraceAggregator(source: IObservable, onTrace: (trace: IAct
 			case "action:start": {
 				inFlight.set(record.ActionId, {
 					actionId: record.ActionId,
-					action: traceName(record.Name),
+					name: record.Name,
+					label: record.Label,
 					args: [
 						...record.Args
 					],
@@ -85,6 +82,11 @@ export function createTraceAggregator(source: IObservable, onTrace: (trace: IAct
 						? {}
 						: {
 								inFlightAnswers: record.InFlightAnswers
+							}),
+					...(record.ExternalAnswers === undefined
+						? {}
+						: {
+								externalAnswers: record.ExternalAnswers
 							})
 				});
 				break;

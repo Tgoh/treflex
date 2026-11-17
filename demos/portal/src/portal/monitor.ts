@@ -89,9 +89,10 @@ export function createMonitor(runtime: IRuntime<IPortal>, { receivers = [], cap 
 		switch (record.Kind) {
 			case "action:start": {
 				if (!labels.has(record.EntityId)) learn();
-				const delivery = record.Name !== null && receiverNames.has(record.Name) ? deliveries.get(record.EntityId)?.shift() : undefined;
+				const delivery =
+					record.Receiver !== undefined && receiverNames.has(record.Receiver) ? deliveries.get(record.EntityId)?.shift() : undefined;
 				actions.set(record.ActionId, {
-					Name: delivery?.Topic ?? record.Name ?? "action",
+					Name: delivery?.Topic ?? record.Name ?? record.Label ?? "action",
 					EntityId: record.EntityId,
 					Effects: [],
 					Tick: delivery?.Tick ?? false

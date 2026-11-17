@@ -57,7 +57,51 @@ const PLUGIN_MESSAGES = [
 // Drops the effect each template declares in src/counter/effects.ts.
 const PLANTED_DROP =
 	'import type { IActionGenerator } from "treflex";\nimport { delay } from "./counter/effects";\n\nexport function* plantedDrop(): IActionGenerator {\n\tdelay({ Ms: 1 });\n}\n';
+// A feature whose actions module imports treflex for types only, as treflex-eslint name meets one.
+const PLANTED_TODO_ACTIONS = `import type { IActionGenerator, IEntity } from "treflex";
+import { delay } from "../counter/effects";
+
+export interface ITodo extends IEntity {
+	Items: string[];
+}
+
+export function* addItem(draft: ITodo, text: string): IActionGenerator {
+	yield* delay({ Ms: 1 });
+	draft.Items.push(text);
+}
+
+export function* clearItems(draft: ITodo): IActionGenerator {
+	draft.Items = [];
+}
+`;
+const plantedTodo = (binding) => `import { createEntityFeature } from "${binding}";
+import { addItem, clearItems, type ITodo } from "./actions";
+
+export const Todo = createEntityFeature<ITodo>("Todo")({
+	addItem,
+	clearItems,
+});
+`;
+const PLANTED_TODO_MARKS = [
+	'named(addItem, "Todo/AddItem");',
+	'named(clearItems, "Todo/ClearItems");'
+];
 const DISCARD_RULE = "treflex/no-discarded-generator";
+const PLANTED_REPORT_TITLE = "planted: a failure nothing awaits";
+const PLANTED_REPORT = `import { createTestRuntime, type IActionGenerator, settled } from "treflex";
+import { it } from "vitest";
+
+function* fails(): IActionGenerator {
+	throw new Error("planted");
+}
+
+it("${PLANTED_REPORT_TITLE}", async () => {
+	const runtime = createTestRuntime({ $Id: "Planted" });
+	void runtime.dispatch(fails, "Planted");
+	await settled();
+});
+`;
+const PLANTED_REPORT_MESSAGE = '[treflex] createTestRuntime: action "fails" on "Planted" failed.';
 // The workspace has no typescript-eslint, only its parser, which moves in step with it.
 const TEMPLATE_PINS = {
 	typescript: "typescript6",
@@ -883,6 +927,46 @@ function templateApp(scratch, packed, version, template) {
 			cwd: dir
 		}
 	);
+	run(
+		`${label}: treflex-eslint name --check`,
+		"npm",
+		[
+			"exec",
+			"--",
+			"treflex-eslint",
+			"name",
+			"--check"
+		],
+		{
+			cwd: dir
+		}
+	);
+	const todo = join(dir, "src/todo");
+	mkdirSync(todo);
+	writeFileSync(join(todo, "actions.ts"), PLANTED_TODO_ACTIONS);
+	writeFileSync(join(todo, "todo.ts"), plantedTodo(binding));
+	run(
+		`${label}: treflex-eslint name on a planted feature`,
+		"npm",
+		[
+			"exec",
+			"--",
+			"treflex-eslint",
+			"name"
+		],
+		{
+			cwd: dir
+		}
+	);
+	const marked = readFileSync(join(todo, "actions.ts"), "utf8");
+	const unmarked = PLANTED_TODO_MARKS.filter((mark) => !marked.includes(mark));
+	if (unmarked.length > 0) {
+		throw new StepFailed(`${label}: treflex-eslint name didn't write ${unmarked.join(" and ")}`);
+	}
+	npmRun("check");
+	rmSync(todo, {
+		recursive: true
+	});
 	const planted = join(dir, "src/planted.ts");
 	writeFileSync(planted, PLANTED);
 	const lint = node(
@@ -927,6 +1011,37 @@ function templateApp(scratch, packed, version, template) {
 		throw new StepFailed(`${label}: eslint exited ${dropped.status} without reporting ${DISCARD_RULE}`);
 	}
 	console.log(`eslint reported ${DISCARD_RULE}`);
+	const plantedReport = join(dir, "src/plantedReport.test.ts");
+	const reportJson = join(dir, "planted-report.json");
+	writeFileSync(plantedReport, PLANTED_REPORT);
+	const vitestRun = node(
+		`${label}: vitest run with a test whose failure nothing awaits`,
+		join(dir, "node_modules/vitest/vitest.mjs"),
+		[
+			"run",
+			"--reporter=json",
+			`--outputFile=${reportJson}`
+		],
+		{
+			cwd: dir,
+			allowFailure: true,
+			echo: false
+		}
+	);
+	rmSync(plantedReport);
+	if (!existsSync(reportJson)) {
+		console.error(`${vitestRun.stdout}${vitestRun.stderr}`);
+		throw new StepFailed(`${label}: vitest run exited ${vitestRun.status} and wrote no JSON report`);
+	}
+	const results = readJson(reportJson).testResults.flatMap((file) => file.assertionResults);
+	rmSync(reportJson);
+	const wrong = results.filter((test) => (test.title === PLANTED_REPORT_TITLE) !== (test.status === "failed"));
+	const plantedResult = results.find((test) => test.title === PLANTED_REPORT_TITLE);
+	if (wrong.length > 0 || !plantedResult?.failureMessages.some((message) => message.includes(PLANTED_REPORT_MESSAGE))) {
+		console.error(JSON.stringify(results, null, "\t"));
+		throw new StepFailed(`${label}: treflex/vitest failed other tests than the planted one, or the planted one without its report`);
+	}
+	console.log(`treflex/vitest failed only "${PLANTED_REPORT_TITLE}"`);
 	npmRun("check");
 	npmRun("build");
 }

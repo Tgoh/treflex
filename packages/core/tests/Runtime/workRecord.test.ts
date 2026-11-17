@@ -56,7 +56,7 @@ function build() {
 	const inFlight = () =>
 		(runtime as IRuntimeInternal<IWorld>)
 			.get("runtime/inFlightActions")()
-			.map((entry) => entry.Name);
+			.map((entry) => entry.Label);
 	return {
 		runtime,
 		releases,

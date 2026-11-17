@@ -250,7 +250,7 @@ describe("Action/Error escalation", () => {
 				const ErrorBoundary = receiver<S>("ErrorBoundary")({
 					["Action/Error" as any]: function* (draft: any, e: any) {
 						draft.SeenError = e.Error;
-						draft.SeenActionName = e.ActionName;
+						draft.SeenActionName = e.Label ?? "";
 					}
 				});
 				runtime.registerReceiver(ErrorBoundary);

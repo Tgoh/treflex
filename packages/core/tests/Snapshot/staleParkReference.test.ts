@@ -5,6 +5,7 @@ import type { IRecord } from "../../src/Types/IRecord";
 import { createRoot } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { parallel } from "../../src/Effects/parallel";
+import { createActivityLog } from "../../src/Runtime/createActivityLog";
 import { createRuntime } from "../../src/Runtime/createRuntime";
 import { open } from "../../src/Runtime/open";
 import { sliceSetState } from "../../src/Runtime/sliceSetState";
@@ -332,9 +333,8 @@ describe("stale-reference tripwire", () => {
 		await createRoot(async (dispose) => {
 			try {
 				const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-				const runtime = createRuntime<TestState>(initialState(), {
-					activityLog: true
-				});
+				const runtime = createRuntime<TestState>(initialState());
+				createActivityLog(runtime);
 				function* heldReplaced(draft: TestState): IActionGenerator {
 					const held = draft.Children[0];
 					draft.Children[0] = minted("child-other", {

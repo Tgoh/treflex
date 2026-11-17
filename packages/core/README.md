@@ -9,10 +9,11 @@ npm create treflex@latest my-app     # a new app, in React or Solid
 npm install treflex                  # an existing app
 ```
 
-The package has two entries:
+The package has three entries:
 
 - `treflex`: the runtime, effects, and the types an app declares against.
 - `treflex/snapshot`: `createSnapshot` and `restoreRuntime`, for saving a running app and building a runtime from the save.
+- `treflex/vitest`: a Vitest setup file, which fails the test that caused a failure or a diag ([testing](../../docs/reference/testing.md#failures-and-diags-fail-the-test)).
 
 Views render through [`treflex-solid`](../solid/README.md) or [`treflex-react`](../react/README.md). `biome/` holds two Biome plugins for treflex code, set up as [lint setup](../../docs/reference/effects.md#lint-setup) says.
 

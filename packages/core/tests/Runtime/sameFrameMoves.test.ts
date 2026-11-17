@@ -518,7 +518,7 @@ describe("the node binding, for an action asked for a row after a same-frame shi
 				{
 					Kind: "action:start";
 				}
-			> => r.Kind === "action:start" && r.Name === "worker"
+			> => r.Kind === "action:start" && r.Label === "worker"
 		)!;
 		expect(h.runtime.state.Rows.filter((r) => r.Flag).map((r) => r.$Id)).toEqual([
 			started.EntityId
@@ -549,7 +549,7 @@ describe("a dispatch on a row removed in this frame", () => {
 		const started: (string | null)[] = [];
 		h.runtime.on("record", (record) => {
 			if (record.Kind === "action:start") {
-				started.push(record.Name);
+				started.push(record.Label);
 			}
 		});
 		function* parkedWorker(draft: IRow): IActionGenerator<string> {

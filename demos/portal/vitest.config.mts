@@ -25,6 +25,10 @@ export default defineConfig({
 	},
 	test: {
 		environment: "node",
+		// Not "treflex/vitest": Vitest resolves a setup file by Node's conditions, to the dist the workspace doesn't build.
+		setupFiles: [
+			"../../packages/core/src/Testing/vitest.ts"
+		],
 		css: {
 			include: [
 				/styles\/.*\.css/

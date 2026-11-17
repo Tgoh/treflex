@@ -6,7 +6,7 @@ What an app needs to use treflex: the packages, the TypeScript and React version
 
 | Package | Imports | Holds |
 | --- | --- | --- |
-| `treflex` | `treflex`, `treflex/snapshot` | The runtime, effects and types; snapshots and restore |
+| `treflex` | `treflex`, `treflex/snapshot`, `treflex/vitest` | The runtime, effects and types; snapshots and restore; the Vitest setup entry, for `vitest` 3.0 or later, an optional peer |
 | `treflex-solid` | `treflex-solid` | The Solid bindings |
 | `treflex-react` | `treflex-react` | The React bindings |
 | `treflex-eslint` | `treflex-eslint` | The eslint rules, registered as [its README](../packages/eslint/README.md#registering-it) says |

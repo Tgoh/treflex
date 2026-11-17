@@ -96,26 +96,69 @@ A `null` from `unwrap` boots fresh. A migration rewrites `AppState` and keeps ev
 - **A running tick is dropped** like any action, and its timer fires again soon after the load. Every other timer arms for the time it was next due ([ticks](./live-sources.md#ticks)).
 - **A resource's own work** is done again by the reopened resource.
 
+### The build and the names
+
+Two questions about saved running work have two answers:
+
+- **Which action was it?** Its [durable name](./actions.md#durable-names), the same in every build. A later build can redo a dropped `"Editor/Save"`.
+- **Was it this code?** The runtime's [`build`](./runtime.md#build), which `createSnapshot` writes into the envelope as `Build`, or `null` when the runtime has none.
+
+```ts
+const savingOptions: IRuntimeOptions = {
+    onError: (error) => console.error(error),
+    build: BUILD_ID,
+    requireNames: true
+};
+```
+
+**`build` is not the app's version.** The app's version, the `APP_VERSION` [above](#a-newer-build), changes by hand when the state's shape changes, and a save of another version is migrated or discarded before `restoreRuntime` sees it. The build changes with every build, by itself. A deploy that changes code but not the state's shape keeps `APP_VERSION`, so its users' data loads and their running work is dropped.
+
+**The data loads either way.** A restore's result says whether the save is from the running code: `savedBuild` is the envelope's `Build`, and `sameBuild` is `true` only when it and the runtime's `build` are both strings and equal. In-flight work is dropped on either answer. The repair matches on names:
+
+```ts
+import { type IActionGenerator, named } from "treflex";
+
+export function* saveInterrupted(draft: IPlatform): IActionGenerator {
+    draft.Notice = "A reload cut a save short. Save again.";
+}
+named(saveInterrupted, "Editor/SaveInterrupted");
+
+export function restoreRepairing(saved: string, seed: IPlatform) {
+    return restoreRuntime(saved, {
+        rootId: seed.$Id,
+        options: savingOptions,
+        setup,
+        repair: async (runtime, result) => {
+            if (result.dropped.some((d) => d.name === "Editor/Save")) {
+                await runtime.dispatch(saveInterrupted, seed.$Id);
+            }
+        }
+    });
+}
+```
+
+A restore doesn't check that each dropped name exists in this build: a code-split module's actions aren't named until its chunk loads. An app that saves sets [`requireNames`](./runtime.md#requirenames).
+
 ## Rules
 
 ### What a snapshot holds
 
 The runtime only interleaves at yields, so any moment outside a step is a consistent cut. A section nested deeper than 1,000 levels throws `SnapshotTooDeepError` and writes nothing, since no restore would take it, and a disposed runtime throws `SnapshotOfDisposedRuntimeError`.
 
-The envelope holds a format version and:
+The envelope holds a format version, the runtime's `build`, and:
 
 | Saved | Rebuilt at startup |
 |---|---|
 | `AppState`, each entity's `$Receiver` included | Effect implementations, receivers, resource types |
-| Data-source registrations | Runtime services, and external sources (the activity log comes back from the `activityLog` option) |
+| Data-source registrations | Runtime services, and [outside values](./derived-reads.md#outside-values), which `setup` provides again |
 | Timer rows, each with its next due time | The index over the tree, and the bindings derived from it |
 | Resource rows | Record taps and event subscribers |
-| The in-flight list: each running action's id, name and entity | Timer handles, armed from rows for their due times |
+| The in-flight list: each running action's id, `Name`, `Label`, `Receiver` for a delivery, and entity | Timer handles, armed from rows for their due times |
 | | Resource instances, reopened from rows |
 
 Nor is any row or registration saved that an entity in `TransientState` or `ComponentState` owns, nor any action running on one. Actions a resource started are left out of the in-flight list too. A live thing an implementation needs back is a resource ([`live-sources.md`](./live-sources.md)).
 
-The reader takes exactly the sections it knows and ignores the rest. An envelope of another format version is rejected, so the app discards it and boots fresh.
+The reader takes exactly the sections it knows and ignores the rest. It reads format 8, and 7, the one before, whose in-flight entries carry no durable names: each reads with `name: null` and its old `Name` as the `label`, and the envelope's build as `null`. An envelope of any other format version is rejected, so the app discards it and boots fresh.
 
 ### The restore, in order
 
@@ -124,7 +167,7 @@ The reader takes exactly the sections it knows and ignores the rest. An envelope
 1. **The envelope is checked.** Invalid JSON, another format version, a missing or mis-shaped section, a root that isn't an object with a non-empty string `$Id`, a root other than `rootId`, a section nested deeper than 1,000 levels, or a tree a seed's checks refuse (not plain data, an `$Id` that isn't a non-empty string or sits on two nodes, a malformed `$Receiver`) rejects with `SnapshotRejectedError`. A `json` that isn't a string, or a `rootId` that isn't a non-empty string, rejects with `TypeError`: those are bugs in the boot, not a bad save.
 2. **`createRuntime(tree, options)` builds the runtime** over the saved tree, taken as a seed is. Each entity's binding is in its state, so it is bound as it was.
 3. **The tables load.** A row whose owner the tree doesn't hold is left out, with [`restore/orphaned-rows`](./troubleshooting.md#restoreorphaned-rows), and a malformed row is dropped, with [`restore/malformed-rows`](./troubleshooting.md#restoremalformed-rows). A failure here rejects with `SnapshotRejectedError`.
-4. **`setup(runtime)` registers**: receivers, implementations, resource types, external sources, runtime services and taps, the same function a fresh boot calls. None of them is saved, so a `setup` that leaves one out leaves it out of the restored runtime: an external source left out answers no `getDataGlobal` read. It must be synchronous: one that returns a promise rejects with `AsyncSetupError`. Nothing else sees the runtime before it returns, and a diag listener it attaches hears the table load's diags.
+4. **`setup(runtime)` registers**: receivers, implementations, resource types, runtime services and taps, and provides outside values with `provideExternal`, the same function a fresh boot calls. None of them is saved, so a `setup` that leaves one out leaves it out of the restored runtime: a key it doesn't provide reads `undefined`, with [`external/unprovided`](./troubleshooting.md#externalunprovided) in development. It must be synchronous: one that returns a promise rejects with `AsyncSetupError`. Nothing else sees the runtime before it returns, and a diag listener it attaches hears the table load's diags.
 5. **Bindings and rows naming a receiver this build hasn't registered** are listed in the result and reported with [`restore/unresolved-receiver`](./troubleshooting.md#restoreunresolved-receiver).
 6. **The repair runs**, if there is one ([below](#the-repair)).
 
@@ -136,9 +179,17 @@ It resolves to `{ runtime, result }`, `result` an `IRestoreOutcome`, which is th
 
 ```ts
 interface IRestoreResult {
-    dropped: { actionId: string; name: string | null; entityId: string }[];      // the in-flight list
+    dropped: {                                    // the in-flight list
+        actionId: string;
+        name: string | null;
+        label: string | null;
+        receiver?: string;
+        entityId: string;
+    }[];
     unresolved: { ownerId: string; key: string | null; receiverId: string }[];  // a binding's key is null
     sweptOrphanedRows: number;
+    savedBuild: string | null;
+    sameBuild: boolean;
 }
 
 type IRestoreOutcome = IRestoreResult & { repairError?: unknown };
@@ -146,7 +197,7 @@ type IRestoreOutcome = IRestoreResult & { repairError?: unknown };
 
 An unresolved binding or row stays and delivers nothing until its receiver registers; an app that won't register it unbinds the entity or retracts the row.
 
-**`name` is a label, never a key.** It is the function's own `name`, copied into the envelope: `null` for an anonymous function, and whatever a minifier made of it in a production build. Use it in a log or a devtools panel, never as something to match on or show a person.
+**`name` is the key:** the action's durable name, or `null` for an action without one. Match on it. **`label` is a label, never a key.** It is the function's own `name` as the writing build spelled it, or `null` for an anonymous function. Use it in a log or a devtools panel, never as something to match on or show a person. A delivery's entry carries its receiver's id as `receiver`, and no name. An entry with neither a name nor a receiver can be recognised only by its entity.
 
 **Loading a save into a running app** takes a new runtime from `restoreRuntime`, the views mounted again on it, and the old runtime disposed. Component state lives in the runtime and is never saved, so the remount starts it from its factories. In React, key the provider with something that changes per runtime, such as a load counter; in Solid, dispose the render root and render again. Anything that holds the old runtime, a save handler say, moves to the new one. A rejection here means keep the current runtime.
 
@@ -241,9 +292,9 @@ The dear kind is `step`, which copies every written value before and after. The 
 
 | Kind | One per | Carries |
 |---|---|---|
-| `action:start` | Action started | `ActionId`, `Name` (the function's `name`, or `null`; a label, as for `dropped`), `EntityId`, `Path` (the entity's `$Id` path at dispatch, its own last), `Args`, `StartedBy` for a started action, `Origin` (`{ Kind: "resource:deliver" \| "resource:run", Key, OwnerId }`) for a resource's |
+| `action:start` | Action started | `ActionId`, `Name` (the [durable name](./actions.md#durable-names), or `null`), `Label` (the function's `name`, or `null`; a label, as for `dropped`), `Receiver` for a delivery, its receiver's id, `EntityId`, `Path` (the entity's `$Id` path at dispatch, its own last), `Args`, `StartedBy` for a started action, `Origin` (`{ Kind: "resource:deliver" \| "resource:run", Key, OwnerId }`) for a resource's |
 | `action:end` | Action ended | `ActionId`, `Status`: `completed`, `cancelled`, `errored`, or `dropped` for work that ran nothing, a `leading` repeat, or a delivery or tick that stopped being wanted while it queued |
-| `step` | Step with writes | `ActionId`, `BranchId`, `Changes` (`{ Path, Prev, Value?, Deleted?, Created?, GrewFrom? }`, both sides copies); `Cancelling: true` for a close, one record for the whole close; `InFlightAnswers` when the step resumed from `inFlight` reads, and then even with no changes |
+| `step` | Step with writes | `ActionId`, `BranchId`, `Changes` (`{ Path, Prev, Value?, Deleted?, Created?, GrewFrom? }`, both sides copies); `Cancelling: true` for a close, one record for the whole close; `InFlightAnswers` when the step resumed from `inFlight` reads, and `ExternalAnswers` when it resumed from `external` reads ([an action's read](./derived-reads.md#an-actions-read)), either one even with no changes |
 | `effect` | Effect yielded | `ActionId`, `BranchId`, `Type`, `Descriptor` (a copy of what was yielded, or `Type` only for a redacted type) |
 | `response` | Settlement delivered to the fiber | `ForSeq` (the effect's `Seq`), and `Value` or `Error`. An effect with no response is still in flight, or was when its fiber was stopped |
 | `branch:start`, `branch:end` | Branch of `parallel` or `parallelSettled` | `ActionId`, `BranchId`, `ParentBranchId`; on the end, `Status` and, when errored, the serialized `Error` |
@@ -258,12 +309,34 @@ A binding change is a `step` change at `$Receiver`. Every record carries `Seq`, 
 
 #### Traces
 
-`createTraceAggregator(runtime, onTrace)` rebuilds one `IActionTrace` per action from the stream, `{ actionId, action, args, entityId, entries, duration, error?, cancelled?, dropped? }`, its entries the steps in order and each effect when it settles. A step entry is `{ type: "step", branchId, changes, inFlightAnswers? }`; an effect entry is `{ type: "effect", branchId, effect, duration }` with `result` or `error`. An effect still open when the action ended is appended last, with `aborted: true`. It ignores records of actions it didn't see start, so attaching mid-action is clean. It taps every kind, `step` included. It returns the function that stops it.
+`createTraceAggregator(runtime, onTrace)` rebuilds one `IActionTrace` per action from the stream, `{ actionId, name, label, args, entityId, entries, duration, error?, cancelled?, dropped? }`, `name` and `label` the `action:start` record's, its entries the steps in order and each effect when it settles. A step entry is `{ type: "step", branchId, changes, inFlightAnswers?, externalAnswers? }`; an effect entry is `{ type: "effect", branchId, effect, duration }` with `result` or `error`. An effect still open when the action ended is appended last, with `aborted: true`. It ignores records of actions it didn't see start, so attaching mid-action is clean. It taps every kind, `step` included. It returns the function that stops it.
+
+#### The activity log
+
+`createActivityLog(runtime, { cap? })` taps the kinds `action:start`, `action:end`, `branch:start`, `branch:end`, `entity:dispose` and `message:deliver`, and provides the latest of them, 200 by default, as the [outside value](./derived-reads.md#outside-values) `ActivityLog`, newest first. Call it in `setup`, so a restored runtime gets a new, empty log:
+
+```ts
+import { createActivityLog, external, type IActivityLogEntry, type IEntity, type IRuntime, type ISelectorGenerator } from "treflex";
+
+export function setupLog(runtime: IRuntime<IEntity>): void {
+    createActivityLog(runtime, { cap: 100 });
+}
+
+export function* recentEnds(_draft: IEntity): ISelectorGenerator<readonly IActivityLogEntry[]> {
+    const log = yield* external("ActivityLog");
+    return log ? log.filter((entry) => entry.Kind === "action:end") : [];
+}
+```
+
+- **Each entry is `{ Seq, Kind, Time, Data }`,** frozen. `Seq` is the log's own count from 1, `Time` is `Date.now()` when the log took the record, and `Data` is the record. A `branch:end` is kept without its `Error`, an `undefined` argument on an `action:start` is kept as `null`, and the tap extras are never kept.
+- **It taps only those kinds,** so on its own it turns on no `step`, `effect` or `response` records and copies no writes ([what a kind costs](#what-a-kind-costs)). An action's read of the log lands on the action's `step` record, which the log doesn't keep.
+- **It returns the function that stops it.** The key keeps its last value. A second `createActivityLog` on the runtime replaces the first, whose tap stops, with `external/replaced`, and `runtime.dispose()` stops it.
 
 ## Caveats
 
 - **A field in the tree holding a transient entity's `$Id`** dangles after a restore, and so does a data source whose data entity sits in a transient; nothing reports either. Point saved state only at saved entities.
-- **An in-flight entry's `name` in a production build** is whatever the minifier made of the function's name; a bundler's keep-names option (`keepNames` in esbuild and Vite, `keep_fnames` in terser) keeps it legible.
+- **A `label` in a production build** is whatever the minifier made of the function's name; a bundler's keep-names option (`keepNames` in esbuild and Vite, `keep_fnames` in terser) keeps it legible.
+- **A version 7 envelope's dropped entries** have no names, so a repair that matches on names finds none of them.
 - **A repair still unsettled 3 seconds after the load** raises [`resource/still-paused`](./troubleshooting.md#resourcestill-paused).
 - **A close made later than the repair's action or a receiver's first step** costs one brief reconnect.
 - **A tap of `step` without `action:start`** gets steps whose action it never saw.

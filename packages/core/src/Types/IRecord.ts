@@ -16,6 +16,19 @@ export type IRecordChange = {
 	GrewFrom?: number;
 };
 
+/**
+ * An action's read of an external value, on its `step` record. `Value` is the frozen copy the action
+ * received, absent when that was `undefined`, nothing provided the key, or its provider redacts. See
+ * docs/reference/derived-reads.md#an-actions-read.
+ */
+export type IExternalAnswer = {
+	Key: string;
+	Value?: unknown;
+	/** `Value`'s JSON form doesn't give back exactly what the action received, such as a `-0`. */
+	Lossy?: true;
+	Redacted?: true;
+};
+
 export type IActionOrigin = {
 	Kind: "resource:deliver" | "resource:run";
 	Key: string;
@@ -34,6 +47,8 @@ export type IRecord =
 			Root: IRecordRoot;
 			ActionId: string;
 			Name: string | null;
+			Label: string | null;
+			Receiver?: string;
 			EntityId: string;
 			Path: string[];
 			Args: unknown[];
@@ -49,8 +64,10 @@ export type IRecord =
 			BranchId: string;
 			Changes: IRecordChange[];
 			Cancelling?: true;
-			// The answers of the `inFlight` reads this slice resumed from, nested selects' included, in order.
+			/** The answers of the `inFlight` reads this slice resumed from, nested selects' included, in order. */
 			InFlightAnswers?: boolean[];
+			/** The answers of the `external` reads this slice resumed from, nested selects' included, in order. */
+			ExternalAnswers?: IExternalAnswer[];
 	  }
 	| {
 			Seq: number;

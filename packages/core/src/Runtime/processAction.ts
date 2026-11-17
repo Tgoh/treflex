@@ -7,6 +7,7 @@ import type { IActionOrigin, IRecordRoot } from "../Types/IRecord";
 import type { IDiagEmitter, IFailureEmitter, IFailureEvent } from "../Types/IRuntimeEvent";
 import type { IBranchEnd, IBranchGroup } from "./branches";
 import type { IEffectImplementation } from "./createEffectRegistry";
+import type { IExternalRead } from "./createExternalTable";
 import type { IActionJournal, IJournal, IJournalSample } from "./createJournal";
 import type { IWriteGateway } from "./createWriteGateway";
 import type { IFiber, IFiberIdAllocator } from "./Fiber";
@@ -38,6 +39,7 @@ import {
 import { createFiber, fiberSignal, stopFiber } from "./Fiber";
 import { deliverFailure, errorBoundaryAbove, type IArrivals, type IErrorBoundary, type IFanOutContext } from "./fanOut";
 import { answerInStep, createFiberMachine } from "./fiberMachine";
+import { displayName, labelOf, nameOf, receiverOf, UnnamedActionError } from "./named";
 import { NonPlainDataError } from "./nonPlainDataError";
 import { type IOperationDriver, type IRuntimeOperation, operationOf } from "./operations";
 import { PENDING_ASKS_YIELD } from "./pendingAsks";
@@ -52,8 +54,10 @@ const NOTHING_COUNTED: readonly object[] = Object.freeze([]);
 
 /** What `onError` is told about a failure besides the error. */
 export interface IErrorContext {
-	/** The action that failed. An error boundary's own failure names its receiver. */
-	readonly ActionName: string;
+	/** The durable name of the action that failed, or null. */
+	readonly Name: string | null;
+	/** The function's own name, for display, or null. An error boundary's own failure carries its receiver's id. */
+	readonly Label: string | null;
 	/** The entity the action ran on. */
 	readonly EntityId: string;
 	/** On an error boundary's own failure, the failure it was handling. */
@@ -74,6 +78,8 @@ declare module "../Registries/IRuntimeServiceRegistry" {
 export interface IInFlightAction {
 	ActionId: string;
 	Name: string | null;
+	Label: string | null;
+	Receiver?: string;
 	EntityId: string;
 }
 
@@ -97,6 +103,7 @@ export interface IProcessActionOptions {
 	journal: IJournal;
 	gateway?: IWriteGateway;
 	emitFailure?: IFailureEmitter;
+	requireNames?: boolean;
 }
 
 export interface IInternalDispatchOptions {
@@ -131,7 +138,11 @@ export interface IProcessActionResult {
 }
 
 type IActiveAction = {
+	// For messages and diags: the durable name, else the label.
 	name: string;
+	durableName: string | null;
+	label: string | null;
+	receiver: string | undefined;
 	actionId: string;
 	entityId: string;
 	fn: object | null;
@@ -478,6 +489,8 @@ export interface IActionEnv<T> {
 	/** The error has left the action's code, as a failure the runtime caught. */
 	refusalOut: (error: unknown) => void;
 	wakes: IWakeQueue;
+	/** Applies the runtime's `requireNames` to an action about to be started on `entityId`. */
+	requireName: (action: object, entityId: string) => void;
 }
 
 export interface IFiberContext<T> {
@@ -539,28 +552,43 @@ export type IActionOutcome =
 interface IFailure {
 	error: unknown;
 	entityId: string;
-	actionName: string;
+	name: string | null;
+	label: string | null;
 	actionId: string;
+	action: unknown;
 	status: "errored" | "cancelled";
 	close: boolean;
 	cause?: IFailure;
 }
 
+export const FAILED_ACTION = Symbol("treflex.failedAction");
+
+function withAction(event: IFailureEvent, action: unknown): IFailureEvent {
+	Object.defineProperty(event, FAILED_ACTION, {
+		value: action
+	});
+	return event;
+}
+
 function failureEvent(failure: IFailure, taken: boolean): IFailureEvent {
-	return {
-		Error: failure.error,
-		ActionId: failure.actionId,
-		ActionName: failure.actionName,
-		EntityId: failure.entityId,
-		Status: failure.status,
-		Close: failure.close,
-		Taken: taken,
-		...(failure.cause
-			? {
-					Cause: failure.cause.error
-				}
-			: {})
-	};
+	return withAction(
+		{
+			Error: failure.error,
+			ActionId: failure.actionId,
+			Name: failure.name,
+			Label: failure.label,
+			EntityId: failure.entityId,
+			Status: failure.status,
+			Close: failure.close,
+			Taken: taken,
+			...(failure.cause
+				? {
+						Cause: failure.cause.error
+					}
+				: {})
+		},
+		failure.action
+	);
 }
 
 function buildActionContext<T>(ctx: IFiberContext<T>): IActionContext {
@@ -803,10 +831,15 @@ function snapshotReadResult<T>(ctx: IFiberContext<T>, yielded: unknown, value: u
 			}
 		)?.Type
 	);
-	// An ask entry is frozen already, and keeps its identity for the ask's whole life.
-	if (type === TRANSIENT_YIELD || type === PENDING_ASKS_YIELD) {
+	// An ask entry is frozen already, and keeps its identity for the ask's whole life. An external
+	// value is the copy its step record holds, made by the read.
+	if (type === TRANSIENT_YIELD || type === PENDING_ASKS_YIELD || type === "external") {
 		return value;
 	}
+	return copyForAction(ctx, value, type, `${type} in an action: the result`);
+}
+
+function copyForAction<T>(ctx: IFiberContext<T>, value: unknown, type: string, what: string, externalKey?: string): unknown {
 	const copies = DEV
 		? {
 				count: 0
@@ -817,28 +850,52 @@ function snapshotReadResult<T>(ctx: IFiberContext<T>, yielded: unknown, value: u
 		copies
 	});
 	if (!copy.ok) {
-		throw new NonPlainDataError(`${type} in an action: the result`, copy.kind, copy.path);
+		throw new NonPlainDataError(what, copy.kind, copy.path);
 	}
 	if (copies && copies.count > LARGE_READ_COPY) {
 		const actionName = ctx.env.actionName;
-		resolveDiag(ctx.env.runtimeStoreReader).emitOnce(
-			JSON.stringify([
-				"action/large-read-copy",
-				actionName
-			]),
-			{
-				severity: "warn",
-				code: "action/large-read-copy",
-				message:
-					`[treflex] Action "${actionName}" copied ${copies.count} objects and arrays out of state in one ${type}. An action-side read is a frozen ` +
-					`copy of everything it returns, so read only what the action needs, with a narrow select.`,
-				data: {
-					actionName,
-					type,
-					copied: copies.count
+		const diag = resolveDiag(ctx.env.runtimeStoreReader);
+		if (externalKey === undefined) {
+			diag.emitOnce(
+				JSON.stringify([
+					"action/large-read-copy",
+					actionName
+				]),
+				{
+					severity: "warn",
+					code: "action/large-read-copy",
+					message:
+						`[treflex] Action "${actionName}" copied ${copies.count} objects and arrays out of state in one ${type}. An action-side read is a frozen ` +
+						`copy of everything it returns, so read only what the action needs, with a narrow select.`,
+					data: {
+						actionName,
+						type,
+						copied: copies.count
+					}
 				}
-			}
-		);
+			);
+		} else {
+			diag.emitOnce(
+				JSON.stringify([
+					"action/large-read-copy",
+					actionName,
+					externalKey
+				]),
+				{
+					severity: "warn",
+					code: "action/large-read-copy",
+					message:
+						`[treflex] Action "${actionName}" copied ${copies.count} objects and arrays reading external("${externalKey}"). An action's read of an ` +
+						"outside value copies the whole value, inside a select too, so provide what the action needs under a narrower key.",
+					data: {
+						actionName,
+						type,
+						key: externalKey,
+						copied: copies.count
+					}
+				}
+			);
+		}
 	}
 	return copy.value;
 }
@@ -1167,21 +1224,28 @@ function runFiberLoop<T>(ctx: IFiberContext<T>, machine: IFiberMachine, onEnd?: 
 						case "read": {
 							let input: IFiberSettleInput;
 							const inFlightAnswers: boolean[] = [];
+							const externalAnswers: IExternalRead[] = [];
 							try {
 								const value = ctx.env.processRead!(outcome.yielded, {
 									getState: ctx.env.getState,
-									inFlightAnswers
+									inFlightAnswers,
+									externalReads: {
+										answers: externalAnswers,
+										copy: (read, key) => copyForAction(ctx, read, "external", `external "${key}" in an action: the value`, key)
+									}
 								});
 								input = {
 									verb: "next",
 									value: snapshotReadResult(ctx, outcome.yielded, value),
-									inFlightAnswers
+									inFlightAnswers,
+									externalAnswers
 								};
 							} catch (readError) {
 								input = {
 									verb: "throw",
 									error: readError,
-									inFlightAnswers
+									inFlightAnswers,
+									externalAnswers
 								};
 							}
 							settled = machine.settle(input);
@@ -1229,6 +1293,39 @@ export function createProcessAction(options: IProcessActionOptions): IProcessAct
 		works
 	);
 	const gates = new Map<string, IGate>();
+
+	const unnamedReported = new WeakSet<object>();
+
+	function requireName(action: object, root: IRecordRoot, origin: IActionOrigin | undefined): void {
+		if (
+			!options.requireNames ||
+			origin !== undefined ||
+			root !== "AppState" ||
+			receiverOf(action) !== undefined ||
+			nameOf(action) !== null
+		) {
+			return;
+		}
+		const label = labelOf(action);
+		if (DEV) {
+			throw new UnnamedActionError(label);
+		}
+		if (unnamedReported.has(action)) {
+			return;
+		}
+		unnamedReported.add(action);
+		emitDiag({
+			severity: "warn",
+			code: "action/unnamed",
+			message:
+				`[treflex] action "${label ?? "(anonymous)"}" has no durable name, and this runtime sets requireNames. It runs, and ` +
+				`its records and any snapshot entry carry Name: null, so a later restore can't say what it was. Name it with named(), ` +
+				"or run `npx treflex-eslint name`, which names the unnamed actions it can find in the project.",
+			data: {
+				label
+			}
+		});
+	}
 
 	const heldWritesReported = new WeakMap<object, WeakSet<object>>();
 
@@ -1422,7 +1519,13 @@ export function createProcessAction(options: IProcessActionOptions): IProcessAct
 				if (!active.resourceOrigin) {
 					inFlight.push({
 						ActionId: active.actionId,
-						Name: (active.fn as Function).name || null,
+						Name: active.durableName,
+						Label: active.label,
+						...(active.receiver !== undefined
+							? {
+									Receiver: active.receiver
+								}
+							: {}),
 						EntityId: active.entityId
 					});
 				}
@@ -1493,7 +1596,8 @@ export function createProcessAction(options: IProcessActionOptions): IProcessAct
 			{
 				Type: "Action/Error",
 				Error: serializeThrow(failure.error),
-				ActionName: failure.actionName,
+				Name: failure.name,
+				Label: failure.label,
 				...(failure.cause
 					? {
 							Cause: serializeThrow(failure.cause.error)
@@ -1515,8 +1619,10 @@ export function createProcessAction(options: IProcessActionOptions): IProcessAct
 			const own: IFailure = {
 				error: outcome.error,
 				entityId: errorBoundary.ownerId,
-				actionName: errorBoundary.handle.name,
+				name: null,
+				label: labelOf(errorBoundary.handle),
 				actionId,
+				action: errorBoundary.handle,
 				status: "errored",
 				close: false,
 				cause: failure
@@ -1536,7 +1642,8 @@ export function createProcessAction(options: IProcessActionOptions): IProcessAct
 		}
 		try {
 			onError(failure.error, {
-				ActionName: failure.actionName,
+				Name: failure.name,
+				Label: failure.label,
 				EntityId: failure.entityId,
 				...(failure.cause
 					? {
@@ -1570,7 +1677,7 @@ export function createProcessAction(options: IProcessActionOptions): IProcessAct
 		...args: A
 	): Promise<R | undefined> {
 		if (syncCallOpen()) {
-			refuseInSyncCall(`tried to dispatch action "${action?.name || "(anonymous)"}"`);
+			refuseInSyncCall(`tried to dispatch action "${displayName(action)}"`);
 		}
 		// A first-slice throw is taken before the promise exists.
 		let running: Promise<R | undefined> | undefined;
@@ -1604,7 +1711,7 @@ export function createProcessAction(options: IProcessActionOptions): IProcessAct
 		if (gateway?.frameOpen()) {
 			// A refused argument fails the action without a slice, so it needn't wait.
 			try {
-				copies = copyArguments(action.name || "(anonymous)", args);
+				copies = copyArguments(displayName(action), args);
 			} catch {
 				copies = undefined;
 			}
@@ -1643,7 +1750,7 @@ export function createProcessAction(options: IProcessActionOptions): IProcessAct
 		dispatchOptions: IInternalDispatchOptions
 	): Promise<R | undefined> {
 		if (syncCallOpen()) {
-			refuseInSyncCall(`tried to dispatch action "${action?.name || "(anonymous)"}"`);
+			refuseInSyncCall(`tried to dispatch action "${displayName(action)}"`);
 		}
 		return afterFrame(action, args, idAccessor, (copies) =>
 			dispatchAction(action, getState, setState, idAccessor, copies, dispatchOptions)
@@ -1663,8 +1770,14 @@ export function createProcessAction(options: IProcessActionOptions): IProcessAct
 		const isRun = origin?.Kind === "resource:run";
 		const node = readNodeOf(setState);
 		const key = gateKeyOf(entityId, node, isRun);
+		const recordRoot = options.gateway?.rootNameOf(key ?? entityId) ?? "AppState";
+		requireName(action, recordRoot, origin);
+		const receiver = receiverOf(action);
 		const active: IActiveAction = {
-			name: action.name || "(anonymous)",
+			name: displayName(action),
+			durableName: receiver === undefined ? nameOf(action) : null,
+			label: labelOf(action),
+			receiver,
 			actionId: "",
 			entityId,
 			fn: isRun ? null : action,
@@ -1684,7 +1797,7 @@ export function createProcessAction(options: IProcessActionOptions): IProcessAct
 			refusals: null,
 			emitDiag,
 			resourceOrigin: origin !== undefined,
-			recordRoot: options.gateway?.rootNameOf(key ?? entityId) ?? "AppState",
+			recordRoot,
 			root: null,
 			gate: null,
 			holding: false,
@@ -1793,7 +1906,8 @@ export function createProcessAction(options: IProcessActionOptions): IProcessAct
 			refusalOut: (error) => {
 				active.refusals?.delete(error);
 			},
-			wakes: createWakeQueue()
+			wakes: createWakeQueue(),
+			requireName: (started, startedOn) => requireName(started, options.gateway?.rootNameOf(startedOn) ?? "AppState", undefined)
 		};
 		const ctx = makeFiberContext(env, rootFiber, origin);
 
@@ -1807,7 +1921,13 @@ export function createProcessAction(options: IProcessActionOptions): IProcessAct
 					T: actionStart,
 					Kind: "action:start",
 					ActionId: actionId,
-					Name: action.name || null,
+					Name: active.durableName,
+					Label: active.label,
+					...(active.receiver !== undefined
+						? {
+								Receiver: active.receiver
+							}
+						: {}),
 					EntityId: entityId,
 					Path: [
 						...(resolvePath ? resolvePath(entityId) : [])
@@ -1985,8 +2105,10 @@ export function createProcessAction(options: IProcessActionOptions): IProcessAct
 		const failureOf = (status: "errored" | "cancelled", kept: IKept): IFailure => ({
 			error: kept.error,
 			entityId: active.routeId,
-			actionName: active.name,
+			name: active.durableName,
+			label: active.label,
 			actionId: active.actionId,
+			action: active.fn,
 			status,
 			close: kept.close
 		});
@@ -2044,15 +2166,21 @@ export function createProcessAction(options: IProcessActionOptions): IProcessAct
 					error: serializeThrow(kept.error)
 				}
 			});
-			emitFailure({
-				Error: kept.error,
-				ActionId: active.actionId,
-				ActionName: active.name,
-				EntityId: active.routeId,
-				Status: status,
-				Close: kept.close,
-				Taken: false
-			});
+			emitFailure(
+				withAction(
+					{
+						Error: kept.error,
+						ActionId: active.actionId,
+						Name: active.durableName,
+						Label: active.label,
+						EntityId: active.routeId,
+						Status: status,
+						Close: kept.close,
+						Taken: false
+					},
+					active.fn
+				)
+			);
 		}
 		if (active.finished) {
 			return;

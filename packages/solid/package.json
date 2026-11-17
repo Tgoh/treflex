@@ -1,6 +1,6 @@
 {
 	"name": "treflex-solid",
-	"version": "0.1.1",
+	"version": "0.2.0",
 	"description": "Solid bindings for treflex",
 	"license": "MIT",
 	"author": "Tam Goh",
@@ -36,6 +36,6 @@
 	},
 	"peerDependencies": {
 		"solid-js": "^1.9.7",
-		"treflex": "0.1.1"
+		"treflex": "0.2.0"
 	}
 }

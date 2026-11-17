@@ -9,8 +9,9 @@ import { openResource } from "../../src/Effects/openResource";
 import { parallel } from "../../src/Effects/parallel";
 import { resource } from "../../src/Effects/resource";
 import { start } from "../../src/Effects/start";
-import { getDataGlobal } from "../../src/Reads/getData";
+import { external } from "../../src/Reads/external";
 import { bind } from "../../src/Runtime/bind";
+import { createActivityLog, type IActivityLogEntry } from "../../src/Runtime/createActivityLog";
 import { createRuntime } from "../../src/Runtime/createRuntime";
 import { open } from "../../src/Runtime/open";
 import { receiver } from "../../src/Runtime/receiver";
@@ -151,7 +152,7 @@ async function build(verifyIndex?: "always") {
 				> => r.Kind === kind
 			),
 		endOf: (name: string) => {
-			const started = records.find((r) => r.Kind === "action:start" && r.Name === name) as
+			const started = records.find((r) => r.Kind === "action:start" && r.Label === name) as
 				| Extract<
 						IRecord,
 						{
@@ -1123,9 +1124,9 @@ describe("a throw in the step that stops the fiber or whose flush throws", () =>
 describe("a failed fiber's error and the activity log", () => {
 	async function buildLogged() {
 		const runtime = createRuntime<IWorld>(seed(), {
-			activityLog: true,
 			onError: () => {}
 		}) as IRuntimeInternal<IWorld>;
+		createActivityLog(runtime);
 		runtime.registerImplementation(
 			implementation(secret, () => {
 				const error = new Error("refused") as Error & {
@@ -1137,14 +1138,9 @@ describe("a failed fiber's error and the activity log", () => {
 		);
 		const records: IRecord[] = [];
 		runtime.on("record", (record) => records.push(record));
-		const readLog = (): Promise<{
-			Entries: readonly {
-				Kind: string;
-				Data: unknown;
-			}[];
-		}> =>
-			runtime.dispatch(function* readActivityLog(_draft: IWorld): IActionGenerator<any> {
-				return yield* (getDataGlobal as any)("ActivityLog");
+		const readLog = (): Promise<readonly IActivityLogEntry[] | undefined> =>
+			runtime.dispatch(function* readActivityLog(_draft: IWorld): IActionGenerator<readonly IActivityLogEntry[] | undefined> {
+				return yield* external("ActivityLog");
 			}, "root");
 		return {
 			runtime,
@@ -1159,12 +1155,13 @@ describe("a failed fiber's error and the activity log", () => {
 
 	async function expectWithheld(h: Awaited<ReturnType<typeof buildLogged>>): Promise<void> {
 		const log = await h.readLog();
-		const end = log.Entries.find((entry) => entry.Kind === "branch:end");
+		const entries = log ?? [];
+		const end = entries.find((entry) => entry.Kind === "branch:end");
 		expect(end?.Data).toMatchObject({
 			Status: "errored"
 		});
 		expect(end?.Data).not.toHaveProperty("Error");
-		expect(JSON.stringify(log.Entries)).not.toContain("abc-token");
+		expect(JSON.stringify(entries)).not.toContain("abc-token");
 		const tapped = h.records.find((record) => record.Kind === "branch:end");
 		expect(JSON.stringify(tapped)).toContain("abc-token");
 		h.runtime.dispose();

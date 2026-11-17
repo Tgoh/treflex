@@ -149,7 +149,7 @@ export function* startClock(draft: IClock): IActionGenerator {
 |---|---|
 | Something live that outlives one effect call | A resource |
 | One-shot I/O, even "fetch, make a URL, download, revoke" inside one implementation | An [effect](./effects.md) |
-| A participant outside the tree that answers reads and hears publishes, and never initiates | An [external source](./lookup.md#external-sources) |
+| A value from outside the tree that selectors derive from, whose change starts no work and that a restore should read fresh | An [outside value](./derived-reads.md#an-outside-value-or-the-tree) |
 
 | Case | Shape |
 |---|---|

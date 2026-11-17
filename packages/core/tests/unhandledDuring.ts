@@ -22,7 +22,7 @@ export async function unhandledDuring(run: () => unknown): Promise<unknown[]> {
 	node.removeAllListeners("unhandledRejection");
 	node.on("unhandledRejection", listen);
 	try {
-		run();
+		await run();
 		await settled();
 	} finally {
 		node.off("unhandledRejection", listen);

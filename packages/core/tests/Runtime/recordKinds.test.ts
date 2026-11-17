@@ -2,6 +2,7 @@ import type { IRuntimeInternal } from "../../src/Runtime/internals";
 import type { IActionGenerator, IActionYield } from "../../src/Types/IAction";
 import type { IRecord, IRecordExtras } from "../../src/Types/IRecord";
 import { describe, expect, it } from "vitest";
+import { createActivityLog } from "../../src/Runtime/createActivityLog";
 import { createRuntime } from "../../src/Runtime/createRuntime";
 
 interface IWorld {
@@ -11,7 +12,7 @@ interface IWorld {
 
 const boom = new Error("boom");
 
-function build(options: { activityLog?: boolean } = {}) {
+function build() {
 	const gates: (() => void)[] = [];
 	const runtime = createRuntime<IWorld>(
 		{
@@ -20,7 +21,6 @@ function build(options: { activityLog?: boolean } = {}) {
 		},
 		{
 			onError: () => {},
-			activityLog: options.activityLog,
 			implementations: {
 				echo: () => Promise.resolve("ok"),
 				gate: () =>
@@ -113,10 +113,9 @@ describe("a record tap with kinds", () => {
 		expect(journal.enabled).toBe(false);
 	});
 
-	it("leaves step capture off under activityLog, which keeps no steps", () => {
-		const { journal } = build({
-			activityLog: true
-		});
+	it("leaves step capture off under createActivityLog, which keeps no steps", () => {
+		const { runtime, journal } = build();
+		createActivityLog(runtime);
 		expect(journal.wants("action:end")).toBe(true);
 		expect(journal.wants("message:deliver")).toBe(true);
 		expect(journal.wants("step")).toBe(false);

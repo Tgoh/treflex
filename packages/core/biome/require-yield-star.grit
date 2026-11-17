@@ -25,6 +25,7 @@ pattern treflex_generator_creators() {
 		`getData`,
 		`getDataGlobal`,
 		`getDataPath`,
+		`external`,
 		`select`,
 		`transient`,
 		`inFlight`,
@@ -39,6 +40,7 @@ pattern treflex_generator_creators() {
 // test's `select(runtime, selector)`.
 pattern treflex_value_reads() {
 	or {
+		`external`,
 		`inFlight`,
 		`pendingAsks`,
 		`someGen`

@@ -1,6 +1,6 @@
 import type { IActionGenerator, IEntity, IReceiverId, ISelectorGenerator } from "treflex";
 import type { IFish } from "./Fish";
-import { entity, receiver, startTimer } from "treflex";
+import { entity, named, receiver, startTimer } from "treflex";
 import { random } from "../backend/backend";
 import { plural } from "../text";
 import { FishReceiver } from "./Fish";
@@ -85,6 +85,7 @@ export function* init(draft: IAquarium): IActionGenerator {
 	yield* addSchool(draft);
 	yield* addSchool(draft);
 }
+named(init, "Aquarium/Init");
 
 // Keyed on the species present, not on the count, so removing then re-adding can't bring back a duplicate.
 export function* addSchool(draft: IAquarium): IActionGenerator {
@@ -102,6 +103,7 @@ export function* addSchool(draft: IAquarium): IActionGenerator {
 		yield* addFish(draft, schoolId);
 	}
 }
+named(addSchool, "Aquarium/AddSchool");
 
 export function* addFish(draft: IAquarium, schoolId: string): IActionGenerator {
 	if (schoolFish(draft) >= MAX_FISH) return;
@@ -113,16 +115,19 @@ export function* addFish(draft: IAquarium, schoolId: string): IActionGenerator {
 	school.Fish.push(fish);
 	yield* startTimer(fish, "Fish/Swim", FishReceiver, period);
 }
+named(addFish, "Aquarium/AddFish");
 
 export function* releaseFish(draft: IAquarium, schoolId: string, fishId: string): IActionGenerator {
 	const school = draft.Schools.find((s) => s.$Id === schoolId);
 	if (!school) return;
 	school.Fish = school.Fish.filter((f) => f.$Id !== fishId);
 }
+named(releaseFish, "Aquarium/ReleaseFish");
 
 export function* releaseSchool(draft: IAquarium, schoolId: string): IActionGenerator {
 	draft.Schools = draft.Schools.filter((s) => s.$Id !== schoolId);
 }
+named(releaseSchool, "Aquarium/ReleaseSchool");
 
 export function* addGiant(draft: IAquarium): IActionGenerator {
 	if (draft.Giants.length >= MAX_GIANTS) return;
@@ -132,10 +137,12 @@ export function* addGiant(draft: IAquarium): IActionGenerator {
 	draft.Giants.push(giant);
 	yield* startTimer(giant, "Fish/Swim", FishReceiver, period);
 }
+named(addGiant, "Aquarium/AddGiant");
 
 export function* releaseGiant(draft: IAquarium, giantId: string): IActionGenerator {
 	draft.Giants = draft.Giants.filter((g) => g.$Id !== giantId);
 }
+named(releaseGiant, "Aquarium/ReleaseGiant");
 
 /** The fish in schools, giants left out, as MAX_FISH counts them. */
 export function schoolFish(draft: IAquarium): number {

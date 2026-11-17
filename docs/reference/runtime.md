@@ -63,13 +63,27 @@ Construction throws `SolidServerBuildError`, in every build, when `solid-js` res
 | Option | |
 |---|---|
 | `onError` | An `IErrorHandler`, `(error: unknown, context: IErrorContext) => void`: takes a failure no error boundary took ([`failure.md`](./failure.md#onerror)) |
-| `activityLog` | `true` or `{ cap }`: registers the activity log, 200 entries by default ([`lookup.md`](./lookup.md#the-activity-log)). Off by default |
-| `verifyIndex` | The index consistency walk, which checks the `$Id` index against a fresh walk of the tree and throws when a write bypassed the write path. `true` or `"always"` walks on every reconciliation, `false` or `"off"` never, `"budgeted"` at an interval scaled by tree size. Omitted, it is `"budgeted"` in a development build and `"off"` otherwise, and the `TREFLEX_VERIFY_INDEX` environment variable (`always`, `budgeted` or `off`) overrides that default |
+| `verifyIndex` | The index consistency walk, which checks the `$Id` index against a fresh walk of the tree and throws when a write bypassed the write path. `true` or `"always"` walks on every reconciliation, `false` or `"off"` never, `"budgeted"` at an interval scaled by tree size. Omitted, it is `"budgeted"` in a development build and `"off"` otherwise, and the `TREFLEX_VERIFY_INDEX` environment variable (`always`, `budgeted` or `off`) overrides that default. The test runtime's default is `"always"` ([`testing.md`](./testing.md#what-the-test-runtime-decides)) |
 | `implementations` | Effect implementations by `Type`, registered at construction. Entries are untyped, and a runtime operation's or a read's name throws |
 | `pauseTimers` | `true`: timer rows record and nothing ticks, for good ([`live-sources.md`](./live-sources.md#timers)) |
 | `pauseResources` | `true` pauses the resource manager for good ([`live-sources.md`](./live-sources.md#restore-and-tests)) |
+| `requireNames` | `true`: every action that can be saved needs a durable name ([below](#requirenames)) |
+| `build` | A non-empty string naming the code the runtime runs, written into a snapshot ([below](#build)) |
 
 A **development build** is one where `import.meta.env.DEV` is true, or, where that isn't defined, `process.env.NODE_ENV` isn't `"production"`, or, where neither is, always. Several diagnostics run only there ([`troubleshooting.md`](./troubleshooting.md)).
+
+### requireNames
+
+**`requireNames: true` requires a [durable name](./actions.md#durable-names) on every action that can enter a snapshot's in-flight list:** one dispatched on an entity in `AppState` with no resource origin, by `runtime.dispatch`, a feature method or a `start`. A delivery is exempt because it is saved under its receiver's id ([messaging](./messaging.md#what-names-a-delivery)), and an `r.run` action and work on an entity in `TransientState` or `ComponentState` because they are never saved.
+
+- **In a development build,** an unnamed one fails with `UnnamedActionError` before it starts: `runtime.dispatch`, and so a feature method, rejects with it, and a `start` throws it in the starter at the yield.
+- **Otherwise** it runs, its records and snapshot entry carry `Name: null`, and [`action/unnamed`](./troubleshooting.md#actionunnamed) is raised once per function in each runtime.
+
+A runtime without it requires nothing, and its unnamed actions record `Name: null`.
+
+### build
+
+**`build` names the code the runtime runs:** a CI commit id, or a time the bundler writes in at build time. Anything but a non-empty string or `undefined` throws `TypeError`. `createSnapshot` writes it into the envelope, and a restore says whether a save is from the same build ([the build and the names](./restart-and-records.md#the-build-and-the-names)). A development server passes none: its code changes with every edit, and a reload after an edit restores into that code, so no id is honest for it, and with none a save is never from the same build.
 
 ### IRuntime
 
@@ -85,12 +99,12 @@ A **development build** is one where `import.meta.env.DEV` is true, or, where th
 | `registerResourceType(type, implementation, options?)` | Registers a resource type; registering again replaces its instances ([`live-sources.md`](./live-sources.md#implementing-a-type)) |
 | `resources(owner?)`, `timers(owner?)` | Copies of the resource or timer rows, every one or one owner's |
 | `supplyResource(owner, key, value)` | What `useResource`'s `supply` does, from outside a view |
-| `registerExternalSource(source)` | Registers an [external source](./lookup.md#external-sources) |
+| `provideExternal(key, provider)` | Provides an [outside value](./derived-reads.md#providing-a-value) under the key, and returns its handle; providing a key again replaces its provider, with `external/replaced` |
 | `set(key, value)` | Stores a runtime service ([above](#runtime-services)) |
 | `on(event, handler, options?)` | `"record"` taps the record stream, with `{ kinds }` to narrow it ([`restart-and-records.md`](./restart-and-records.md#the-tap)); `"diag"` hears [diagnostics](./troubleshooting.md); `"failure"` hears [caught throws](./failure.md#the-failure-event). Returns the function that unsubscribes |
-| `dispose()` | Stops the timers and resources, disposes the external sources, then runs the dispose cascade over every entity in all three roots: running actions stop, asks end, rows and registrations go |
+| `dispose()` | Stops the timers, the resources and the outside values' subscriptions, then runs the dispose cascade over every entity in all three roots: running actions stop, asks end, rows and registrations go |
 
-Nothing registered can be unregistered: registering again replaces, or for an external source is ignored. For fresh registrations, construct a new runtime. Snapshot and restore are not on the runtime: they come from `treflex/snapshot`, and a restored runtime is a new one. The views reach the runtime through `TreflexProvider` ([`views.md`](./views.md#treflexprovider)).
+Nothing registered can be unregistered: registering again replaces. For fresh registrations, construct a new runtime. Snapshot and restore are not on the runtime: they come from `treflex/snapshot`, and a restored runtime is a new one. The views reach the runtime through `TreflexProvider` ([`views.md`](./views.md#treflexprovider)).
 
 ### dispatch
 
@@ -101,6 +115,7 @@ What it refuses, each a rejected promise, never a synchronous throw, and before 
 - **A target that isn't an entity**, a non-object or an object with no `$Id`: `TypeError`. For part of an entity, dispatch on the entity and pass where `locate(node)` puts the part as an argument.
 - **An `$Id` the tree doesn't hold**, unknown, removed, or a root's that has none: `EntityGoneError`, and [`dispatch/unresolved-entity`](./troubleshooting.md#dispatchunresolved-entity).
 - **A node that isn't the one the tree holds under its `$Id`**: an `Error`, and [`dispatch/node-mismatch`](./troubleshooting.md#dispatchnode-mismatch). It is a node that has left the tree, or a copy, an action's returned value, or another runtime's node. Pass `.$Id` for those.
+- **An action with no durable name,** in a development build of a runtime with [`requireNames`](#requirenames): `UnnamedActionError`.
 
 A component dispatches through its feature, or `useDispatch()` for an entity it has no feature for.
 
@@ -108,7 +123,7 @@ A component dispatches through its feature, or `useDispatch()` for an entity it 
 
 A key nothing set throws at the read, naming the key. `set` takes the value itself, not a factory, and `IActionContext` has no `set`, so an implementation can't paper over a missing registration.
 
-**The `runtime/` prefix is reserved.** treflex keeps its own stores under it: `runtime/diag`, `runtime/journal`, `runtime/effects`, `runtime/bindings`, `runtime/receivers`, `runtime/dataSources`, `runtime/timers`, `runtime/timerSchedule`, `runtime/resourceTable`, `runtime/resources`, `runtime/resolveOwner`, `runtime/asks`, `runtime/inFlightStub`, `runtime/inFlightActions`, `runtime/stateIdLookup`, `runtime/externalSources` and `runtime/writeGateway`. Their shapes are internal. Namespace application keys with a prefix of your own.
+**The `runtime/` prefix is reserved.** treflex keeps its own stores under it: `runtime/diag`, `runtime/journal`, `runtime/effects`, `runtime/bindings`, `runtime/receivers`, `runtime/dataSources`, `runtime/timers`, `runtime/timerSchedule`, `runtime/resourceTable`, `runtime/resources`, `runtime/resolveOwner`, `runtime/asks`, `runtime/inFlightStub`, `runtime/inFlightActions`, `runtime/stateIdLookup`, `runtime/externals`, `runtime/writeGateway` and `runtime/build`. Their shapes are internal. Namespace application keys with a prefix of your own.
 
 ## Caveats
 

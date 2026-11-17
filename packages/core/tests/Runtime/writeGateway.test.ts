@@ -9,6 +9,7 @@ import { registerDataSource } from "../../src/Effects/registerDataSource";
 import { startTimer } from "../../src/Effects/startTimer";
 import { unregisterDataSource } from "../../src/Effects/unregisterDataSource";
 import { bind } from "../../src/Runtime/bind";
+import { createActivityLog } from "../../src/Runtime/createActivityLog";
 import { createJournal } from "../../src/Runtime/createJournal";
 import { createRuntime } from "../../src/Runtime/createRuntime";
 import { createWriteGateway, TRIPWIRE_MASK, VERIFY_MIN_CADENCE, VERIFY_NODE_BUDGET } from "../../src/Runtime/createWriteGateway";
@@ -1200,9 +1201,8 @@ describe("createWriteGateway", () => {
 		});
 
 		it("a tap (the activity log's) throws identically", () => {
-			const runtime = createRuntime<TestState>(initialState(), {
-				activityLog: true
-			});
+			const runtime = createRuntime<TestState>(initialState(), {});
+			createActivityLog(runtime);
 			expect(() =>
 				rootSetState(runtime)((s) => {
 					s.Count = 5;

@@ -1,11 +1,11 @@
 import type { IResourceRow } from "../Runtime/createResourceTable";
 import type { IRuntimeStoreReader } from "../Runtime/processAction";
 import type { IDiagEmitter } from "../Types/IRuntimeEvent";
-import type { ISnapshot } from "./ISnapshot";
+import type { ISnapshot, ISnapshotInFlightEntryV7 } from "./ISnapshot";
 import { copySeed } from "../Runtime/viewProxy";
 import { host } from "../Solid/host";
 import { MAX_TREE_DEPTH, nestsDeeperThanBound } from "./depth";
-import { SNAPSHOT_FORMAT_VERSION } from "./ISnapshot";
+import { PREVIOUS_SNAPSHOT_FORMAT_VERSION, SNAPSHOT_FORMAT_VERSION } from "./ISnapshot";
 
 const UNRESOLVED_SAMPLE = 10;
 
@@ -23,8 +23,12 @@ export class SnapshotRejectedError extends Error {
 
 export interface IRestoreDrop {
 	actionId: string;
-	// A label as the writing build spelled it, never a key to resolve (see ISnapshot).
+	/** The action's durable name, or null. */
 	name: string | null;
+	/** The function's own name as the writing build spelled it, for display, or null. */
+	label: string | null;
+	/** Present for a delivery: its receiver's id. */
+	receiver?: string;
 	entityId: string;
 }
 
@@ -39,6 +43,10 @@ export interface IRestoreResult {
 	dropped: IRestoreDrop[];
 	unresolved: IRestoreUnresolvedRow[];
 	sweptOrphanedRows: number;
+	/** The envelope's `Build`: the writing runtime's `build`, or null. */
+	savedBuild: string | null;
+	/** True only when `savedBuild` and this runtime's `build` are both strings and equal. */
+	sameBuild: boolean;
 }
 
 function isResourceRow(row: unknown): row is IResourceRow {
@@ -69,9 +77,10 @@ export function gateSnapshot(snapshotJson: string): ISnapshot {
 	if (snapshot === null || typeof snapshot !== "object") {
 		throw new SnapshotRejectedError("[treflex] restore: the snapshot is not an envelope object. Discard it and boot fresh.");
 	}
-	if (snapshot.Version !== SNAPSHOT_FORMAT_VERSION) {
+	if (snapshot.Version !== SNAPSHOT_FORMAT_VERSION && snapshot.Version !== PREVIOUS_SNAPSHOT_FORMAT_VERSION) {
 		throw new SnapshotRejectedError(
-			`[treflex] restore: snapshot format v${snapshot.Version} does not match this build's v${SNAPSHOT_FORMAT_VERSION} — ` +
+			`[treflex] restore: snapshot format v${snapshot.Version} is not one this treflex reads, ` +
+				`v${PREVIOUS_SNAPSHOT_FORMAT_VERSION} or v${SNAPSHOT_FORMAT_VERSION} — ` +
 				`the envelope cannot be read. Discard the snapshot and boot fresh.`
 		);
 	}
@@ -246,12 +255,33 @@ export function reportUnresolved(rows: readonly IRestoreUnresolvedRow[], emitDia
 	});
 }
 
-const labelOf = (name: unknown): string | null => (typeof name === "string" ? name : null);
+const stringOrNull = (value: unknown): string | null => (typeof value === "string" ? value : null);
 
 export function droppedActions(snapshot: ISnapshot): IRestoreDrop[] {
-	return snapshot.InFlight.map((entry) => ({
-		actionId: entry.ActionId,
-		name: labelOf(entry.Name ?? entry.Key),
-		entityId: entry.EntityId
-	}));
+	if (snapshot.Version === PREVIOUS_SNAPSHOT_FORMAT_VERSION) {
+		return (snapshot.InFlight as unknown as ISnapshotInFlightEntryV7[]).map((entry) => ({
+			actionId: entry.ActionId,
+			name: null,
+			label: stringOrNull(entry.Name ?? entry.Key),
+			entityId: entry.EntityId
+		}));
+	}
+	return snapshot.InFlight.map((entry) => {
+		const receiver = entry.Receiver;
+		return {
+			actionId: entry.ActionId,
+			name: stringOrNull(entry.Name),
+			label: stringOrNull(entry.Label),
+			...(typeof receiver === "string"
+				? {
+						receiver
+					}
+				: {}),
+			entityId: entry.EntityId
+		};
+	});
+}
+
+export function savedBuildOf(snapshot: ISnapshot): string | null {
+	return snapshot.Version === PREVIOUS_SNAPSHOT_FORMAT_VERSION ? null : stringOrNull(snapshot.Build);
 }

@@ -7,14 +7,16 @@ export default defineConfig({
 	],
 	test: {
 		name: "treflex",
-		// The index consistency walk on every reconciliation, so every test is
-		// a bypass detector. Consumers get the budgeted default (see
-		// createWriteGateway).
+		// The index consistency walk on every reconciliation for the tests on a bare
+		// createRuntime too, so every test is a bypass detector.
 		env: {
 			TREFLEX_VERIFY_INDEX: "always"
 		},
 		// vite-plugin-solid defaults this to jsdom.
 		environment: "node",
+		setupFiles: [
+			"./src/Testing/vitest.ts"
+		],
 		include: [
 			"tests/**/*.test.ts"
 		]

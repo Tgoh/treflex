@@ -130,6 +130,29 @@ describe("require-yield-star", () => {
 		]);
 	}, 30_000);
 
+	it("reports external built and discarded or read as a condition, and passes it delegated", () => {
+		const lines = diagnosedLines(
+			[
+				"export function* reads(draft: any): Generator<any, boolean, any> {",
+				'\texternal("Online");',
+				'\tif (external("Online")) return true;',
+				'\tconst usable = external("Online") && draft.Ready;',
+				'\tconst label = external("Online") ? 1 : 0;',
+				'\tif (yield* external("Online")) return true;',
+				'\tconst online = (yield* external("Online")) && usable;',
+				"\treturn online && label > 0;",
+				"}",
+				""
+			].join("\n")
+		);
+		expect(lines).toEqual([
+			2,
+			3,
+			4,
+			5
+		]);
+	}, 30_000);
+
 	it("reports a creator inside a delegated call's condition, and passes a logical right side", () => {
 		const lines = diagnosedLines(
 			[

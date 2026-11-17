@@ -318,7 +318,7 @@ export function stateRules(build: string): void {
 			const during = JSON.parse(createSnapshot(runtime)).InFlight;
 			expect(
 				during.map((entry: any) => [
-					entry.Name,
+					entry.Label,
 					entry.EntityId
 				])
 			).toEqual([

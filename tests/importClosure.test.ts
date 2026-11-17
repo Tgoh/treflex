@@ -140,9 +140,22 @@ describe("package boundaries", () => {
 		]);
 		expect(coreEntries.sort()).toEqual([
 			"packages/core/src/Snapshot/index.ts",
+			"packages/core/src/Testing/vitest.ts",
 			"packages/core/src/index.ts",
 			"packages/core/src/internal.ts"
 		]);
+	});
+
+	it("only treflex/vitest names vitest, and no other entry reaches it", () => {
+		const entry = entries["treflex/vitest"] as string;
+		const closure = importClosure(coreEntries.filter((key) => key !== entry));
+		expect(closure.has(entry)).toBe(false);
+		const offenders = Object.keys(sources)
+			.filter((key) => key !== entry && key.startsWith(CORE))
+			.filter((key) => specifiers(key).some((spec) => spec === "vitest" || spec.startsWith("vitest/")))
+			.sort();
+		expect(offenders).toEqual([]);
+		expect(specifiers(entry)).toContain("vitest");
 	});
 
 	it("the core entry reaches nothing under packages/core/src/Snapshot", () => {

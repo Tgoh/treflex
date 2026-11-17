@@ -7,6 +7,7 @@ import {
 	ask,
 	inFlight,
 	leading,
+	named,
 	open,
 	pendingAsks,
 	publish,
@@ -145,6 +146,7 @@ export function* beginTrip(draft: ITrip): IActionGenerator {
 		yield* start(search, leg);
 	}
 }
+named(beginTrip, "Trips/BeginTrip");
 
 export function* searchAgain(draft: ITrip, legId: string): IActionGenerator {
 	const leg = draft.Legs.find((l) => l.$Id === legId);
@@ -152,6 +154,7 @@ export function* searchAgain(draft: ITrip, legId: string): IActionGenerator {
 	yield* runClock(draft);
 	yield* start(search, leg);
 }
+named(searchAgain, "Trips/SearchAgain");
 
 export function* chooseFlight(draft: ITrip) {
 	if (!awaitingChoice(draft)) return;
@@ -174,6 +177,7 @@ export function* chooseFlight(draft: ITrip) {
 	yield* publish("Trip/Answered");
 	yield* wrapUp(draft);
 }
+named(chooseFlight, "Trips/ChooseFlight");
 leading(chooseFlight);
 
 function* holdFor(draft: ITrip, line: string): IActionGenerator {
@@ -187,17 +191,20 @@ function* holdFor(draft: ITrip, line: string): IActionGenerator {
 export function* pickFare(_draft: ITrip, askId: IAskId<string>, fareId: string): IActionGenerator {
 	yield* answer(askId, fareId);
 }
+named(pickFare, "Trips/PickFare");
 
 export function* holdAgain(draft: ITrip): IActionGenerator {
 	if (draft.Choice === null || holdLeft(draft) > 0) return;
 	yield* holdFor(draft, `Holding the ${draft.Choice.Carrier} fare again for 15 minutes.`);
 }
+named(holdAgain, "Trips/HoldAgain");
 
 export function* markLeft(draft: ITrip): IActionGenerator {
 	if (!(yield* isSearching(draft))) return;
 	const away = yield* awayMark(draft);
 	away.Away = true;
 }
+named(markLeft, "Trips/MarkLeft");
 
 export function* markBack(draft: ITrip): IActionGenerator {
 	const away = yield* awayMark(draft);
@@ -205,6 +212,7 @@ export function* markBack(draft: ITrip): IActionGenerator {
 	away.Away = false;
 	yield* publish("Trip/CameBack");
 }
+named(markBack, "Trips/MarkBack");
 
 export const actions = {
 	chooseFlight,

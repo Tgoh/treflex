@@ -88,8 +88,8 @@ Nothing is unwound, with two exceptions: a step whose writes break the tree rule
 
 1. **The nearest error boundary**: the nearest ancestor [bound](./messaging.md#binding) to a registered receiver with an `Action/Error` case, walking up from the failing entity's parent, from where the entity is now. An ancestor bound to an unregistered receiver is passed. An entity that has left the tree has no error boundary. An action on [part of an entity](./views.md#a-form-over-part-of-an-entity) fails from that entity.
 2. **The error boundary has taken it when its action completes**, an early return included. If its action ends cancelled or dropped, the failure goes on up.
-3. **An error boundary passes a failure on by rethrowing the payload it was given.** The next one up gets the same failure, with the same publisher and action name. Any other throw is the error boundary's own failure: it takes the route from the error boundary's entity, naming its receiver as the action, and carries the failure it was handling as `Cause`.
-4. **`onError`** takes what no error boundary took, a root's own failure included. Its `IErrorContext` is `{ ActionName, EntityId, Cause? }`, `Cause` being the live failure an error boundary was handling when the failure is the error boundary's own. A failure an error boundary took never reaches it, so it is not a count of every failure: the `failure` event is.
+3. **An error boundary passes a failure on by rethrowing the payload it was given.** The next one up gets the same failure, with the same publisher, `Name` and `Label`. Any other throw is the error boundary's own failure: it takes the route from the error boundary's entity, and carries the failure it was handling as `Cause`.
+4. **`onError`** takes what no error boundary took, a root's own failure included. Its `IErrorContext` is `{ Name, Label, EntityId, Cause? }`, `Name` and `Label` as on the [failure event](#the-failure-event), `Cause` being the live failure an error boundary was handling when the failure is the error boundary's own. A failure an error boundary took never reaches it, so it is not a count of every failure: the `failure` event is.
 5. **Nothing**, when there is no `onError` or `onError` throws: an unhandled rejection ([below](#the-dispatch-promise) says of what).
 
 The delivery to an error boundary queues behind a [hold](./actions.md#holds) on its entity like any work, so an error boundary whose entity is held across a long wait hears its failures after the wait. [`action/long-hold`](./troubleshooting.md#actionlong-hold) names the stall; an action that must hear them during the wait wraps it in `open(...)`.
@@ -99,7 +99,7 @@ The delivery to an error boundary queues behind a [hold](./actions.md#holds) on 
 | Field | |
 |---|---|
 | `Error` | The throw, serialized: `{ Thrown: "error", Name, Message, Stack?, Fields? }` for an `Error`, `Fields` holding a JSON-safe copy of its enumerable own fields; `{ Thrown: "value", Data? }` for any other value, a server's error envelope say |
-| `ActionName` | The action that failed |
+| `Name`, `Label` | The action that failed: its [durable name](./actions.md#durable-names) or `null`, and its function's own name or `null`, a label for display |
 | `Cause` | On an error boundary's own failure, the failure it was handling, serialized |
 
 The context's `publisher.Id` is the entity whose action failed. The error is serialized because a message is data. The shape is `ISerializedThrow`, and an app can make one itself with `serializeThrow(error)`, which never throws: to put a failure in state, or log it as data.
@@ -137,7 +137,8 @@ A dispatch refused before the action starts takes no route: a target [`dispatch`
 | Field | |
 |---|---|
 | `Error` | The live throw |
-| `ActionId`, `ActionName`, `EntityId` | The action that threw and its entity. An error boundary's own failure names its receiver |
+| `ActionId`, `EntityId` | The action that threw and its entity |
+| `Name`, `Label` | The action's [durable name](./actions.md#durable-names) or `null`, and its function's own name or `null`, a label for display. A log reads `Name ?? Label`. An error boundary's own failure, and a delivery's, has no name, and its label is the receiver's id |
 | `Status` | How the action ended: `"errored"`, `"cancelled"`, or `"completed"` for a close throw after it completed |
 | `Close` | The throw came out of a close: a `finally` run as the generator was stopped or failed |
 | `Taken` | Whether an error boundary or `onError` took it. A throw with no route has nothing to take it |
@@ -172,7 +173,6 @@ JavaScript can't let a refusal skip a `catch`, so a `catch` that can meet one re
 
 - **A receiver's own throw** fails its delivery's action, routed from the receiver's entity, and lands a `receiver:error` record. The publisher never hears it ([`messaging.md`](./messaging.md#publish)).
 - **An `r.run`'s failure** rejects the promise the resource holds and lands in its terminal record; no error boundary, `onError` or `failure` event hears it ([`live-sources.md`](./live-sources.md#rrun)). A resource that fails ends with `$Ended`.
-- **An external source's `receivePublish` throw** lands a `receiver:error` record only ([`lookup.md`](./lookup.md#external-sources)).
 
 #### A view's throw
 

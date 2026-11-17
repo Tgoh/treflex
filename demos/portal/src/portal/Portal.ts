@@ -6,7 +6,7 @@ import type { IPlanner } from "../trips/Planner";
 import type { IThreadLine } from "../trips/Trip";
 import type { IRestoreLines } from "./restoreBanner";
 import type { IAppId, IFinished } from "./topics";
-import { publish, receiver, start, startTimer, stopTimer, transient } from "treflex";
+import { named, publish, receiver, start, startTimer, stopTimer, transient } from "treflex";
 import * as Aquarium from "../aquarium/Aquarium";
 import * as Chat from "../chat/Chat";
 import { conversationLabel } from "../chat/directory";
@@ -74,6 +74,7 @@ export function* init(draft: IPortal): IActionGenerator {
 	yield* start(Aquarium.init, draft.Aquarium);
 	yield* start(Chat.init, draft.Chat);
 }
+named(init, "Portal/Init");
 
 function* clearShownToast(draft: IPortal): IActionGenerator {
 	const mark = yield* toastMark(draft);
@@ -94,10 +95,12 @@ export function* openApp(draft: IPortal, app: IAppId): IActionGenerator {
 		App: app
 	});
 }
+named(openApp, "Portal/OpenApp");
 
 export function* toggleRecords(draft: IPortal): IActionGenerator {
 	draft.RecordsOpen = !draft.RecordsOpen;
 }
+named(toggleRecords, "Portal/ToggleRecords");
 
 export function* dismissRestore(draft: IPortal): IActionGenerator {
 	draft.Restore = null;
@@ -105,12 +108,14 @@ export function* dismissRestore(draft: IPortal): IActionGenerator {
 	draft.Aquarium.Restore = null;
 	draft.Chat.Restore = null;
 }
+named(dismissRestore, "Portal/DismissRestore");
 
 export function* dismissToast(draft: IPortal): IActionGenerator {
 	const mark = yield* toastMark(draft);
 	mark.Toast = null;
 	yield* stopTimer(draft, "Portal/ToastTimeout");
 }
+named(dismissToast, "Portal/DismissToast");
 
 export function* followToast(draft: IPortal): IActionGenerator {
 	const mark = yield* toastMark(draft);
@@ -122,6 +127,7 @@ export function* followToast(draft: IPortal): IActionGenerator {
 	if (App === "trips") yield* start(Planner.openTrip, draft.Trips, Target);
 	if (App === "chat") yield* start(Chat.openConversation, draft.Chat, Target);
 }
+named(followToast, "Portal/FollowToast");
 
 export function* applyToastVoucher(draft: IPortal): IActionGenerator {
 	const mark = yield* toastMark(draft);
@@ -130,12 +136,14 @@ export function* applyToastVoucher(draft: IPortal): IActionGenerator {
 	yield* stopTimer(draft, "Portal/ToastTimeout");
 	yield* start(Chat.applyVoucher, draft.Chat);
 }
+named(applyToastVoucher, "Portal/ApplyToastVoucher");
 
 export function* announceRestore(_draft: IPortal, droppedEntityIds: string[]): IActionGenerator {
 	yield* publish("Portal/Restored", {
 		DroppedEntityIds: droppedEntityIds
 	});
 }
+named(announceRestore, "Portal/AnnounceRestore");
 
 export const actions = {
 	openApp,

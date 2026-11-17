@@ -3,7 +3,7 @@ import type { IFare } from "../backend/backend";
 import type { IDestinationKey, ILegKind } from "./destinations";
 import type { ILeg } from "./Leg";
 import type { ITrip, ITripDot } from "./Trip";
-import { entity, mapGen, publish, publishToNearest, receiver, someGen, start } from "treflex";
+import { entity, mapGen, named, publish, publishToNearest, receiver, someGen, start } from "treflex";
 import { now } from "../backend/backend";
 import { money, plural } from "../text";
 import { DESTINATIONS, LEG_KINDS } from "./destinations";
@@ -107,6 +107,7 @@ export function* startTrip(draft: IPlanner, destination: IDestinationKey): IActi
 		OthersRunning: othersRunning
 	});
 }
+named(startTrip, "Trips/StartTrip");
 
 export function* openTrip(draft: IPlanner, tripId: string | null): IActionGenerator {
 	if (draft.OpenTripId === tripId) return;
@@ -115,6 +116,7 @@ export function* openTrip(draft: IPlanner, tripId: string | null): IActionGenera
 	if (draft.Visible) yield* arrive(draft);
 	yield* publishToNearest(draft, "Portal/Viewed");
 }
+named(openTrip, "Trips/OpenTrip");
 
 export function* removeTrip(draft: IPlanner, tripId: string): IActionGenerator {
 	draft.Trips = draft.Trips.filter((t) => t.$Id !== tripId);
@@ -124,11 +126,13 @@ export function* removeTrip(draft: IPlanner, tripId: string): IActionGenerator {
 		if (draft.Restore.Trips.length === 0) draft.Restore = null;
 	}
 }
+named(removeTrip, "Trips/RemoveTrip");
 
 /** A planner view's word that it has started the flourish, so no view plays it again. */
 export function* flourishPlayed(draft: IPlanner): IActionGenerator {
 	if (draft.Voucher && !draft.Voucher.Played) draft.Voucher.Played = true;
 }
+named(flourishPlayed, "Trips/FlourishPlayed");
 
 export const actions = {
 	startTrip,

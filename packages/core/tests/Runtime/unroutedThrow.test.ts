@@ -215,7 +215,7 @@ describe("action/unrouted-throw", () => {
 			await settled();
 			expect(
 				failures.map((failure) => [
-					failure.ActionName,
+					failure.Label,
 					failure.Error,
 					failure.Taken
 				])

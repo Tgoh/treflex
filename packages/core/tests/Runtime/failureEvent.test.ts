@@ -111,7 +111,8 @@ describe("the failure event", () => {
 			{
 				Error: boom,
 				ActionId: expect.any(String),
-				ActionName: "fails",
+				Name: null,
+				Label: "fails",
 				EntityId: "child",
 				Status: "errored",
 				Close: false,
@@ -148,7 +149,7 @@ describe("the failure event", () => {
 		expect(
 			h.failures.map((failure) => [
 				failure.Error,
-				failure.ActionName,
+				failure.Label,
 				failure.EntityId,
 				failure.Taken,
 				failure.Cause

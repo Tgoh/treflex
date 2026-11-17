@@ -8,8 +8,10 @@ export interface IMessageRegistry {
 	"Action/Error": {
 		/** The throw, serialized to data. */
 		Error: ISerializedThrow;
-		/** The action that failed. An error boundary's own failure names its receiver. */
-		ActionName: string;
+		/** The durable name of the action that failed, or null. */
+		Name: string | null;
+		/** The function's own name, for display, or null. An error boundary's own failure carries its receiver's id. */
+		Label: string | null;
 		/** On an error boundary's own failure, the failure it was handling. */
 		Cause?: ISerializedThrow;
 	};

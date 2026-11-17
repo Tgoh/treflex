@@ -3,8 +3,10 @@ export interface IFailureEvent {
 	/** The live throw. */
 	readonly Error: unknown;
 	readonly ActionId: string;
-	/** The action that threw. An error boundary's own failure names its receiver. */
-	readonly ActionName: string;
+	/** The durable name of the action that threw, or null. */
+	readonly Name: string | null;
+	/** The function's own name, for display, or null. An error boundary's own failure carries its receiver's id. */
+	readonly Label: string | null;
 	/** The entity the action ran on. */
 	readonly EntityId: string;
 	/** How the action ended. */

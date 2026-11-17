@@ -42,7 +42,7 @@ function world(inFlush: (runtime: IRuntimeInternal<IWorld>) => void) {
 	const order: string[] = [];
 	runtime.on("record", (record) => {
 		if (record.Kind === "action:start") {
-			order.push(`start ${record.Name}`);
+			order.push(`start ${record.Label}`);
 		} else if (record.Kind === "step") {
 			order.push(`step ${record.Changes.map((change) => change.Path.join(".")).join(",")}`);
 		}

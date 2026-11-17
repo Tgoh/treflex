@@ -39,10 +39,10 @@ async function lint(code: string, filePath = `${FIXTURE}/file.ts`, after: object
 }
 
 describe("configs.recommended", () => {
-	it("sets every rule the plugin has", () => {
+	it("sets every rule the plugin has but require-name, which an app that never saves has no need of", () => {
 		const { rules } = plugin.configs.recommended;
 		for (const name of Object.keys(plugin.rules)) {
-			expect(rules[`treflex/${name}`]).toBe("error");
+			expect(rules[`treflex/${name}`]).toBe(name === "require-name" ? undefined : "error");
 		}
 	});
 

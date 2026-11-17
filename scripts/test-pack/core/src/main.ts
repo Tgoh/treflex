@@ -1,4 +1,13 @@
-import { createRuntime, generateGuid, getDataGlobal, type IActionGenerator, type IEntity, type IRuntimeServiceKey, publish } from "treflex";
+import {
+	createRuntime,
+	external,
+	generateGuid,
+	type IActionGenerator,
+	type IActivityLogEntry,
+	type IEntity,
+	type IRuntimeServiceKey,
+	publish
+} from "treflex";
 import { DEV } from "treflex/internal";
 import { createSnapshot, restoreRuntime } from "treflex/snapshot";
 import { expect, report } from "../../shared/report.js";
@@ -30,7 +39,7 @@ export function* announce(draft: ITodoList): IActionGenerator {
 // The keys below come from treflex's own `declare module` augmentations, which
 // a resolution that can't follow their specifiers drops, leaving `never`.
 export function* readsTheActivityLog(): IActionGenerator {
-	const log = yield* getDataGlobal("ActivityLog");
+	const log: readonly IActivityLogEntry[] | undefined = yield* external("ActivityLog");
 	void log;
 }
 export const journalKey: IRuntimeServiceKey = "runtime/journal";

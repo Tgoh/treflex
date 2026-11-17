@@ -39,6 +39,7 @@ export function createSnapshot<T extends object>(runtime: IRuntime<T>): string {
 	const schedule = get("runtime/timerSchedule");
 	const envelope: ISnapshot = {
 		Version: SNAPSHOT_FORMAT_VERSION,
+		Build: get("runtime/build"),
 		// Raw, so snapshotting from inside a reactive computation subscribes it to nothing.
 		AppState: rawOf(runtime.state),
 		DataSources: get("runtime/dataSources")

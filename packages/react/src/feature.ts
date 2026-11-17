@@ -135,8 +135,8 @@ function featureParts(factory: string, id: string | undefined, actions: Record<s
 		const run = (name: string) =>
 			(runtime as IRuntimeInternal<any>).runSelector(entry.selectors.current[name] as ISelector<any, any>, instance.getState);
 		const compute = (name: string) => (instance.live() ? frames.select(run(name)) : bound.held.current?.values.get(name));
-		// A selector can read what no tree write announces, a data source or the
-		// activity log, so each one a component has called is also watched itself.
+		// A selector can read what no tree write announces, a data source or an
+		// external value, so each one a component has called is also watched itself.
 		const syncWatches = () => {
 			const onChange = bound.onChange;
 			if (!onChange) {

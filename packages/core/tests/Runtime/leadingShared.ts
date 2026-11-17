@@ -248,7 +248,7 @@ export function leadingRules(build_: string): void {
 				"action:start",
 				"action:end"
 			]);
-			expect(dropped[0].Kind === "action:start" && dropped[0].Name).toBe("saveDoc");
+			expect(dropped[0].Kind === "action:start" && dropped[0].Label).toBe("saveDoc");
 			expect(dropped[1].Kind === "action:end" && dropped[1].Status).toBe("dropped");
 			h.releases[0]("done");
 			await first;
@@ -340,7 +340,7 @@ export function leadingRules(build_: string): void {
 			await first;
 			await second;
 			const start = h.records.find((record) => record.Kind === "action:start");
-			expect(start?.Kind === "action:start" && start.Name).toBeNull();
+			expect(start?.Kind === "action:start" && start.Label).toBeNull();
 		});
 
 		it("does not share a mark between two runtimes", async () => {
@@ -511,7 +511,7 @@ export function leadingRules(build_: string): void {
 				})
 			).resolves.toBe("1/two/true");
 			const start = h.records.find((record) => record.Kind === "action:start");
-			expect(start?.Kind === "action:start" && start.Name).toBe("passingOn");
+			expect(start?.Kind === "action:start" && start.Label).toBe("passingOn");
 			expect(passing.name).toBe("passingOn");
 		});
 
@@ -545,7 +545,7 @@ export function leadingRules(build_: string): void {
 			expect(h.a().Runs).toBe(1);
 			const names = h.records
 				.filter((record) => record.Kind === "action:start")
-				.map((record) => record.Kind === "action:start" && record.Name);
+				.map((record) => record.Kind === "action:start" && record.Label);
 			expect(names).toEqual([
 				"saveTitle",
 				"saveTitle"

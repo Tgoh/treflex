@@ -1,5 +1,4 @@
 import type { IActionGenerator } from "../../src/Types/IAction";
-import type { IExternalSource } from "../../src/Types/IExternalSource";
 import { createRoot } from "solid-js";
 import { describe, expect, it, vi } from "vitest";
 import { publish } from "../../src/Effects/publish";
@@ -167,65 +166,6 @@ describe("a fan-out that is only partly unresolved", () => {
 				expect(fanOut.UnresolvedIds).toBeUndefined();
 				expect(records.filter((record) => record.Kind === "receiver:error")).toEqual([]);
 				expect(records.filter((record) => record.Kind === "entity:dispose").map((record) => record.EntityId)).toContain("Doomed");
-				runtime.dispose();
-			} finally {
-				dispose();
-			}
-		});
-	});
-});
-
-describe("an external source that claimed a topic it cannot serve", () => {
-	function makeSource(id: string, extra: Partial<IExternalSource>): IExternalSource {
-		return {
-			Id: id,
-			Topics: [
-				"Ping"
-			],
-			...extra
-		};
-	}
-
-	it("is not reported as a receiver on a publish it has no receivePublish for", async () => {
-		await createRoot(async (dispose) => {
-			try {
-				const runtime = createRuntime<any>(
-					{
-						$Id: "Root"
-					},
-					{}
-				);
-				runtime.registerExternalSource(makeSource("DataOnlySource", {}));
-				const records: any[] = [];
-				const diags: any[] = [];
-				runtime.on("record", (record) => records.push(record));
-				runtime.on("diag", (event) => diags.push(event));
-
-				function* send(_draft: any): IActionGenerator {
-					yield* publishAny("Ping");
-				}
-				await runtime.processAction(
-					send,
-					() => runtime.state,
-					rootSetState(runtime),
-					() => "Root"
-				);
-				await settle();
-
-				const [fanOut] = records.filter((record) => record.Kind === "message:deliver");
-				expect(fanOut.RecipientIds).toEqual([]);
-				expect(fanOut.UnresolvedIds).toEqual([
-					"DataOnlySource"
-				]);
-				expect(diags).toContainEqual(
-					expect.objectContaining({
-						code: "receiver/unresolved",
-						data: expect.objectContaining({
-							kind: "source",
-							ownerId: "DataOnlySource"
-						})
-					})
-				);
 				runtime.dispose();
 			} finally {
 				dispose();

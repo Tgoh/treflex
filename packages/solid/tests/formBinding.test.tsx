@@ -207,7 +207,7 @@ function world(body: (state: IRoot) => JSX.Element) {
 						}))
 					: []
 			),
-		starts: () => records.filter((r) => r.Kind === "action:start" && r.Name !== "openDialog" && r.Name !== "closeDialog"),
+		starts: () => records.filter((r) => r.Kind === "action:start" && r.Label !== "openDialog" && r.Label !== "closeDialog"),
 		dispose: () => {
 			dispose();
 			runtime.dispose();
@@ -236,7 +236,7 @@ describe("a form binding over locate", () => {
 			w.starts().map(
 				(r) =>
 					r.Kind === "action:start" && [
-						r.Name,
+						r.Label,
 						r.EntityId,
 						r.Path
 					]
@@ -310,7 +310,7 @@ describe("a form binding over locate", () => {
 			w.starts().map((r) =>
 				r.Kind === "action:start"
 					? [
-							r.Name,
+							r.Label,
 							r.EntityId
 						]
 					: []

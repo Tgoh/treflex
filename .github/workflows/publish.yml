@@ -32,6 +32,7 @@ jobs:
             if [ -n "$(npm view "$name@$version" version 2>/dev/null)" ]; then
               echo "$name@$version is already on npm"
             else
-              npm publish "./release/$name-$version.tgz"
+              npm publish "./release/$name-$version.tgz" --loglevel=warn
+              echo "published $name@$version"
             fi
           done

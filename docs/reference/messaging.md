@@ -121,7 +121,7 @@ Use `publish` for "anything that cares should react" and `publishToNearest` for 
 
 ### What names a delivery
 
-Each delivery runs as the receiver's `handle`, an action named by the receiver's id. So `inFlight` counts a delivery as the case it matched, and as the receiver's `handle`; everything else names it by the receiver id, never by the case: the `action:start` record's `Name`, the `ActionName` of the `failure` event and of `onError`'s context, and the diags. To tell which case a failure came from, join its `ActionId` to its `action:start` record, whose first argument is the message, with the topic as its `Type`.
+Each delivery runs as the receiver's `handle`, a function named by the receiver's id. So `inFlight` counts a delivery as the case it matched, and as the receiver's `handle`; everything else names it by the receiver id, never by the case. Its `action:start` record and its entry in a snapshot carry the id as `Receiver`, with `Name: null`, since a delivery has no [durable name](./actions.md#durable-names): a receiver id and an action name can be equal without meaning one thing. The id is also the `Label` of the record, of the `failure` event and of `onError`'s context, and what the diags show. To tell which case a failure came from, join its `ActionId` to its `action:start` record, whose first argument is the message, with the topic as its `Type`.
 
 ### Registering
 
@@ -140,7 +140,7 @@ An entity that should hear some of a receiver's topics and not others gets a rec
 
 ### Who hears a publish
 
-**Who hears it** is decided at the yield: every entity bound to a registered receiver with a case for the topic, receivers in the order they were first registered for the topic, and each receiver's entities in tree order. A restored runtime whose `setup` registers receivers in the same order delivers in the same order as the one it was saved from. Every [external source](./lookup.md#external-sources) declaring the topic receives it too, during the yield.
+**Who hears it** is decided at the yield: every entity bound to a registered receiver with a case for the topic, receivers in the order they were first registered for the topic, and each receiver's entities in tree order. A restored runtime whose `setup` registers receivers in the same order delivers in the same order as the one it was saved from.
 
 ### When they run
 
@@ -169,7 +169,7 @@ A restore also lists such bindings in its result and in [`restore/unresolved-rec
 
 ### Records
 
-Each `publish` and `publishToNearest` lands one `message:deliver` record, even when nothing hears it, except a `publishToNearest` from an entity not in the tree: `Topic`, `PublisherId`, `RecipientIds` (the entities and external sources delivered to, in delivery order) and `UnresolvedIds` (those that may have claimed it and couldn't, absent when none). The payload is on the `effect` record's `Descriptor`. A receiver's throw lands a `receiver:error` record with the live error on the tap extras. See [`restart-and-records.md`](./restart-and-records.md#record-kinds).
+Each `publish` and `publishToNearest` lands one `message:deliver` record, even when nothing hears it, except a `publishToNearest` from an entity not in the tree: `Topic`, `PublisherId`, `RecipientIds` (the entities delivered to, in delivery order) and `UnresolvedIds` (those that may have claimed it and couldn't, absent when none). The payload is on the `effect` record's `Descriptor`. A receiver's throw lands a `receiver:error` record with the live error on the tap extras. See [`restart-and-records.md`](./restart-and-records.md#record-kinds).
 
 ### When a receiver doesn't fire
 

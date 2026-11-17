@@ -47,6 +47,11 @@ describe("reconcileRows when add makes a live row's id", () => {
 			rootId: "inbox",
 			effectStubs: {
 				generateGuid: guids("t")
+			},
+			options: {
+				allowFailures: [
+					refresh
+				]
 			}
 		});
 
@@ -71,9 +76,17 @@ describe("reconcileRows when add makes a live row's id", () => {
 	});
 
 	it("says the same for an add of its own that copies a live row", async () => {
-		const runtime = createTestRuntime(seed(), {
-			generateGuid: guids("t")
-		});
+		const runtime = createTestRuntime(
+			seed(),
+			{
+				generateGuid: guids("t")
+			},
+			{
+				allowFailures: [
+					copies
+				]
+			}
+		);
 		await runtime.dispatch(refresh, "inbox", [
 			"a"
 		]);
@@ -100,9 +113,17 @@ describe("reconcileRows when add makes a live row's id", () => {
 
 describe("a replacement outside add", () => {
 	it("keeps the general message, which recommends reconcileRows", async () => {
-		const runtime = createTestRuntime(seed(), {
-			generateGuid: () => "same"
-		});
+		const runtime = createTestRuntime(
+			seed(),
+			{
+				generateGuid: () => "same"
+			},
+			{
+				allowFailures: [
+					pushesTwo
+				]
+			}
+		);
 		function* pushesTwo(draft: IInbox): IActionGenerator {
 			draft.Rows.push(
 				yield* entity({

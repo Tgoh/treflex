@@ -454,7 +454,7 @@ describe("work tags", () => {
 			return yield* inFlight(Work, draft.Panels[0]!);
 		}, "root");
 		expect(busy).toBe(true);
-		const start = h.records.find((record) => record.Kind === "action:start" && record.Name === "reads");
+		const start = h.records.find((record) => record.Kind === "action:start" && record.Label === "reads");
 		const actionId = start?.Kind === "action:start" ? start.ActionId : undefined;
 		expect(h.records.filter((record) => record.Kind === "step" && record.ActionId === actionId)).toEqual([
 			expect.objectContaining({

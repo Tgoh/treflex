@@ -1,7 +1,7 @@
 import type { IActionGenerator, IEntity, ISelectorGenerator } from "treflex";
 import type { IFare, IPick, IProviderResult } from "../backend/backend";
 import type { IDestinationKey, ILegKind } from "./destinations";
-import { inFlight, leading, publishToNearest } from "treflex";
+import { inFlight, leading, named, publishToNearest } from "treflex";
 import { checkProvider, ProviderError } from "../backend/backend";
 import { DESTINATIONS } from "./destinations";
 
@@ -119,6 +119,7 @@ export function* search(draft: ILeg): IActionGenerator {
 		Kind: draft.Kind
 	});
 }
+named(search, "Trips/SearchLeg");
 leading(search);
 
 export const actions = {};

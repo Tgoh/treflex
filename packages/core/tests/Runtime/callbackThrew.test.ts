@@ -3,6 +3,12 @@ import type { IRuntimeEventOf } from "../../src/Types/IRuntimeEvent";
 import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from "vitest";
 import { createRuntime } from "../../src/Runtime/createRuntime";
 
+declare module "../../src/Registries/IExternalRegistry" {
+	interface IExternalRegistry {
+		"test/Stopping": number;
+	}
+}
+
 interface IWorld {
 	$Id: string;
 	Count: number;
@@ -88,15 +94,15 @@ describe("a throw from code the runtime calls outside any action", () => {
 				]
 			}
 		);
-		h.runtime.registerExternalSource({
-			Id: "test/source",
-			dispose: () => {
-				throw new Error("dispose broke");
+		h.runtime.provideExternal("test/Stopping", {
+			read: () => 1,
+			subscribe: () => () => {
+				throw new Error("stop broke");
 			}
 		});
 		h.runtime.dispose();
 		expect(h.threw().map((data) => data!.source)).toEqual([
-			`External source "test/source"'s dispose`,
+			`provideExternal("test/Stopping")'s subscription stop`,
 			"A record tap"
 		]);
 		const consoleOnly = warn.mock.calls.filter(

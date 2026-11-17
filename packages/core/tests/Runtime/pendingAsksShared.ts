@@ -1908,7 +1908,7 @@ export function askRules(label: string): void {
 				const entry = await opened(listed);
 				expect(JSON.parse(createSnapshot(runtime)).InFlight).toMatchObject([
 					{
-						Name: "opens",
+						Label: "opens",
 						EntityId: "root"
 					}
 				]);

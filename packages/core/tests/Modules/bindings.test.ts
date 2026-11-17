@@ -51,7 +51,7 @@ const Shell = receiver<IShell>("BindingsShell")({
 		draft.Heard++;
 	},
 	*"Action/Error"(draft, e) {
-		draft.Errors.push(e.ActionName);
+		draft.Errors.push(String(e.Label));
 	}
 });
 

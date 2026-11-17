@@ -77,7 +77,7 @@
 		{
 			"includes": [
 				"**",
-				"!packages/core/src/Runtime/createActivityLogSource.ts",
+				"!packages/core/src/Runtime/createActivityLog.ts",
 				"!packages/core/src/Runtime/createAskTable.ts",
 				"!packages/core/src/Runtime/createDataSourceMap.ts",
 				"!packages/core/src/Runtime/createResourceManager.ts",

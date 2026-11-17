@@ -111,7 +111,7 @@ function describeRecord(record: any, sym: (id: unknown) => string, effectBySeq: 
 		case "branch:end":
 			return `branch:end br=${sym(record.BranchId)} ${record.Status}${record.Error ? ` ${record.Error.Message ?? ""}` : ""}`;
 		case "action:start":
-			return `action:start ${sym(record.ActionId)} ${record.Name}`;
+			return `action:start ${sym(record.ActionId)} ${record.Label}`;
 		case "action:end":
 			return `action:end ${sym(record.ActionId)} ${record.Status}`;
 		default:

@@ -259,7 +259,13 @@ describe("restored bindings, timer and resource rows whose receiver this build n
 			InFlight: []
 		};
 		const { runtime, result } = await restoreTestRuntime<IRootState>(JSON.stringify(envelope), {
-			rootId: "Root"
+			rootId: "Root",
+			options: {
+				allowDiags: [
+					"restore/unresolved-receiver",
+					"receiver/unresolved"
+				]
+			}
 		});
 		expect(result.unresolved).toStrictEqual([
 			{

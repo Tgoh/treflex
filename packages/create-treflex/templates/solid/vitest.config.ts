@@ -10,5 +10,5 @@ export default defineConfig({
 	resolve: { conditions },
 	ssr: { resolve: { conditions } },
 	// vite-plugin-solid switches an unset environment to jsdom.
-	test: { environment: "node" },
+	test: { environment: "node", setupFiles: ["treflex/vitest"] },
 });

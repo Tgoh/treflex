@@ -38,13 +38,13 @@ One page per concept:
 3. [Actions](./reference/actions.md): steps, holds, `open`, `start`, `leading` and `latest`, `inFlight`, work tags, held references.
 4. [Effects](./reference/effects.md): declaring and implementing effects, sync effects, the data-only rule, the action context.
 5. [Fibers](./reference/fibers.md): `parallel` and `parallelSettled`, stopping, the close, work entities.
-6. [Derived reads](./reference/derived-reads.md): selectors, the reads, yields inside a callback, memos, reads in an action.
-7. [Lookup](./reference/lookup.md): data sources, `getData`, external sources, the activity log.
+6. [Derived reads](./reference/derived-reads.md): selectors, the reads, yields inside a callback, memos, reads in an action, outside values.
+7. [Lookup](./reference/lookup.md): data sources, `getData`.
 8. [Messaging](./reference/messaging.md): receivers, binding, `publish`, `publishToNearest`.
 9. [Live sources](./reference/live-sources.md): resources and timers.
 10. [Conversations](./reference/conversations.md): `ask`, `answer`, `pendingAsks`.
 11. [Failure](./reference/failure.md): the route, error boundaries, `onError`, the `failure` event, refusals, a view's throw.
-12. [Restart and records](./reference/restart-and-records.md): snapshots, `restoreRuntime`, the record stream.
+12. [Restart and records](./reference/restart-and-records.md): snapshots, `restoreRuntime`, the record stream, the activity log.
 
 Four pages cut across them:
 

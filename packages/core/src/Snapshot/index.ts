@@ -6,7 +6,7 @@ import type { IRuntimeOptions } from "../Runtime/createRuntime";
 import type { IEffectStub, ITestRuntimeOptions } from "../Testing/createTestRuntime";
 import type { IRestored, IRestoreHooks } from "./restore";
 import { createRuntime } from "../Runtime/createRuntime";
-import { createTestRuntime } from "../Testing/createTestRuntime";
+import { buildTestRuntime, testRuntimeSite } from "../Testing/createTestRuntime";
 import { restoreWith } from "./restore";
 
 export type { ISnapshot, ISnapshotInFlightEntry, ISnapshotTimerRow } from "./ISnapshot";
@@ -39,5 +39,6 @@ export interface ITestRestoreBoot<T extends object> extends IRestoreHooks<T> {
 
 /** `restoreRuntime` for a test: builds what `createTestRuntime` does from the same stubs and options. */
 export function restoreTestRuntime<T extends object>(snapshotJson: string, boot: ITestRestoreBoot<T>): Promise<IRestored<T>> {
-	return restoreWith(snapshotJson, (state: T) => createTestRuntime(state, boot.effectStubs, boot.options), boot);
+	const site = testRuntimeSite("restoreTestRuntime", restoreTestRuntime);
+	return restoreWith(snapshotJson, (state: T) => buildTestRuntime(state, boot.effectStubs ?? {}, boot.options, site), boot);
 }

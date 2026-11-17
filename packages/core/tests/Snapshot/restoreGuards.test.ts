@@ -541,7 +541,9 @@ describe("the gate's rejection contract", () => {
 		expect(result).toStrictEqual({
 			dropped: [],
 			unresolved: [],
-			sweptOrphanedRows: 0
+			sweptOrphanedRows: 0,
+			savedBuild: null,
+			sameBuild: false
 		});
 		expect(diags).toContain("restore/malformed-rows");
 		await dispatch(runtime, tick);
@@ -587,6 +589,7 @@ describe("the gate's rejection contract", () => {
 			{
 				actionId: "action-4",
 				name: "kept",
+				label: null,
 				entityId: "Root"
 			}
 		]);
@@ -598,8 +601,59 @@ describe("the gate's rejection contract", () => {
 		runtime.dispose();
 	});
 
-	it("names an in-flight row whose Name or legacy Key is not a string null", async () => {
+	it("reads an in-flight row's Name, Label and Receiver, each null or absent when it isn't a string", async () => {
 		const parsed = JSON.parse(await saved(setUp)) as any;
+		parsed.InFlight = [
+			{
+				ActionId: "action-1",
+				Name: 5,
+				Label: {},
+				Receiver: 7,
+				EntityId: "Root"
+			},
+			{
+				ActionId: "action-2",
+				Name: "Ticker/Tick",
+				Label: "t",
+				EntityId: "Root"
+			},
+			{
+				ActionId: "action-3",
+				Name: null,
+				Label: "TickReceiver",
+				Receiver: "TickReceiver",
+				EntityId: "Root"
+			}
+		];
+		const { runtime, result } = await restoreRuntime<IRootState>(JSON.stringify(parsed), boot);
+		expect(result.dropped).toStrictEqual([
+			{
+				actionId: "action-1",
+				name: null,
+				label: null,
+				entityId: "Root"
+			},
+			{
+				actionId: "action-2",
+				name: "Ticker/Tick",
+				label: "t",
+				entityId: "Root"
+			},
+			{
+				actionId: "action-3",
+				name: null,
+				label: "TickReceiver",
+				receiver: "TickReceiver",
+				entityId: "Root"
+			}
+		]);
+		runtime.dispose();
+	});
+
+	it("labels a version 7 row by its Name or legacy Key, null when neither is a string, and names none", async () => {
+		const parsed = JSON.parse(await saved(setUp)) as any;
+		parsed.Version = 7;
+		delete parsed.Build;
 		parsed.InFlight = [
 			{
 				ActionId: "action-1",
@@ -624,19 +678,23 @@ describe("the gate's rejection contract", () => {
 			{
 				actionId: "action-1",
 				name: null,
+				label: null,
 				entityId: "Root"
 			},
 			{
 				actionId: "action-2",
 				name: null,
+				label: null,
 				entityId: "Root"
 			},
 			{
 				actionId: "action-3",
-				name: "legacyName",
+				name: null,
+				label: "legacyName",
 				entityId: "Root"
 			}
 		]);
+		expect(result.savedBuild).toBeNull();
 		runtime.dispose();
 	});
 });

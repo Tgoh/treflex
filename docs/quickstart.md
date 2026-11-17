@@ -26,7 +26,7 @@ npm run dev
 
 <!-- /tabs -->
 
-The app is an `App` root entity holding the counter below as a feature in its own folder, with a selector, tests, Biome and ESLint with treflex's lint rules, hot reload, and a count that survives a reload. Its `increment` is marked [`leading`](./reference/actions.md#arrival-marks), so a second `increment` dispatched while one runs is dropped rather than queued, which its test shows. Its `README.md` says what's where.
+The app is an `App` root entity holding the counter below as a feature in its own folder, with a selector, tests, Biome and ESLint with treflex's lint rules, hot reload, and a count that survives a reload. Its `increment` is marked [`leading`](./reference/actions.md#arrival-marks), so a second `increment` dispatched while one runs is dropped rather than queued, which its test shows. The template requires a [durable name](./reference/actions.md#durable-names) on every action, so `increment` is marked `named(increment, "Counter/Increment")` too. Its `README.md` says what's where.
 
 ## Add treflex to an existing app
 

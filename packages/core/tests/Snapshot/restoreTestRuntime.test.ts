@@ -9,8 +9,9 @@ import { startTimer } from "../../src/Effects/startTimer";
 import { inFlight } from "../../src/Runtime/arrivals";
 import { receiver } from "../../src/Runtime/receiver";
 import { createSnapshot } from "../../src/Snapshot/createSnapshot";
-import { restoreRuntime, restoreTestRuntime } from "../../src/Snapshot/index";
-import { createTestRuntime, guids } from "../../src/Testing/createTestRuntime";
+import { type ITestRestoreBoot, restoreRuntime, restoreTestRuntime } from "../../src/Snapshot/index";
+import { createTestRuntime, guids, settled } from "../../src/Testing/createTestRuntime";
+import { drainReports } from "../../src/Testing/reports";
 
 type IDialog = {
 	$Id: string;
@@ -88,9 +89,16 @@ afterEach(() => {
 describe("restoreTestRuntime", () => {
 	it("builds what a fresh createTestRuntime does: an unstubbed method throws, and an unstubbed guid refuses", async () => {
 		const json = await saved();
-		const fresh = await freshTestRuntime();
+		const options = {
+			allowFailures: [
+				upload,
+				stamp
+			]
+		};
+		const fresh = await freshTestRuntime(undefined, options);
 		const { runtime } = await restoreTestRuntime<IDialog>(json, {
 			rootId: "dialog",
+			options,
 			setup: register
 		});
 
@@ -177,5 +185,70 @@ describe("restoreTestRuntime", () => {
 		expect(restored).toStrictEqual(await answers(fresh));
 		fresh.dispose();
 		runtime.dispose();
+	});
+
+	describe("fails the test on a diag the restore reports", () => {
+		const withOrphanedTimer = async (): Promise<string> => {
+			const snapshot = JSON.parse(await saved());
+			snapshot.Timers.push({
+				...snapshot.Timers[0],
+				OwnerId: "gone"
+			});
+			return JSON.stringify(snapshot);
+		};
+		const codes = (errors: readonly Error[]) =>
+			errors.map(
+				(error) =>
+					(
+						error.cause as {
+							code: string;
+						}
+					).code
+			);
+		const restoring = async (json: string, boot: Partial<ITestRestoreBoot<IDialog>>): Promise<Error[]> => {
+			const { runtime } = await restoreTestRuntime<IDialog>(json, {
+				rootId: "dialog",
+				...boot
+			});
+			runtime.dispose();
+			await settled();
+			return drainReports();
+		};
+
+		it("reports one the table load reports", async () => {
+			expect(
+				codes(
+					await restoring(await withOrphanedTimer(), {
+						setup: register
+					})
+				)
+			).toEqual([
+				"restore/orphaned-rows"
+			]);
+		});
+
+		it("reports one reported after setup, with the opt-out under the restore's options and the restore call first on the stack", async () => {
+			const errors = await restoring(await saved(), {});
+			expect(codes(errors)).toEqual([
+				"restore/unresolved-receiver"
+			]);
+			expect(errors[0]!.message).toContain(
+				'[treflex] restoreTestRuntime: an unexpected diag, "restore/unresolved-receiver". If the test expects it, pass options: { allowDiags: ["restore/unresolved-receiver"] } to restoreTestRuntime'
+			);
+			expect(errors[0]!.stack!.split("\n")[1]).toContain("restoreTestRuntime.test.ts");
+		});
+
+		it("lets the codes the options list pass", async () => {
+			expect(
+				await restoring(await withOrphanedTimer(), {
+					options: {
+						allowDiags: [
+							"restore/orphaned-rows",
+							"restore/unresolved-receiver"
+						]
+					}
+				})
+			).toEqual([]);
+		});
 	});
 });

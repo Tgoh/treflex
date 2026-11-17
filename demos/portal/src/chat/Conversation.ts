@@ -1,7 +1,7 @@
 import type { IActionGenerator, IEntity, IReceiverId, ISelectorGenerator } from "treflex";
 import type { IFinished } from "../portal/topics";
 import type { IMessage } from "./Message";
-import { entity, isEnded, openResource, publish, publishToNearest, receiver, start } from "treflex";
+import { entity, isEnded, named, openResource, publish, publishToNearest, receiver, start } from "treflex";
 import { chatTime } from "../backend/backend";
 import { answerLine } from "../backend/chatScript";
 import { conversationInfo, conversationLabel, firstName, person } from "./directory";
@@ -77,6 +77,7 @@ export function* send(draft: IConversation, text: string): IActionGenerator {
 	draft.Messages.push(message);
 	yield* start(deliver, message);
 }
+named(send, "Chat/Send");
 
 export function* queueReply(draft: IConversation, cue: IReplyCue): IActionGenerator {
 	draft.Queue.push({
@@ -84,6 +85,7 @@ export function* queueReply(draft: IConversation, cue: IReplyCue): IActionGenera
 	});
 	if (draft.Reply === null) yield* nextReply(draft);
 }
+named(queueReply, "Chat/QueueReply");
 
 function* nextReply(draft: IConversation): IActionGenerator {
 	const cue = draft.Queue.shift();

@@ -11,6 +11,7 @@ export type {
 export type { IOpenResourceRest, IResourceParamsArg, IResumeFieldOf } from "./Effects/openResource";
 export type { IResourceHandle } from "./Effects/resource";
 export type { IDataSourceKey, IDataSourceRegistry, IDataSourceValue } from "./Registries/IDataSourceRegistry";
+export type { IExternalKey, IExternalRegistry, IExternalValue } from "./Registries/IExternalRegistry";
 export type { IMessageRegistry, IPublishTopic } from "./Registries/IMessageRegistry";
 export type {
 	IResourceDeliveryOf,
@@ -30,11 +31,12 @@ export type {
 	IRuntimeServiceValue
 } from "./Registries/IRuntimeServiceRegistry";
 export type { ITimerKey, ITimerPayloadOf, ITimerRegistry, ITimerTickOf } from "./Registries/ITimerRegistry";
-export type { IActivityLog, IActivityLogEntry } from "./Runtime/createActivityLogSource";
+export type { IActivityLogEntry, IActivityLogOptions } from "./Runtime/createActivityLog";
 export type { IAskAbandonReason, IAskRow } from "./Runtime/createAskTable";
 export type { IDataSourceCell } from "./Runtime/createDataSourceMap";
 export type { IEffectImplementation, IRegisterImplementation } from "./Runtime/createEffectRegistry";
 export type { IEventBus } from "./Runtime/createEventBus";
+export type { IExternalHandle, IExternalProvider } from "./Runtime/createExternalTable";
 export type { IJournal, IJournalAppend } from "./Runtime/createJournal";
 export type { IReceiverRegistry } from "./Runtime/createReceiverRegistry";
 export type { IResourceStubs } from "./Runtime/createResourceManager";
@@ -56,9 +58,16 @@ export type { IAskEntry } from "./Types/IAskEntry";
 export type { IAskId } from "./Types/IAskId";
 export type { IEffect } from "./Types/IEffect";
 export type { IEntity, IEntityId } from "./Types/IEntity";
-export type { IExternalSource } from "./Types/IExternalSource";
 export type { IHandleableKey, IMessageContext, IMessageOf, IPublisherRef, IReceiver, IReceiverId } from "./Types/IReceiver";
-export type { IActionOrigin, IRecord, IRecordChange, IRecordExtras, IRecordRoot, IRecordTapListener } from "./Types/IRecord";
+export type {
+	IActionOrigin,
+	IExternalAnswer,
+	IRecord,
+	IRecordChange,
+	IRecordExtras,
+	IRecordRoot,
+	IRecordTapListener
+} from "./Types/IRecord";
 export type {
 	IEnded,
 	IResourceContext,
@@ -95,6 +104,7 @@ export { start } from "./Effects/start";
 export { startTimer } from "./Effects/startTimer";
 export { stopTimer } from "./Effects/stopTimer";
 export { unregisterDataSource } from "./Effects/unregisterDataSource";
+export { external } from "./Reads/external";
 export { getData, getDataGlobal } from "./Reads/getData";
 export { getDataPath, type IGetDataPathResult } from "./Reads/getDataPath";
 export { select } from "./Reads/select";
@@ -102,6 +112,7 @@ export { latest, leading } from "./Runtime/arrivalPolicy";
 export { type IInFlightStub, inFlight } from "./Runtime/arrivals";
 export { AnswerOutsideOwnerError, AskRefusedError, type IAskRefusedReason } from "./Runtime/askErrors";
 export { BindAfterWriteError, bind, unbind } from "./Runtime/bind";
+export { createActivityLog } from "./Runtime/createActivityLog";
 export { createRuntime } from "./Runtime/createRuntime";
 export { createTraceAggregator } from "./Runtime/createTraceAggregator";
 export {
@@ -113,6 +124,7 @@ export {
 } from "./Runtime/draftNode";
 export { SyncEffectPromiseError, SyncEffectWorkError } from "./Runtime/effectDeclarations";
 export { EntityGoneError } from "./Runtime/entityGoneError";
+export { named, UnnamedActionError } from "./Runtime/named";
 export { NonPlainDataError } from "./Runtime/nonPlainDataError";
 export { open } from "./Runtime/open";
 export { pendingAsks } from "./Runtime/pendingAsks";

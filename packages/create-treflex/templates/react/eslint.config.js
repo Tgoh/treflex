@@ -14,4 +14,8 @@ export default [
 		},
 	},
 	treflex.configs.recommended,
+	{
+		files: ["**/*.ts", "**/*.tsx"],
+		rules: { "treflex/require-name": "error" },
+	},
 ];

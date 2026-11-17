@@ -317,9 +317,9 @@ describe("a dispatch made inside a step", () => {
 					(record) =>
 						(
 							record as {
-								Name: string | null;
+								Label: string | null;
 							}
-						).Name
+						).Label
 				)
 		).toEqual([
 			"parent"
@@ -622,9 +622,9 @@ describe("order and messages", () => {
 					: `start ${
 							(
 								record as {
-									Name: string | null;
+									Label: string | null;
 								}
-							).Name
+							).Label
 						}`
 			);
 		expect(order).toEqual([

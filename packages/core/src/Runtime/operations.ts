@@ -27,6 +27,7 @@ import { copyAtSender, copyEffectInput, copyListAtSender } from "./crossing";
 import { EntityGoneError } from "./entityGoneError";
 import { fiberSignal } from "./Fiber";
 import { beginArrivals, createArrivals, deliverToNearest, fanOut, type IFanOutContext } from "./fanOut";
+import { labelOf, nameOf } from "./named";
 import { TreflexRefusal } from "./refusal";
 
 /** What the fiber driver carries out itself. Nothing is registered for these, and nothing can replace one. */
@@ -201,8 +202,8 @@ const OPERATIONS: {
 		descriptor: (operation) => ({
 			Type: operation.Type,
 			EntityId: operation.EntityId,
-			// Build-dependent, like action:start's Name: a minifier rewrites it.
-			ActionName: operation.Action.name || null,
+			Name: nameOf(operation.Action),
+			Label: labelOf(operation.Action),
 			Args: operation.Args
 		}),
 		run(operation, ctx) {
@@ -222,6 +223,7 @@ const OPERATIONS: {
 				});
 				return undefined;
 			}
+			env.requireName(operation.Action, operation.EntityId);
 			// Its failure takes the route, which raises it as uncaught when nothing takes it.
 			env
 				.dispatchInternal(operation.Action, target.getState, target.setState, () => operation.EntityId, operation.Args, {
@@ -452,7 +454,8 @@ const READS: {
 	select: true,
 	transient: true,
 	inFlight: true,
-	pendingAsks: true
+	pendingAsks: true,
+	external: true
 };
 
 export function isRead(type: unknown): boolean {

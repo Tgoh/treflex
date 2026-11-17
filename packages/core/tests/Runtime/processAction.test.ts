@@ -142,7 +142,10 @@ describe("createProcessAction", () => {
 				},
 				{},
 				{
-					onError
+					onError,
+					allowFailures: [
+						failing
+					]
 				}
 			);
 
@@ -156,7 +159,8 @@ describe("createProcessAction", () => {
 					message: "sync failure"
 				}),
 				{
-					ActionName: "failing",
+					Name: null,
+					Label: "failing",
 					EntityId: "test"
 				}
 			);
@@ -174,7 +178,10 @@ describe("createProcessAction", () => {
 					}
 				},
 				{
-					onError
+					onError,
+					allowFailures: [
+						failingEffect
+					]
 				}
 			);
 
@@ -240,14 +247,15 @@ describe("createProcessAction", () => {
 		});
 
 		it("calls finally block when action throws", async () => {
-			const onError = vi.fn();
 			const runtime = createTestRuntime(
 				{
 					$Id: "test"
 				},
 				{},
 				{
-					onError
+					allowFailures: [
+						withFinally
+					]
 				}
 			);
 			let finallyCalled = false;
@@ -284,7 +292,8 @@ describe("createProcessAction", () => {
 
 			expect(onTrace).toHaveBeenCalledOnce();
 			const trace: IActionTrace = onTrace.mock.calls[0][0];
-			expect(trace.action).toBe("setName");
+			expect(trace.name).toBeNull();
+			expect(trace.label).toBe("setName");
 			expect(trace.duration).toBeGreaterThanOrEqual(0);
 			expect(trace.error).toBeUndefined();
 
@@ -337,14 +346,15 @@ describe("createProcessAction", () => {
 
 		it("includes error in trace when action fails", async () => {
 			const onTrace = vi.fn();
-			const onError = vi.fn();
 			const runtime = createTestRuntime(
 				{
 					$Id: "test"
 				},
 				{},
 				{
-					onError
+					allowFailures: [
+						failing
+					]
 				}
 			);
 			createTraceAggregator(runtime, onTrace);

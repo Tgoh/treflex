@@ -61,7 +61,9 @@ describe("the createTestRuntime preset", () => {
 			},
 			{},
 			{
-				onError: () => {}
+				allowFailures: [
+					act
+				]
 			}
 		);
 		function* act(_draft: object): IActionGenerator {
@@ -79,7 +81,9 @@ describe("the createTestRuntime preset", () => {
 			},
 			{},
 			{
-				onError: () => {}
+				allowFailures: [
+					act
+				]
 			}
 		);
 		function* act(_draft: object): IActionGenerator {
@@ -97,7 +101,10 @@ describe("the createTestRuntime preset", () => {
 			},
 			{},
 			{
-				onError: () => {}
+				allowFailures: [
+					mint,
+					ghost
+				]
 			}
 		);
 		function* mint(_draft: object): IActionGenerator {
@@ -241,7 +248,9 @@ describe("the createTestRuntime preset", () => {
 				gate: () => gate
 			},
 			{
-				onError: () => {}
+				allowFailures: [
+					story
+				]
 			}
 		);
 		let release!: () => void;

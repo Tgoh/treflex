@@ -1,15 +1,23 @@
+import type { IJournalAppend } from "../../src/Runtime/createJournal";
+import type { IRuntimeInternal } from "../../src/Runtime/internals";
 import type { IActionGenerator } from "../../src/Types/IAction";
-import type { IRecord, IRecordTapListener } from "../../src/Types/IRecord";
+import type { ISelectorGenerator } from "../../src/Types/ISelector";
 import { createEffect, createRoot } from "solid-js";
-import { createStore } from "solid-js/store";
 import { describe, expect, it } from "vitest";
 import { start } from "../../src/Effects/start";
-import { createActivityLogSource } from "../../src/Runtime/createActivityLogSource";
+import { external } from "../../src/Reads/external";
+import { createActivityLog } from "../../src/Runtime/createActivityLog";
 import { createRuntime } from "../../src/Runtime/createRuntime";
 
+declare module "../../src/Registries/IExternalRegistry" {
+	interface IExternalRegistry {
+		"tracking/Kinds": readonly string[];
+	}
+}
+
 // A dispatch from inside a Solid effect must leave the effect depending on
-// nothing the dispatch read, including whatever a record tap reads while the
-// first slice appends.
+// nothing the dispatch read, including whatever a record tap reads or provides
+// while the first slice appends.
 
 type Child = {
 	$Id: string;
@@ -47,29 +55,24 @@ function* churn(draft: Root): IActionGenerator {
 	draft.Children = draft.Children.filter((c) => c.$Id !== "child-2");
 }
 
-function build(activityLog: boolean) {
-	const runtime = createRuntime<Root>(
-		{
-			$Id: "root",
-			Host: {
-				$Id: "host",
-				Loaded: 0
-			},
-			Children: [
-				{
-					$Id: "child-1",
-					Data: ""
-				},
-				{
-					$Id: "child-2",
-					Data: ""
-				}
-			]
+function build() {
+	const runtime = createRuntime<Root>({
+		$Id: "root",
+		Host: {
+			$Id: "host",
+			Loaded: 0
 		},
-		{
-			activityLog
-		}
-	);
+		Children: [
+			{
+				$Id: "child-1",
+				Data: ""
+			},
+			{
+				$Id: "child-2",
+				Data: ""
+			}
+		]
+	});
 	runtime.registerImplementation("slow", () => new Promise((resolve) => setTimeout(resolve, 1)));
 	return runtime;
 }
@@ -102,12 +105,17 @@ async function dispatchFromEffect(runtime: ReturnType<typeof build>): Promise<nu
 
 describe("the activity log's tap", () => {
 	// Independent of the dispatch boundary: a tap must not depend on who calls it.
-	it("subscribes no scope that delivers a record to it", () => {
-		let listener!: IRecordTapListener;
-		const source = createActivityLogSource((l) => {
-			listener = l;
-			return () => {};
-		});
+	it("subscribes no scope that delivers a record to it", async () => {
+		const runtime = build();
+		createActivityLog(runtime);
+		const journal = (runtime as IRuntimeInternal<Root>).get("runtime/journal");
+		const ended: IJournalAppend = {
+			T: 0,
+			Kind: "action:end",
+			Root: "AppState",
+			ActionId: "a",
+			Status: "completed"
+		};
 		let runs = 0;
 		const dispose = createRoot((d) => {
 			createEffect(() => {
@@ -115,46 +123,53 @@ describe("the activity log's tap", () => {
 				if (runs > 20) {
 					return;
 				}
-				listener({
-					Kind: "action:start"
-				} as IRecord);
+				journal.append(ended);
 			});
 			return d;
 		});
-		listener({
-			Kind: "action:end"
-		} as IRecord);
+		await Promise.resolve();
+		journal.append(ended);
 		dispose();
-		source.dispose?.();
 		expect(runs).toBe(1);
+		expect(
+			runtime.processSelector(
+				() => external("ActivityLog"),
+				() => runtime.state
+			)
+		).toHaveLength(2);
 	});
 });
 
 describe("dispatch from a Solid effect", () => {
 	it("runs the effect once on a runtime with the activity log on", async () => {
-		const runtime = build(true);
+		const runtime = build();
+		createActivityLog(runtime);
 		expect(await dispatchFromEffect(runtime)).toBe(1);
 		expect(runtime.state.Host.Loaded).toBe(1);
 	});
 
-	it("runs the effect once whatever a record tap reads", async () => {
-		const runtime = build(false);
-		const [seen, setSeen] = createStore<{
-			Kinds: string[];
-		}>({
-			Kinds: []
+	it("runs the effect once whatever a record tap provides", async () => {
+		const runtime = build();
+		let kinds: readonly string[] = [];
+		const seen = runtime.provideExternal("tracking/Kinds", {
+			read: () => kinds
 		});
 		const off = runtime.on("record", (record) => {
-			setSeen("Kinds", [
-				...seen.Kinds,
+			kinds = [
+				...kinds,
 				record.Kind
-			]);
+			];
+			seen.changed();
 		});
+		function* tapped(): ISelectorGenerator<readonly string[]> {
+			return (yield* external("tracking/Kinds")) ?? [];
+		}
+		const read = () => runtime.processSelector(tapped, () => runtime.state);
 		try {
 			expect(await dispatchFromEffect(runtime)).toBe(1);
-			expect(seen.Kinds).toContain("entity:dispose");
+			expect(read()).toContain("entity:dispose");
 			// load, churn and the started childWrite.
-			expect(seen.Kinds.filter((kind) => kind === "action:end")).toHaveLength(3);
+			expect(read().filter((kind) => kind === "action:end")).toHaveLength(3);
 		} finally {
 			off();
 		}

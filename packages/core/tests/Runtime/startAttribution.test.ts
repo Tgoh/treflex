@@ -88,9 +88,9 @@ describe("start attribution", () => {
 	] as const) {
 		it(`names the start on the started action alone when it publishes ${name}`, async () => {
 			const starts = await startsOf(started);
-			const starter = starts.find((s) => s.Name === "starter");
-			const child = starts.find((s) => s.Name === started.name);
-			const listener = starts.find((s) => s.Name !== "starter" && s.Name !== started.name);
+			const starter = starts.find((s) => s.Label === "starter");
+			const child = starts.find((s) => s.Label === started.name);
+			const listener = starts.find((s) => s.Label !== "starter" && s.Label !== started.name);
 			expect(starter).toBeDefined();
 			expect(child?.StartedBy).toBe(starter?.ActionId);
 			expect(listener).toBeDefined();

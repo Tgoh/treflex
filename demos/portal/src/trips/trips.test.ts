@@ -6,7 +6,7 @@ import type { ITour } from "../tour/Tour";
 import type { IDestinationKey, ILegKind } from "./destinations";
 import type { ILeg } from "./Leg";
 import type { ITrip } from "./Trip";
-import { createTestRuntime, guids, implementation, pendingAsks, settled } from "treflex";
+import { createTestRuntime, guids, implementation, named, pendingAsks, settled } from "treflex";
 import { createSnapshot, restoreTestRuntime } from "treflex/snapshot";
 import { afterEach, describe, expect, it } from "vitest";
 import { checkProvider, now } from "../backend/backend";
@@ -536,6 +536,7 @@ describe("a restore mid-run", () => {
 function* cameBack(draft: ITour): IActionGenerator {
 	draft.CameBack = true;
 }
+named(cameBack, "Trips/CameBack");
 
 describe("the tour", () => {
 	const step = (runtime: IRuntime<IPortal>) => runtime.processSelector(currentStep, () => runtime.state.Tour);

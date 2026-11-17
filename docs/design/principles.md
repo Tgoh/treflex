@@ -24,7 +24,7 @@ An action changes its own entity and what's below it, never above: its draft rea
 
 ## Inputs arrive as answers
 
-An action given the same answers to its yields runs the same way. So ids, the clock and randomness reach an action as answers to yields, never from a call it makes itself, and reads are yields for the same reason ([non-determinism](../reference/effects.md#non-determinism)).
+An action given the same answers to its yields runs the same way. So ids, the clock and randomness reach an action as answers to yields, never from a call it makes itself, and reads are yields for the same reason ([non-determinism](../reference/effects.md#non-determinism)). An [outside value](../reference/derived-reads.md#outside-values) is one of those answers: it comes from outside the action as an effect's settlement does, so the action's `step` record carries the value it read, or only the key for a provider that redacts.
 
 ## Running work isn't state
 

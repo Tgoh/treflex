@@ -84,7 +84,8 @@ describe("createRuntime", () => {
 					message: "runtime error"
 				}),
 				expect.objectContaining({
-					ActionName: "failing"
+					Name: null,
+					Label: "failing"
 				})
 			);
 		});
@@ -106,7 +107,7 @@ describe("createRuntime", () => {
 
 			expect(onTrace).toHaveBeenCalledOnce();
 			const trace = onTrace.mock.calls[0][0];
-			expect(trace.action).toBe("inc");
+			expect(trace.label).toBe("inc");
 			expect(trace.entries.length).toBeGreaterThanOrEqual(1);
 		});
 	});

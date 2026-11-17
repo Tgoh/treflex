@@ -1,6 +1,6 @@
 {
 	"name": "treflex",
-	"version": "0.1.1",
+	"version": "0.2.0",
 	"description": "A runtime for app state and the work running on it, for Solid and React",
 	"license": "MIT",
 	"author": "Tam Goh",
@@ -10,7 +10,10 @@
 		"directory": "packages/core"
 	},
 	"type": "module",
-	"sideEffects": false,
+	"sideEffects": [
+		"./src/Testing/vitest.ts",
+		"./dist/Testing/vitest.js"
+	],
 	"scripts": {
 		"build": "node ../../scripts/build.mjs",
 		"prepack": "node ../../scripts/build.mjs --pack",
@@ -38,10 +41,23 @@
 			"treflex-source": "./src/internal.ts",
 			"types": "./dist/internal.d.ts",
 			"import": "./dist/internal.js"
+		},
+		"./vitest": {
+			"treflex-source": "./src/Testing/vitest.ts",
+			"types": "./dist/Testing/vitest.d.ts",
+			"import": "./dist/Testing/vitest.js"
 		}
 	},
 	"dependencies": {
 		"solid-js": "^1.9.7",
 		"uuid": "^11.1.0"
+	},
+	"peerDependencies": {
+		"vitest": ">=3.0.0"
+	},
+	"peerDependenciesMeta": {
+		"vitest": {
+			"optional": true
+		}
 	}
 }

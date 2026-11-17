@@ -4,16 +4,16 @@ import type { IRuntimeInternal } from "treflex/internal";
 import type { IEntityRef } from "../src";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { StrictMode, Suspense, useDeferredValue, useEffect, useLayoutEffect, useState } from "react";
-import { createSignal } from "solid-js";
 import {
 	answer,
 	ask,
 	closeResource,
+	createActivityLog,
 	createRuntime,
 	defineEffect,
 	entity,
+	external,
 	getData,
-	getDataGlobal,
 	implementation,
 	inFlight,
 	leading,
@@ -46,6 +46,9 @@ declare module "treflex" {
 	interface IDataSourceRegistry {
 		ProbeTheme: IBoard;
 		ProbeStation: IProbeStation;
+	}
+	interface IExternalRegistry {
+		"React/Outside": number;
 	}
 }
 
@@ -670,14 +673,13 @@ describe("selector work on an entity that is leaving", () => {
 	});
 
 	it("leaves no selector memo behind a component feature's unmounts", async () => {
-		const runtime = createRuntime(seed(), {
-			activityLog: true
-		});
+		const runtime = createRuntime(seed());
+		createActivityLog(runtime);
 		let runs = 0;
 		function* logged(_draft: IEntity): ISelectorGenerator<number> {
 			runs++;
-			const log = yield* getDataGlobal("ActivityLog");
-			return log?.Entries.length ?? 0;
+			const log = yield* external("ActivityLog");
+			return log?.length ?? 0;
 		}
 		const Counter = createComponentFeature<IEntity>("tests/Leak")(
 			{},
@@ -951,8 +953,8 @@ describe("selector inputs outside the tree", () => {
 	}
 
 	function* logged(_draft: IBoard): ISelectorGenerator<number> {
-		const log = yield* getDataGlobal("ActivityLog");
-		return log?.Entries.length ?? -1;
+		const log = yield* external("ActivityLog");
+		return log?.length ?? -1;
 	}
 
 	it("re-renders when a data source registers with no tree write", async () => {
@@ -1333,9 +1335,12 @@ describe("selector inputs outside the tree", () => {
 
 	it("catches a change made between the render that first calls a selector and the start of its watch", async () => {
 		const runtime = createRuntime(seed());
-		const [outside, setOutside] = createSignal(0);
+		let outside = 0;
+		const handle = runtime.provideExternal("React/Outside", {
+			read: () => outside
+		});
 		function* read(_draft: IBoard): ISelectorGenerator<number> {
-			return outside();
+			return (yield* external("React/Outside")) ?? -1;
 		}
 		const Outside = createEntityFeature<IBoard>()(
 			{},
@@ -1345,7 +1350,8 @@ describe("selector inputs outside the tree", () => {
 		);
 		function Change() {
 			useLayoutEffect(() => {
-				setOutside(1);
+				outside = 1;
+				handle.changed();
 			}, []);
 			return null;
 		}
@@ -1379,9 +1385,8 @@ describe("selector inputs outside the tree", () => {
 	});
 
 	it("keeps up with the activity log past the drain", async () => {
-		const runtime = createRuntime(seed(), {
-			activityLog: true
-		});
+		const runtime = createRuntime(seed());
+		createActivityLog(runtime);
 		const Logged = createEntityFeature<IBoard>()(
 			{
 				rename

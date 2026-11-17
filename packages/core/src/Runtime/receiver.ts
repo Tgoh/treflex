@@ -4,6 +4,7 @@ import type { ITimerKey, ITimerTickOf } from "../Registries/ITimerRegistry";
 import type { IOpenGenerator } from "../Types/IAction";
 import type { IEntity } from "../Types/IEntity";
 import type { IHandleableKey, IMessageContext, IMessageOf, IReceiver, IReceiverId } from "../Types/IReceiver";
+import { markReceiver } from "./named";
 
 type MessageCase<T extends IEntity, P extends IPublishTopic> = (draft: T, message: IMessageOf<P>, ctx: IMessageContext) => IOpenGenerator;
 
@@ -76,12 +77,11 @@ export function receiver<T extends IEntity>(
 		Object.defineProperty(handle, RECEIVER_CASE, {
 			value: caseFor
 		});
-		// Records name an action by its function name, and every receiver
-		// built here would otherwise be called by whatever this local binding
-		// is spelled.
+		// A delivery's Label is this name.
 		Object.defineProperty(handle, "name", {
 			value: id
 		});
+		markReceiver(handle, id);
 		return {
 			Id: id as IReceiverId<T>,
 			Topics: Object.freeze(Object.keys(cases)),

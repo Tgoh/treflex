@@ -24,7 +24,7 @@ it("keeps the count when the delay fails", async () => {
 	const runtime = createTestRuntime(
 		counter(),
 		stubs(() => Promise.reject(new Error("offline"))),
-		{ onError: () => {} },
+		{ allowFailures: [increment] },
 	);
 	void runtime.dispatch(increment, "Counter");
 	await settled();

@@ -24,8 +24,6 @@ declare module "treflex" {
 }
 ```
 
-`ActivityLog` is declared by treflex for [the activity log](#the-activity-log).
-
 ### Registering
 
 `registerDataSource` and `unregisterDataSource` are yielded from an action:
@@ -84,6 +82,7 @@ export function* rootHue(_draft: IAppWindow): ISelectorGenerator<number> {
 - **One feature's own value** stays on that feature's state.
 - **Infrastructure only effect implementations read**, a cache or a loader map, is a runtime service ([`runtime.md`](./runtime.md#runtime-services)).
 - **News that something happened** is a message ([`messaging.md`](./messaging.md)), not a value someone polls.
+- **A value from outside the tree**, such as whether the browser is online, is an [outside value](./derived-reads.md#outside-values).
 
 ## Rules
 
@@ -98,7 +97,7 @@ Registrations are saved in a snapshot when the owner is in `AppState` ([`restart
 
 `getData`'s `from` is an entity whose `$Id` the tree holds: the draft, an entity under it, or a copy carrying such an `$Id`.
 
-**`getDataGlobal(key)`** answers with the owner nearest the root, the shortest path. When no owner in the tree serves the key, `getDataGlobal` asks the [external sources](#external-sources). `getData` never does.
+**`getDataGlobal(key)`** answers with the owner nearest the root, the shortest path.
 
 What a read returns:
 
@@ -109,42 +108,6 @@ What a read returns:
 
 `getDataPath(from, key)` runs `getData`'s walk and answers `{ value, ancestors }`: the value, and the `$Id`s walked, nearest first, up to and including the owner that answered. A miss answers `value: undefined` and the whole walk. It is for devtools and audit views; application logic uses `getData`, so it stays independent of where the registration sits. It has no memo of its own, and runs inside the calling selector's.
 
-### External sources
-
-An **external source** is a participant outside the state tree, registered with `runtime.registerExternalSource(source)`, usually at startup. It answers `getDataGlobal` for the keys it declares and receives the `publish` topics it declares. It has no path, so `getData`, `publishToNearest` and the dispose cascade never reach it.
-
-```ts
-interface IExternalSource {
-    readonly Id: string;
-    readonly DataSourceKeys?: readonly string[];
-    readonly Topics?: readonly string[];
-    getData?(key: string): unknown;
-    receivePublish?(data: Record<string, unknown>, ctx: IMessageContext): void | Promise<void>;
-    dispose?(): void;
-}
-```
-
-- **What it serves is fixed at registration.** There is no unregistration.
-- **`getData` reads through a reactive store** (`createStore` from `solid-js/store`), so the memo of a reader tracks it.
-- **`receivePublish`** is called during the publishing action's `publish` yield, before any entity receiver starts. A source that declares a topic and has no `receivePublish` raises [`receiver/unresolved`](./troubleshooting.md#receiverunresolved).
-- **It never initiates.** Something that pushes events of its own into state, a socket or a worker, is a [resource](./live-sources.md).
-- `runtime.dispose()` calls each source's `dispose` in registration order. A throw from it is a [`runtime/callback-threw`](./troubleshooting.md#runtimecallback-threw) diag.
-
-#### The activity log
-
-`createRuntime(state, { activityLog: true })`, or `{ activityLog: { cap: N } }`, registers a source with `Id` `"treflex/ActivityLog"` serving the key `"ActivityLog"`, read with `getDataGlobal("ActivityLog")` (`getData` doesn't accept the key). It keeps the latest records, 200 by default, of the kinds `action:start`, `action:end`, `branch:start`, `branch:end`, `entity:dispose` and `message:deliver`:
-
-```ts
-import type { IActivityLogEntry } from "treflex";
-
-export function* recentEnds(_draft: IAppWindow): ISelectorGenerator<readonly IActivityLogEntry[]> {
-    const log = yield* getDataGlobal("ActivityLog");
-    return log ? log.Entries.filter((entry) => entry.Kind === "action:end") : [];
-}
-```
-
-`Entries` is newest first. Each entry is `{ Seq, Kind, Time, Data }`: `Seq` is the log's own count, `Time` is `Date.now()` at capture, and `Data` is the record. A `branch:end` is kept without its `Error`, and the tap extras are never kept. It taps only those kinds, so on its own it turns on no `step`, `effect` or `response` records and copies no writes ([`restart-and-records.md`](./restart-and-records.md#what-a-kind-costs)).
-
 ## Caveats
 
 - **An owner whose `$Id` the tree doesn't hold** is registered anyway, with a console warning, and nothing ever removes it. Register from the draft or an entity under it.
@@ -153,6 +116,3 @@ export function* recentEnds(_draft: IAppWindow): ISelectorGenerator<readonly IAc
 - **Between owners at equal depth,** `getDataGlobal`'s winner is the first in the registration table's key order: integer-like `$Id`s first, ascending, then the rest in registration order. A key whose owners can sit at equal depth wants `getData`.
 - **A copy of more than 10,000 objects and arrays** in an action raises [`action/large-read-copy`](./troubleshooting.md#actionlarge-read-copy) in a development build.
 - **Cost.** Each `(key, from)` pair is memoized, and its memo re-runs only when a registration on its walk or the data changes. A scoped memo is freed with its `from` entity. A `getDataGlobal` memo is one per key and lives until the runtime is disposed.
-- **An external source's second registration:** a second source with a registered `Id` is ignored with a console warning, and so is a key another source already serves: the first wins.
-- **An external source answering from a plain object** never re-runs its readers. Answer from a `createStore` store.
-- **An external source's `receivePublish` throw or rejection** lands a `receiver:error` record and nothing else: it takes no failure route and fires no `failure` event. Catch and report inside it.

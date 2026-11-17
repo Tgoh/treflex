@@ -22,7 +22,7 @@ import { receiver } from "../../src/Runtime/receiver";
 import { ReconcileRowsKeyError, ReconcileRowsWaitError, reconcileRows } from "../../src/Runtime/reconcileRows";
 import { transient } from "../../src/Runtime/transient";
 import { rawOf } from "../../src/Runtime/viewProxy";
-import { createTestRuntime, guids } from "../../src/Testing/createTestRuntime";
+import { createTestRuntime, guids, type ITestRuntimeOptions } from "../../src/Testing/createTestRuntime";
 import { captureSurfaced, mountComponent } from "../testHelpers";
 
 declare module "../../src/Registries/IMessageRegistry" {
@@ -190,8 +190,9 @@ function emptyDoc(): IDoc {
 
 const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
-function build(seed: IDoc = emptyDoc()) {
-	const errors: unknown[] = [];
+type IAllow = Pick<ITestRuntimeOptions, "allowDiags" | "allowFailures">;
+
+function build(seed: IDoc = emptyDoc(), allow: IAllow = {}) {
 	const holds: ((answer: string) => void)[] = [];
 	let time = 0;
 	const runtime = createTestRuntime<IDoc>(
@@ -204,9 +205,7 @@ function build(seed: IDoc = emptyDoc()) {
 					holds.push(resolve);
 				})
 		},
-		{
-			onError: (error) => errors.push(error)
-		}
+		allow
 	) as IRuntimeInternal<IDoc>;
 	runtime.registerReceiver(Listener);
 	const records: IRecord[] = [];
@@ -219,7 +218,6 @@ function build(seed: IDoc = emptyDoc()) {
 	const run = <R>(action: IAction<IDoc, [], R>): Promise<R | undefined> => runtime.dispatch(action, "doc");
 	return {
 		runtime,
-		errors,
 		holds,
 		records,
 		row,
@@ -319,63 +317,65 @@ export function reconcileRowsRules(build_: string): void {
 		});
 
 		it("carries a nested live $Id through a copy, and writing that is refused for naming a live node", async () => {
-			const h = build({
-				...emptyDoc(),
-				Rows: [
-					{
-						$Id: "a",
-						Id: "a",
-						Value: "v",
-						Subs: [
-							{
-								$Id: "s",
-								Id: "s",
-								Value: "v"
-							}
-						]
-					}
-				]
-			});
-			await expect(
-				h.run(function* (draft) {
-					draft.Rows.push(
-						yield* entity({
-							...draft.Rows[0],
-							Id: "b"
-						})
-					);
-				})
-			).rejects.toBeInstanceOf(EntityReplacedError);
+			function* copiesARow(draft: IDoc): IActionGenerator {
+				draft.Rows.push(
+					yield* entity({
+						...draft.Rows[0]!,
+						Id: "b"
+					})
+				);
+			}
+			const h = build(
+				{
+					...emptyDoc(),
+					Rows: [
+						{
+							$Id: "a",
+							Id: "a",
+							Value: "v",
+							Subs: [
+								{
+									$Id: "s",
+									Id: "s",
+									Value: "v"
+								}
+							]
+						}
+					]
+				},
+				{
+					allowFailures: [
+						copiesARow
+					]
+				}
+			);
+			await expect(h.run(copiesARow)).rejects.toBeInstanceOf(EntityReplacedError);
 			expect(h.runtime.state.Rows).toHaveLength(1);
 		});
 
 		it("refuses what state can't hold, before minting", async () => {
-			const h = build();
 			class Money {
 				cents = 5;
 			}
-			await expect(
-				h.run(function* () {
-					yield* entity(new Money());
-				})
-			).rejects.toBeInstanceOf(NonPlainDataError);
-			await expect(
-				h.run(function* () {
-					yield* entity({
-						When: new Date(0)
-					});
-				})
-			).rejects.toBeInstanceOf(NonPlainDataError);
-			await expect(
-				h.run(function* () {
-					yield* entity([]);
-				})
-			).rejects.toBeInstanceOf(TypeError);
-			await expect(
-				h.run(function* () {
-					yield* entity(null as unknown as object);
-				})
-			).rejects.toBeInstanceOf(TypeError);
+			let value: unknown;
+			function* mintsValue(): IActionGenerator {
+				yield* entity(value as object);
+			}
+			const h = build(undefined, {
+				allowFailures: [
+					mintsValue
+				]
+			});
+			value = new Money();
+			await expect(h.run(mintsValue)).rejects.toBeInstanceOf(NonPlainDataError);
+			value = {
+				When: new Date(0)
+			};
+			await expect(h.run(mintsValue)).rejects.toBeInstanceOf(NonPlainDataError);
+			value = [];
+			await expect(h.run(mintsValue)).rejects.toBeInstanceOf(TypeError);
+			value = null;
+			await expect(h.run(mintsValue)).rejects.toBeInstanceOf(TypeError);
 			expect(h.minted()).toBe(0);
 		});
 
@@ -415,20 +415,21 @@ export function reconcileRowsRules(build_: string): void {
 		});
 
 		it("fails when a test stubbed no generateGuid", async () => {
+			function* mintsUnstubbed(): IActionGenerator {
+				yield* entity({
+					Name: "x"
+				});
+			}
 			const runtime = createTestRuntime<IDoc>(
 				emptyDoc(),
 				{},
 				{
-					onError: () => {}
+					allowFailures: [
+						mintsUnstubbed
+					]
 				}
 			);
-			await expect(
-				runtime.dispatch(function* () {
-					yield* entity({
-						Name: "x"
-					});
-				}, "doc")
-			).rejects.toThrow(/generateGuid/);
+			await expect(runtime.dispatch(mintsUnstubbed, "doc")).rejects.toThrow(/generateGuid/);
 		});
 	});
 
@@ -542,7 +543,11 @@ export function reconcileRowsRules(build_: string): void {
 		});
 
 		it("rejects a dispatch to an entity that isn't in the tree, naming its id", async () => {
-			const h = build();
+			const h = build(undefined, {
+				allowDiags: [
+					"dispatch/unresolved-entity"
+				]
+			});
 			await expect(
 				h.runtime.dispatch(
 					mark,
@@ -577,8 +582,8 @@ export function reconcileRowsRules(build_: string): void {
 	});
 
 	describe(`reconcileRows ${build_}: the refresh the notes measured`, () => {
-		async function loaded() {
-			const h = build();
+		async function loaded(allow?: IAllow) {
+			const h = build(undefined, allow);
 			await h.run(function* (draft) {
 				yield* assign(
 					draft,
@@ -748,7 +753,11 @@ export function reconcileRowsRules(build_: string): void {
 		});
 
 		it("keeps work and bindings on the right rows through reorders at two levels, and ends a removed row's", async () => {
-			const h = await loaded();
+			const h = await loaded({
+				allowDiags: [
+					"entity/written-while-held"
+				]
+			});
 			const before = {
 				a: h.row("a").$Id,
 				a1: h.sub("a", "a1").$Id,
@@ -833,11 +842,14 @@ export function reconcileRowsRules(build_: string): void {
 			expect(h.sub("a", "a1").Heard).toBe(1);
 			expect(h.row("c").Heard).toBe(1);
 			expect(h.row("d").Heard).toBeUndefined();
-			expect(h.errors).toEqual([]);
 		});
 
 		it("lands a save waiting on a on a, when the server swaps a and b and their values", async () => {
-			const h = await loaded();
+			const h = await loaded({
+				allowDiags: [
+					"entity/written-while-held"
+				]
+			});
 			const aId = h.row("a").$Id;
 			const saving = h.runtime.dispatch(save, aId, "for-a");
 			await settle();
@@ -1375,8 +1387,8 @@ export function reconcileRowsRules(build_: string): void {
 	});
 
 	describe(`reconcileRows ${build_}: refusals`, () => {
-		async function twoRows() {
-			const h = build();
+		async function twoRows(allow?: IAllow) {
+			const h = build(undefined, allow);
 			await h.run(function* (draft) {
 				yield* assign(
 					draft,
@@ -1402,15 +1414,18 @@ export function reconcileRowsRules(build_: string): void {
 			}));
 
 		it("refuses the same key twice in the incoming list, before minting or moving", async () => {
-			const h = await twoRows();
+			function* refresh(draft: IDoc): IActionGenerator {
+				yield* reconcileRows(draft.Rows, incoming("b", "z", "z"), (row) => row.Id, {
+					update: () => {}
+				});
+			}
+			const h = await twoRows({
+				allowFailures: [
+					refresh
+				]
+			});
 			const minted = h.minted();
-			await expect(
-				h.run(function* (draft) {
-					yield* reconcileRows(draft.Rows, incoming("b", "z", "z"), (row) => row.Id, {
-						update: () => {}
-					});
-				})
-			).rejects.toBeInstanceOf(ReconcileRowsKeyError);
+			await expect(h.run(refresh)).rejects.toBeInstanceOf(ReconcileRowsKeyError);
 			expect(order(h)).toEqual([
 				"a",
 				"b"
@@ -1419,44 +1434,53 @@ export function reconcileRowsRules(build_: string): void {
 		});
 
 		it("refuses the same key twice in the current list, before minting or moving", async () => {
-			const h = build({
-				...emptyDoc(),
-				Rows: [
-					{
-						$Id: "1",
-						Id: "a",
-						Value: "",
-						Subs: []
-					},
-					{
-						$Id: "2",
-						Id: "a",
-						Value: "",
-						Subs: []
-					}
-				]
-			});
-			await expect(
-				h.run(function* (draft) {
-					yield* reconcileRows(draft.Rows, incoming("z"), (row) => row.Id, {
-						update: () => {}
-					});
-				})
-			).rejects.toBeInstanceOf(ReconcileRowsKeyError);
+			function* refresh(draft: IDoc): IActionGenerator {
+				yield* reconcileRows(draft.Rows, incoming("z"), (row) => row.Id, {
+					update: () => {}
+				});
+			}
+			const h = build(
+				{
+					...emptyDoc(),
+					Rows: [
+						{
+							$Id: "1",
+							Id: "a",
+							Value: "",
+							Subs: []
+						},
+						{
+							$Id: "2",
+							Id: "a",
+							Value: "",
+							Subs: []
+						}
+					]
+				},
+				{
+					allowFailures: [
+						refresh
+					]
+				}
+			);
+			await expect(h.run(refresh)).rejects.toBeInstanceOf(ReconcileRowsKeyError);
 			expect(h.runtime.state.Rows).toHaveLength(2);
 			expect(h.minted()).toBe(0);
 		});
 
 		it("refuses an incoming row with no key, before minting or moving", async () => {
-			const h = await twoRows();
+			function* refresh(draft: IDoc): IActionGenerator {
+				yield* reconcileRows(draft.Rows, incoming("b", undefined), (row) => row.Id, {
+					update: () => {}
+				});
+			}
+			const h = await twoRows({
+				allowFailures: [
+					refresh
+				]
+			});
 			const minted = h.minted();
-			await expect(
-				h.run(function* (draft) {
-					yield* reconcileRows(draft.Rows, incoming("b", undefined), (row) => row.Id, {
-						update: () => {}
-					});
-				})
-			).rejects.toThrow(/no key on the incoming row at \[1\]/);
+			await expect(h.run(refresh)).rejects.toThrow(/no key on the incoming row at \[1\]/);
 			expect(order(h)).toEqual([
 				"a",
 				"b"
@@ -1465,21 +1489,24 @@ export function reconcileRowsRules(build_: string): void {
 		});
 
 		it("refuses a wait in add with the list untouched, and the writes ahead of the call landing as usual", async () => {
-			const h = await twoRows();
-			await expect(
-				h.run(function* (draft) {
-					draft.Title = "ahead";
-					yield* reconcileRows(draft.Rows, incoming("b", "z"), (row) => row.Id, {
-						*add(item) {
-							yield* hold();
-							return yield* entity({
-								...item
-							});
-						},
-						update: () => {}
-					});
-				})
-			).rejects.toBeInstanceOf(ReconcileRowsWaitError);
+			function* refresh(draft: IDoc): IActionGenerator {
+				draft.Title = "ahead";
+				yield* reconcileRows(draft.Rows, incoming("b", "z"), (row) => row.Id, {
+					*add(item) {
+						yield* hold();
+						return yield* entity({
+							...item
+						});
+					},
+					update: () => {}
+				});
+			}
+			const h = await twoRows({
+				allowFailures: [
+					refresh
+				]
+			});
+			await expect(h.run(refresh)).rejects.toBeInstanceOf(ReconcileRowsWaitError);
 			expect(order(h)).toEqual([
 				"a",
 				"b"
@@ -1489,19 +1516,22 @@ export function reconcileRowsRules(build_: string): void {
 		});
 
 		it("refuses a wait in update with the list arranged and earlier updates landed", async () => {
-			const h = await twoRows();
-			await expect(
-				h.run(function* (draft) {
-					yield* reconcileRows(draft.Rows, incoming("b", "a"), (row) => row.Id, {
-						*update(row) {
-							if (row.Id === "a") {
-								yield* hold();
-							}
-							row.Value = "updated";
+			function* refresh(draft: IDoc): IActionGenerator {
+				yield* reconcileRows(draft.Rows, incoming("b", "a"), (row) => row.Id, {
+					*update(row) {
+						if (row.Id === "a") {
+							yield* hold();
 						}
-					});
-				})
-			).rejects.toThrow(/update yielded "hold"/);
+						row.Value = "updated";
+					}
+				});
+			}
+			const h = await twoRows({
+				allowFailures: [
+					refresh
+				]
+			});
+			await expect(h.run(refresh)).rejects.toThrow(/update yielded "hold"/);
 			expect(order(h)).toEqual([
 				"b",
 				"a"
@@ -1512,81 +1542,90 @@ export function reconcileRowsRules(build_: string): void {
 		});
 
 		it("refuses the same wait through a nested reconcileRows", async () => {
-			const h = await twoRows();
-			await expect(
-				h.run(function* (draft) {
-					yield* reconcileRows(draft.Rows, incoming("a"), (row) => row.Id, {
-						*update(row) {
-							yield* reconcileRows(
-								row.Subs,
-								[
-									{
-										Id: "s",
-										Value: ""
-									}
-								],
-								(sub) => sub.Id,
+			const h = await twoRows({
+				allowFailures: [
+					refresh
+				]
+			});
+			function* refresh(draft: IDoc): IActionGenerator {
+				yield* reconcileRows(draft.Rows, incoming("a"), (row) => row.Id, {
+					*update(row) {
+						yield* reconcileRows(
+							row.Subs,
+							[
 								{
-									*add(item) {
-										yield* hold();
-										return yield* entity({
-											...item
-										});
-									},
-									update: () => {}
+									Id: "s",
+									Value: ""
 								}
-							);
-						}
-					});
-				})
-			).rejects.toBeInstanceOf(ReconcileRowsWaitError);
+							],
+							(sub) => sub.Id,
+							{
+								*add(item) {
+									yield* hold();
+									return yield* entity({
+										...item
+									});
+								},
+								update: () => {}
+							}
+						);
+					}
+				});
+			}
+			await expect(h.run(refresh)).rejects.toBeInstanceOf(ReconcileRowsWaitError);
 			expect(h.holds).toEqual([]);
 		});
 
 		it("refuses a read that needs the index in update", async () => {
-			const h = await twoRows();
 			function* titleOf(draft: IDoc) {
 				return draft.Title;
 			}
-			await expect(
-				h.run(function* (draft) {
-					yield* reconcileRows(draft.Rows, incoming("a"), (row) => row.Id, {
-						*update(): IActionGenerator {
-							yield* select(titleOf);
-						}
-					});
-				})
-			).rejects.toBeInstanceOf(ReconcileRowsWaitError);
+			function* refresh(draft: IDoc): IActionGenerator {
+				yield* reconcileRows(draft.Rows, incoming("a"), (row) => row.Id, {
+					*update(): IActionGenerator {
+						yield* select(titleOf);
+					}
+				});
+			}
+			const h = await twoRows({
+				allowFailures: [
+					refresh
+				]
+			});
+			await expect(h.run(refresh)).rejects.toBeInstanceOf(ReconcileRowsWaitError);
 		});
 
 		it("refuses a transient's yield in add and in update, and a transient held from before takes writes there", async () => {
-			const h = await twoRows();
 			const marks = (owner: IEntity) =>
 				transient(owner, "ReconcileRows/Marks", {
 					Count: 0
 				});
-			await expect(
-				h.run(function* (draft) {
-					yield* reconcileRows(draft.Rows, incoming("a", "new"), (row) => row.Id, {
-						*add(item): IActionGenerator<IRow> {
-							yield* marks(draft);
-							return yield* entity({
-								...item
-							} as IRow);
-						},
-						update: () => {}
-					});
-				})
-			).rejects.toThrow(/add yielded "transient"/);
-			await expect(
-				h.run(function* (draft) {
-					yield* reconcileRows(draft.Rows, incoming("a", "b"), (row) => row.Id, {
-						*update(row): IActionGenerator {
-							yield* marks(row);
-						}
-					});
-				})
-			).rejects.toBeInstanceOf(ReconcileRowsWaitError);
+			function* marksInAdd(draft: IDoc): IActionGenerator {
+				yield* reconcileRows(draft.Rows, incoming("a", "new"), (row) => row.Id, {
+					*add(item): IActionGenerator<IRow> {
+						yield* marks(draft);
+						return yield* entity({
+							...item
+						} as IRow);
+					},
+					update: () => {}
+				});
+			}
+			function* marksInUpdate(draft: IDoc): IActionGenerator {
+				yield* reconcileRows(draft.Rows, incoming("a", "b"), (row) => row.Id, {
+					*update(row): IActionGenerator {
+						yield* marks(row);
+					}
+				});
+			}
+			const h = await twoRows({
+				allowFailures: [
+					marksInAdd,
+					marksInUpdate
+				]
+			});
+			await expect(h.run(marksInAdd)).rejects.toThrow(/add yielded "transient"/);
+			await expect(h.run(marksInUpdate)).rejects.toBeInstanceOf(ReconcileRowsWaitError);
 			const counted = await h.run(function* (draft) {
 				const held = yield* marks(draft);
 				yield* reconcileRows(draft.Rows, incoming("a", "b"), (row) => row.Id, {
@@ -1600,22 +1639,25 @@ export function reconcileRowsRules(build_: string): void {
 		});
 
 		it("refuses an async add and an async update", async () => {
-			const h = await twoRows();
-			await expect(
-				h.run(function* (draft) {
-					yield* reconcileRows(draft.Rows, incoming("z"), (row) => row.Id, {
-						add: async (item: IRowFields) => item as unknown as IRow,
-						update: () => {}
-					} as never);
-				})
-			).rejects.toThrow(/add yielded an async result/);
-			await expect(
-				h.run(function* (draft) {
-					yield* reconcileRows(draft.Rows, incoming("a"), (row) => row.Id, {
-						update: async () => {}
-					});
-				})
-			).rejects.toThrow(/update yielded an async result/);
+			function* addsAsync(draft: IDoc): IActionGenerator {
+				yield* reconcileRows(draft.Rows, incoming("z"), (row) => row.Id, {
+					add: async (item: IRowFields) => item as unknown as IRow,
+					update: () => {}
+				} as never);
+			}
+			function* updatesAsync(draft: IDoc): IActionGenerator {
+				yield* reconcileRows(draft.Rows, incoming("a"), (row) => row.Id, {
+					update: async () => {}
+				});
+			}
+			const h = await twoRows({
+				allowFailures: [
+					addsAsync,
+					updatesAsync
+				]
+			});
+			await expect(h.run(addsAsync)).rejects.toThrow(/add yielded an async result/);
+			await expect(h.run(updatesAsync)).rejects.toThrow(/update yielded an async result/);
 		});
 
 		it("takes open(...) inside update, around the sync effects there", async () => {
@@ -1635,7 +1677,11 @@ export function reconcileRowsRules(build_: string): void {
 		});
 
 		it("lets add or update catch the refusal and carry on, as any throw at a yield", async () => {
-			const h = await twoRows();
+			const h = await twoRows({
+				allowDiags: [
+					"action/refusal-swallowed"
+				]
+			});
 			await h.run(function* (draft) {
 				yield* reconcileRows(draft.Rows, incoming("a"), (row) => row.Id, {
 					*update(row) {
@@ -1651,17 +1697,20 @@ export function reconcileRowsRules(build_: string): void {
 		});
 
 		it("refuses a new row carrying a live $Id, before anything moves", async () => {
-			const h = await twoRows();
-			await expect(
-				h.run(function* (draft) {
-					yield* reconcileRows(draft.Rows, incoming("z", "b"), (row) => row.Id, {
-						add: () => ({
-							...draft.Rows[0]
-						}),
-						update: () => {}
-					});
-				})
-			).rejects.toBeInstanceOf(EntityReplacedError);
+			function* refresh(draft: IDoc): IActionGenerator {
+				yield* reconcileRows(draft.Rows, incoming("z", "b"), (row) => row.Id, {
+					add: () => ({
+						...draft.Rows[0]!
+					}),
+					update: () => {}
+				});
+			}
+			const h = await twoRows({
+				allowFailures: [
+					refresh
+				]
+			});
+			await expect(h.run(refresh)).rejects.toBeInstanceOf(EntityReplacedError);
 			expect(order(h)).toEqual([
 				"a",
 				"b"
@@ -1686,7 +1735,17 @@ export function reconcileRowsRules(build_: string): void {
 				[]
 			]
 		])("refuses add returning %s, before anything moves, with no row lost", async (_name, value) => {
-			const h = build();
+			function* refresh(draft: IDoc): IActionGenerator {
+				yield* reconcileRows(draft.Rows, incoming("c", "z", "a", "b"), (row) => row.Id, {
+					add: () => value as unknown as IRow,
+					update: () => {}
+				});
+			}
+			const h = build(undefined, {
+				allowFailures: [
+					refresh
+				]
+			});
 			await h.run(function* (draft) {
 				yield* assign(
 					draft,
@@ -1705,14 +1764,7 @@ export function reconcileRowsRules(build_: string): void {
 				);
 			});
 			const surfaced = captureSurfaced();
-			await expect(
-				h.run(function* (draft) {
-					yield* reconcileRows(draft.Rows, incoming("c", "z", "a", "b"), (row) => row.Id, {
-						add: () => value as unknown as IRow,
-						update: () => {}
-					});
-				})
-			).rejects.toThrow(/add has to return a row/);
+			await expect(h.run(refresh)).rejects.toThrow(/add has to return a row/);
 			await settle();
 			vi.restoreAllMocks();
 			expect(surfaced).toEqual([]);
@@ -1724,18 +1776,21 @@ export function reconcileRowsRules(build_: string): void {
 		});
 
 		it("refuses a new row state can't hold, before anything moves", async () => {
-			const h = await twoRows();
-			await expect(
-				h.run(function* (draft) {
-					yield* reconcileRows(draft.Rows, incoming("z", "b"), (row) => row.Id, {
-						add: () =>
-							({
-								When: new Date(0)
-							}) as unknown as IRow,
-						update: () => {}
-					});
-				})
-			).rejects.toThrow(NonPlainDataError);
+			function* refresh(draft: IDoc): IActionGenerator {
+				yield* reconcileRows(draft.Rows, incoming("z", "b"), (row) => row.Id, {
+					add: () =>
+						({
+							When: new Date(0)
+						}) as unknown as IRow,
+					update: () => {}
+				});
+			}
+			const h = await twoRows({
+				allowFailures: [
+					refresh
+				]
+			});
+			await expect(h.run(refresh)).rejects.toThrow(NonPlainDataError);
 			expect(order(h)).toEqual([
 				"a",
 				"b"
@@ -1743,71 +1798,76 @@ export function reconcileRowsRules(build_: string): void {
 		});
 
 		it("refuses incoming data state can't hold", async () => {
-			const h = await twoRows();
-			await expect(
-				h.run(function* (draft) {
-					yield* reconcileRows(
-						draft.Rows,
-						[
-							{
-								Id: "a",
-								Value: new Date(0) as unknown as string,
-								Subs: []
-							}
-						],
-						(row) => row.Id,
+			function* refresh(draft: IDoc): IActionGenerator {
+				yield* reconcileRows(
+					draft.Rows,
+					[
 						{
-							update: () => {}
+							Id: "a",
+							Value: new Date(0) as unknown as string,
+							Subs: []
 						}
-					);
-				})
-			).rejects.toBeInstanceOf(NonPlainDataError);
+					],
+					(row) => row.Id,
+					{
+						update: () => {}
+					}
+				);
+			}
+			const h = await twoRows({
+				allowFailures: [
+					refresh
+				]
+			});
+			await expect(h.run(refresh)).rejects.toBeInstanceOf(NonPlainDataError);
 		});
 
 		it("refuses a target that isn't a draft array, and incoming that isn't an array", async () => {
-			const h = await twoRows();
-			await expect(
-				h.runtime.dispatch(
-					function* (_draft: IDoc, rows: IRow[]) {
-						yield* reconcileRows(rows, [] as IRowFields[], (row) => row.Id, {
-							update: () => {}
-						});
-					},
-					"doc",
-					[]
-				)
-			).rejects.toThrow(/an array on the draft/);
-			await expect(
-				h.run(function* () {
-					yield* reconcileRows(h.runtime.state.Rows, [] as IRowFields[], (row) => row.Id, {
-						update: () => {}
-					});
-				})
-			).rejects.toThrow(/an array on the draft/);
-			await expect(
-				h.run(function* (draft) {
-					yield* reconcileRows(draft as unknown as IRow[], [] as IRowFields[], (row) => row.Id, {
-						update: () => {}
-					});
-				})
-			).rejects.toThrow(/an array on the draft/);
-			await expect(
-				h.run(function* (draft) {
-					yield* reconcileRows(draft.Rows, null as unknown as IRowFields[], (row) => row.Id, {
-						update: () => {}
-					});
-				})
-			).rejects.toThrow(/incoming rows have to be an array/);
+			function* reconcilesAnArgument(_draft: IDoc, rows: IRow[]): IActionGenerator {
+				yield* reconcileRows(rows, [] as IRowFields[], (row) => row.Id, {
+					update: () => {}
+				});
+			}
+			function* reconcilesTheView(): IActionGenerator {
+				yield* reconcileRows(h.runtime.state.Rows, [] as IRowFields[], (row) => row.Id, {
+					update: () => {}
+				});
+			}
+			function* reconcilesTheDraft(draft: IDoc): IActionGenerator {
+				yield* reconcileRows(draft as unknown as IRow[], [] as IRowFields[], (row) => row.Id, {
+					update: () => {}
+				});
+			}
+			function* reconcilesNull(draft: IDoc): IActionGenerator {
+				yield* reconcileRows(draft.Rows, null as unknown as IRowFields[], (row) => row.Id, {
+					update: () => {}
+				});
+			}
+			const h = await twoRows({
+				allowFailures: [
+					reconcilesAnArgument,
+					reconcilesTheView,
+					reconcilesTheDraft,
+					reconcilesNull
+				]
+			});
+			await expect(h.runtime.dispatch(reconcilesAnArgument, "doc", [])).rejects.toThrow(/an array on the draft/);
+			await expect(h.run(reconcilesTheView)).rejects.toThrow(/an array on the draft/);
+			await expect(h.run(reconcilesTheDraft)).rejects.toThrow(/an array on the draft/);
+			await expect(h.run(reconcilesNull)).rejects.toThrow(/incoming rows have to be an array/);
 		});
 
 		it("refuses a call with no update, before minting or moving", async () => {
-			const h = await twoRows();
+			function* refresh(draft: IDoc): IActionGenerator {
+				yield* reconcileRows(draft.Rows, incoming("b", "z"), (row) => row.Id, {} as never);
+			}
+			const h = await twoRows({
+				allowFailures: [
+					refresh
+				]
+			});
 			const minted = h.minted();
-			await expect(
-				h.run(function* (draft) {
-					yield* reconcileRows(draft.Rows, incoming("b", "z"), (row) => row.Id, {} as never);
-				})
-			).rejects.toThrow(/update is required/);
+			await expect(h.run(refresh)).rejects.toThrow(/update is required/);
 			expect(order(h)).toEqual([
 				"a",
 				"b"
@@ -1816,17 +1876,20 @@ export function reconcileRowsRules(build_: string): void {
 		});
 
 		it("refuses rows that have left the tree", async () => {
-			const h = await twoRows();
-			await expect(
-				h.run(function* (draft) {
-					const subs = draft.Rows[0].Subs;
-					draft.Rows.shift();
-					yield* generateGuid();
-					yield* reconcileRows(subs, [] as ISubInfo[], (sub) => sub.Id, {
-						update: () => {}
-					});
-				})
-			).rejects.toBeInstanceOf(DraftDetachedError);
+			function* refresh(draft: IDoc): IActionGenerator {
+				const subs = draft.Rows[0]!.Subs;
+				draft.Rows.shift();
+				yield* generateGuid();
+				yield* reconcileRows(subs, [] as ISubInfo[], (sub) => sub.Id, {
+					update: () => {}
+				});
+			}
+			const h = await twoRows({
+				allowFailures: [
+					refresh
+				]
+			});
+			await expect(h.run(refresh)).rejects.toBeInstanceOf(DraftDetachedError);
 		});
 
 		it("doesn't touch what it was given", async () => {

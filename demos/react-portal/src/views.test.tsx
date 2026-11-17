@@ -7,7 +7,7 @@ import type { IPortal } from "../../portal/src/portal/Portal";
 import type { ISessionStore } from "../../portal/src/portal/session";
 import type { IMountedPortal } from "./mount";
 import { act } from "react";
-import { entity, publish } from "treflex";
+import { entity, named, publish } from "treflex";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { addFish } from "../../portal/src/aquarium/Aquarium";
 import { SWIM_MS } from "../../portal/src/aquarium/Fish";
@@ -91,11 +91,13 @@ function* arrive(draft: IConversation, text: string): IActionGenerator {
 	});
 	draft.Messages.push(message);
 }
+named(arrive, "ViewsTest/Arrive");
 
 function* grow(draft: IMessage, text: string, streaming: boolean): IActionGenerator {
 	draft.Text += text;
 	draft.Streaming = streaming;
 }
+named(grow, "ViewsTest/Grow");
 
 function* setOff(draft: IFish, fromX: number, toX: number, ago: number): IActionGenerator {
 	draft.FromX = fromX;
@@ -103,6 +105,7 @@ function* setOff(draft: IFish, fromX: number, toX: number, ago: number): IAction
 	draft.X = toX;
 	draft.SwamAt = wallClock() - ago;
 }
+named(setOff, "ViewsTest/SetOff");
 
 function* giveVoucher(_draft: IPortal): IActionGenerator {
 	yield* publish("Portal/VoucherApplied", {
@@ -110,6 +113,7 @@ function* giveVoucher(_draft: IPortal): IActionGenerator {
 		From: "Marcus"
 	});
 }
+named(giveVoucher, "ViewsTest/GiveVoucher");
 
 describe("the chat's letters", () => {
 	it("fade in only as they arrive on screen, and a finished message turns into plain text", async () => {

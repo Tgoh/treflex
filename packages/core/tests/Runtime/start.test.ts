@@ -329,14 +329,14 @@ describe("start", () => {
 				);
 
 				const starts: {
-					Name: string | null;
+					Label: string | null;
 					StartedBy: string | undefined;
 					ActionId: string;
 				}[] = [];
 				runtime.on("record", (record) => {
 					if (record.Kind !== "action:start") return;
 					starts.push({
-						Name: record.Name,
+						Label: record.Label,
 						StartedBy: record.StartedBy,
 						ActionId: record.ActionId
 					});
@@ -363,7 +363,7 @@ describe("start", () => {
 				await Promise.resolve();
 				await Promise.resolve();
 
-				const byName = (name: string) => starts.find((s) => s.Name === name);
+				const byName = (name: string) => starts.find((s) => s.Label === name);
 				const root = byName("parentStarts");
 				const child = byName("childWrite");
 				const grandchild = byName("grandchildWrite");

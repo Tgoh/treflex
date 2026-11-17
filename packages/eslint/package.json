@@ -1,6 +1,6 @@
 {
 	"name": "treflex-eslint",
-	"version": "0.1.1",
+	"version": "0.2.0",
 	"description": "ESLint rules for treflex applications",
 	"license": "MIT",
 	"author": "Tam Goh",
@@ -10,6 +10,9 @@
 		"directory": "packages/eslint"
 	},
 	"type": "module",
+	"bin": {
+		"treflex-eslint": "dist/cli.js"
+	},
 	"engines": {
 		"node": ">=22"
 	},

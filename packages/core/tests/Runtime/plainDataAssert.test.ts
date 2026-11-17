@@ -194,7 +194,7 @@ describe("plain data on a write", () => {
 		const errors: string[] = [];
 		runtime.on("record", (record) => {
 			if (record.Kind === "action:start") {
-				namesById.set(record.ActionId, record.Name ?? "(anonymous)");
+				namesById.set(record.ActionId, record.Label ?? "(anonymous)");
 			} else if (record.Kind === "action:end" && record.Status === "errored") {
 				errors.push(namesById.get(record.ActionId) ?? record.ActionId);
 			}

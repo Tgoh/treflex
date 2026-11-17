@@ -243,7 +243,7 @@ describe("restore — orphaned table-row sweep", () => {
 		const snapshot = createSnapshot(a.runtime);
 
 		const { b, result } = await restoreWorld(snapshot);
-		expect(result.dropped.map((d) => d.name)).toStrictEqual([
+		expect(result.dropped.map((d) => d.label)).toStrictEqual([
 			"parked"
 		]);
 		expect(result.sweptOrphanedRows).toBe(0);
@@ -336,12 +336,12 @@ describe("restore — orphaned table-row sweep", () => {
 		const pendingLocal = dispatchLocal(a, "local-6", localParker);
 		const snapshot = createSnapshot(a.runtime);
 		const parsed = JSON.parse(snapshot) as ISnapshot;
-		expect(parsed.InFlight.map((e) => e.Name)).toStrictEqual([
+		expect(parsed.InFlight.map((e) => e.Label)).toStrictEqual([
 			"parked"
 		]);
 
 		const { b, result } = await restoreWorld(snapshot);
-		expect(result.dropped.map((d) => d.name)).toStrictEqual([
+		expect(result.dropped.map((d) => d.label)).toStrictEqual([
 			"parked"
 		]);
 		expect(result.sweptOrphanedRows).toBe(0);

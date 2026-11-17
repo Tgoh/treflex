@@ -1,5 +1,4 @@
 import type { IAction } from "../Types/IAction";
-import type { IExternalSource } from "../Types/IExternalSource";
 import type { IMessageContext } from "../Types/IReceiver";
 import type { IResolvedOwner } from "./createResourceManager";
 import type { IActionOutcome, IInternalDispatch, IRuntimeStoreReader } from "./processAction";
@@ -59,77 +58,30 @@ function deliveryTo(context: IFanOutContext, ownerId: string, handle: IAction<an
 
 const ERROR_TOPIC = "Action/Error";
 
-// The key is JSON because ids and topics are arbitrary text, and it carries a
-// producer tag because the timer scheduler shares this emitOnce namespace.
-function emitUnresolvedSource(context: IFanOutContext, topic: string, sourceId: string): void {
-	resolveDiag(context.get).emitOnce(
-		JSON.stringify([
-			"fanOut",
-			"source",
-			topic,
-			sourceId
-		]),
-		{
-			severity: "warn",
-			code: "receiver/unresolved",
-			message:
-				`[treflex] "${topic}" was not delivered to external source "${sourceId}": it declares the topic in Topics ` +
-				"but implements no receivePublish. The message is lost.",
-			data: {
-				topic,
-				ownerId: sourceId,
-				receiverId: sourceId,
-				kind: "source"
-			}
-		}
-	);
-}
-
 function deliver(
 	context: IFanOutContext,
 	topic: string,
 	publisherId: string,
 	data: Record<string, unknown>,
 	deliveries: readonly IDelivery[],
-	sources: readonly IExternalSource[],
 	unresolvedIds: readonly string[],
 	arrivals: IArrivals
 ): void {
 	const journal = context.get("runtime/journal");
 
-	const deliverableSources: {
-		source: IExternalSource;
-		receive: NonNullable<IExternalSource["receivePublish"]>;
-	}[] = [];
-	const unresolved = [
-		...unresolvedIds
-	];
-	for (const source of sources) {
-		if (source.receivePublish) {
-			deliverableSources.push({
-				source,
-				receive: source.receivePublish.bind(source)
-			});
-			continue;
-		}
-		unresolved.push(source.Id);
-		emitUnresolvedSource(context, topic, source.Id);
-	}
-
 	if (journal.wants("message:deliver")) {
-		const recipientIds = [
-			...deliveries.map((entry) => entry.ownerId),
-			...deliverableSources.map((entry) => entry.source.Id)
-		];
+		const recipientIds = deliveries.map((entry) => entry.ownerId);
 		journal.append(
-			unresolved.length > 0
+			unresolvedIds.length > 0
 				? {
 						T: performance.now(),
 						Kind: "message:deliver",
 						Topic: topic,
 						PublisherId: publisherId,
 						RecipientIds: recipientIds,
-						UnresolvedIds: unresolved
+						UnresolvedIds: [
+							...unresolvedIds
+						]
 					}
 				: {
 						T: performance.now(),
@@ -187,16 +139,6 @@ function deliver(
 				journalReceiverError(ownerId, error);
 			});
 	}
-
-	for (const { source, receive } of deliverableSources) {
-		try {
-			Promise.resolve(receive(data, ctx)).catch((error: unknown) => {
-				journalReceiverError(source.Id, error);
-			});
-		} catch (error) {
-			journalReceiverError(source.Id, error);
-		}
-	}
 }
 
 export function fanOut(context: IFanOutContext, options: IFanOutOptions, arrivals: IArrivals): void {
@@ -212,16 +154,7 @@ export function fanOut(context: IFanOutContext, options: IFanOutOptions, arrival
 			deliveries.push(...deliveryTo(context, ownerId, handle));
 		}
 	}
-	deliver(
-		context,
-		topic,
-		publisherId,
-		data,
-		deliveries,
-		context.get("runtime/externalSources").getSubscribers(topic),
-		bindings.boundToUnregistered(),
-		arrivals
-	);
+	deliver(context, topic, publisherId, data, deliveries, bindings.boundToUnregistered(), arrivals);
 }
 
 export function deliverToNearest(
@@ -306,7 +239,7 @@ export function deliverToNearest(
 		);
 	}
 
-	deliver(context, topic, publisherId, payload, deliveries, [], unresolvedIds, arrivals);
+	deliver(context, topic, publisherId, payload, deliveries, unresolvedIds, arrivals);
 }
 
 export interface IErrorBoundary extends IDelivery {

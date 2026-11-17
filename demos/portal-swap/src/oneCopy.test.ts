@@ -149,7 +149,6 @@ describe("one copy of each runtime, with both renderers in one build", () => {
 		expect(packageFiles(modules, "solid-js")).toEqual({
 			[`${nodeModules}/solid-js`]: [
 				"dist/solid.js",
-				"store/dist/store.js",
 				"web/dist/web.js"
 			]
 		});

@@ -280,7 +280,7 @@ describe("inFlight as a read", () => {
 			draft.Panels[0]!.Log.push(`busy:${busy}`);
 			yield* inFlight(save, draft.Panels[0]!);
 		}, "root");
-		const start = h.records.find((record) => record.Kind === "action:start" && record.Name === "reads");
+		const start = h.records.find((record) => record.Kind === "action:start" && record.Label === "reads");
 		const actionId = start?.Kind === "action:start" ? start.ActionId : undefined;
 		const own = h.records.filter((record) => "ActionId" in record && record.ActionId === actionId);
 		expect(own.filter((record) => record.Kind === "effect")).toEqual([]);
@@ -489,7 +489,7 @@ describe("inFlight as a read", () => {
 				true,
 				false
 			]);
-			const start = h.records.find((record) => record.Kind === "action:start" && record.Name === "reads");
+			const start = h.records.find((record) => record.Kind === "action:start" && record.Label === "reads");
 			const actionId = start?.Kind === "action:start" ? start.ActionId : undefined;
 			expect(h.steps().filter((record) => record.Kind === "step" && record.ActionId === actionId)).toEqual([
 				expect.objectContaining({
@@ -523,7 +523,7 @@ describe("inFlight as a read", () => {
 			}
 		}, "root");
 		expect(refused).toBe("busy");
-		const start = h.records.find((record) => record.Kind === "action:start" && record.Name === "guarded");
+		const start = h.records.find((record) => record.Kind === "action:start" && record.Label === "guarded");
 		const actionId = start?.Kind === "action:start" ? start.ActionId : undefined;
 		expect(h.steps().filter((record) => record.Kind === "step" && record.ActionId === actionId)).toEqual([
 			expect.objectContaining({

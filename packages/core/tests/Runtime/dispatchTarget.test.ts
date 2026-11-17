@@ -552,7 +552,7 @@ describe("a write at a located place", () => {
 		await runtime.dispatch(setAt, at.EntityId, at, "Number", "two");
 
 		expect(records.find((r) => r.Kind === "action:start")).toMatchObject({
-			Name: "setAt",
+			Label: "setAt",
 			EntityId: "rec",
 			Path: [
 				"root",

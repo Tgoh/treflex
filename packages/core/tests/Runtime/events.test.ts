@@ -88,7 +88,8 @@ describe("record stream: action lifecycle", () => {
 		expect(start.record.Args).toEqual([
 			42
 		]);
-		expect(start.record.Name).toBe("setValue");
+		expect(start.record.Name).toBeNull();
+		expect(start.record.Label).toBe("setValue");
 		expect(end.record.ActionId).toBe(start.record.ActionId);
 		expect(end.record.Status).toBe("completed");
 		expect(end.live?.result).toBeUndefined();
@@ -102,7 +103,9 @@ describe("record stream: action lifecycle", () => {
 			},
 			{},
 			{
-				onError: () => {}
+				allowFailures: [
+					failing
+				]
 			}
 		);
 		const { records } = collectRecords(runtime);
@@ -120,11 +123,6 @@ describe("record stream: action lifecycle", () => {
 	});
 
 	it("a subscriber attaching mid-action sees none of that action's records, and all of the next one's", async () => {
-		// Journaling is sampled once per action (all-or-nothing): a start
-		// with no end, or body records with no start, would corrupt the
-		// stream's liveness derivation. So a tap subscriber attaching
-		// mid-flight waits out the in-flight action and gets complete
-		// narration from the next dispatch on.
 		function* setValue(draft: { value: number }): IActionGenerator {
 			draft.value = 1;
 			yield {

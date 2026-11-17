@@ -1,9 +1,11 @@
 import type { IEffect } from "../Types/IEffect";
 import type { IRecordChange } from "../Types/IRecord";
+import type { IExternalRead } from "./createExternalTable";
 import type { ISliceHooks } from "./createWriteGateway";
 import type { IFiberContext } from "./processAction";
 import { host } from "../Solid/host";
 import { serializeThrow } from "../Utility/serializeThrow";
+import { externalAnswer } from "./createExternalTable";
 import { copyEffectInput } from "./crossing";
 import { isRedacted } from "./effectDeclarations";
 import { NonPlainDataError, PROMISE_OR_THENABLE } from "./nonPlainDataError";
@@ -50,15 +52,27 @@ export const FINALLY_YIELD_LIMIT = 100;
 
 export const REFUSAL_LIMIT = 100;
 
-// The Cancelling and InFlightAnswers keys are absent, not false, on ordinary steps, so serialized forms
-// agree field-for-field.
-function journalStep<T>(
-	ctx: IFiberContext<T>,
-	changes: IRecordChange[] | null,
-	cancelling?: true,
-	inFlightAnswers?: readonly boolean[]
-): void {
-	if (!changes || (changes.length === 0 && inFlightAnswers === undefined)) {
+/** What a slice's resuming read answered from outside the tree, each list absent when empty. */
+interface IStepAnswers {
+	readonly inFlight?: readonly boolean[] | undefined;
+	readonly external?: readonly IExternalRead[] | undefined;
+}
+
+function stepAnswers(input: IFiberSettleInput): IStepAnswers | undefined {
+	const inFlight = input.inFlightAnswers?.length ? input.inFlightAnswers : undefined;
+	const external = input.externalAnswers?.length ? input.externalAnswers : undefined;
+	return inFlight || external
+		? {
+				inFlight,
+				external
+			}
+		: undefined;
+}
+
+// The Cancelling, InFlightAnswers and ExternalAnswers keys are absent, not false or empty, on ordinary
+// steps, so serialized forms agree field-for-field.
+function journalStep<T>(ctx: IFiberContext<T>, changes: IRecordChange[] | null, cancelling?: true, answers?: IStepAnswers): void {
+	if (!changes || (changes.length === 0 && answers === undefined)) {
 		return;
 	}
 	ctx.env.journal.append({
@@ -72,12 +86,17 @@ function journalStep<T>(
 					Cancelling: true
 				}
 			: {}),
-		...(inFlightAnswers === undefined
+		...(answers?.inFlight === undefined
 			? {}
 			: {
 					InFlightAnswers: [
-						...inFlightAnswers
+						...answers.inFlight
 					]
+				}),
+		...(answers?.external === undefined
+			? {}
+			: {
+					ExternalAnswers: answers.external.map(externalAnswer)
 				})
 	});
 }
@@ -133,12 +152,16 @@ export type IFiberSettleInput =
 			value: unknown;
 			/** The `inFlight` answers a read gave, for the step it resumes. */
 			inFlightAnswers?: readonly boolean[];
+			/** The `external` answers a read gave, for the step it resumes. */
+			externalAnswers?: readonly IExternalRead[];
 	  }
 	| {
 			verb: "throw";
 			error: unknown;
 			/** The `inFlight` answers a read gave before it threw. */
 			inFlightAnswers?: readonly boolean[];
+			/** The `external` answers a read gave before it threw. */
+			externalAnswers?: readonly IExternalRead[];
 	  };
 
 export type IFiberSettleOutcome =
@@ -435,7 +458,7 @@ export function createFiberMachine<T>(
 
 	function runSlice(
 		fn: () => IteratorResult<unknown, unknown>,
-		inFlightAnswers?: readonly boolean[]
+		readAnswers?: IStepAnswers
 	):
 		| {
 				kind: "result";
@@ -446,7 +469,7 @@ export function createFiberMachine<T>(
 				error: unknown;
 		  } {
 		let body = fn;
-		let answers = inFlightAnswers;
+		let answers = readAnswers;
 		let refusals = 0;
 		let r!: IteratorResult<unknown, unknown>;
 		// A refusal at a yield is thrown into the generator there, as a slice of its own.
@@ -600,10 +623,7 @@ export function createFiberMachine<T>(
 		// an action failure, and must not settle the effect again or be thrown
 		// back into the generator.
 		const r = resume;
-		const sliced = runSlice(
-			() => (r.verb === "throw" ? throwIn(r.error) : generator!.next(r.value)),
-			r.inFlightAnswers?.length ? r.inFlightAnswers : undefined
-		);
+		const sliced = runSlice(() => (r.verb === "throw" ? throwIn(r.error) : generator!.next(r.value)), stepAnswers(r));
 		if (sliced.kind === "errored") {
 			return sliced;
 		}

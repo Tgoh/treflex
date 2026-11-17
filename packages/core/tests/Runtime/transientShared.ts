@@ -1072,7 +1072,7 @@ export function transientRules(build_: string): void {
 			*"Action/Error"(draft, message) {
 				draft.Pings = [
 					...(draft.Pings ?? []),
-					String(message.ActionName)
+					String(message.Label)
 				];
 			}
 		});

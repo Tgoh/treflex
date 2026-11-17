@@ -162,7 +162,8 @@ describe("runtime.timers after a restore", () => {
 		const { runtime: after } = await restoreTestRuntime<{
 			$Id: string;
 		}>(createSnapshot(before), {
-			rootId: "root"
+			rootId: "root",
+			setup: (runtime) => runtime.registerReceiver(WorkspaceReceiver)
 		});
 
 		const payload = after.timers()[0]!.Payload as {

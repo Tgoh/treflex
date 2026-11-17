@@ -2,7 +2,15 @@ import type { IRuntime } from "../Runtime/createRuntime";
 import type { IRuntimeInternal } from "../Runtime/internals";
 import type { IDiagEmitter } from "../Types/IRuntimeEvent";
 import type { IRestoreResult } from "./loadSnapshot";
-import { droppedActions, gateSnapshot, loadTables, reportUnresolved, SnapshotRejectedError, unresolvedReceivers } from "./loadSnapshot";
+import {
+	droppedActions,
+	gateSnapshot,
+	loadTables,
+	reportUnresolved,
+	SnapshotRejectedError,
+	savedBuildOf,
+	unresolvedReceivers
+} from "./loadSnapshot";
 
 export interface IRestoreHooks<T extends object> {
 	/** The `$Id` of the app's own root. A snapshot whose root differs rejects with `SnapshotRejectedError`. */
@@ -129,10 +137,14 @@ async function restoreInto<T extends object>(
 	emitLoadDiags();
 	let result: IRestoreResult;
 	try {
+		const savedBuild = savedBuildOf(snapshot);
+		const runtimeBuild = runtime.get("runtime/build");
 		result = {
 			dropped: droppedActions(snapshot),
 			unresolved: unresolvedReceivers(runtime.get),
-			sweptOrphanedRows
+			sweptOrphanedRows,
+			savedBuild,
+			sameBuild: savedBuild !== null && runtimeBuild !== null && savedBuild === runtimeBuild
 		};
 	} catch (error) {
 		throw rejected(error);

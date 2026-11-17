@@ -198,7 +198,7 @@ describe("integration: tracing with real effects", () => {
 		expect(onTrace).toHaveBeenCalledOnce();
 		const trace = onTrace.mock.calls[0][0];
 
-		expect(trace.action).toBe("tracedAction");
+		expect(trace.label).toBe("tracedAction");
 		expect(trace.duration).toBeGreaterThanOrEqual(0);
 
 		const effectIndex = trace.entries.findIndex((s: any) => s.type === "effect");

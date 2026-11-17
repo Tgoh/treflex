@@ -46,7 +46,9 @@ it("names each line by the entity it ran on, and shows a provider failure and th
 	expect(failure?.Lane).toBe("lisbon");
 	expect(lines.some((line) => line.Detail === "ask open · Which flight?" && line.Label === "Lisbon/Trip")).toBe(true);
 	expect(lines.some((line) => line.What === "Leg/Finished" && line.Label === "Lisbon/Trip")).toBe(true);
-	expect(lines.some((line) => line.What === "search" && line.Detail === "flight 9/9" && line.Label === "Lisbon/Flights")).toBe(true);
+	expect(lines.some((line) => line.What === "Trips/SearchLeg" && line.Detail === "flight 9/9" && line.Label === "Lisbon/Flights")).toBe(
+		true
+	);
 });
 
 it("leaves timer ticks out of the lines and counts them instead", async () => {

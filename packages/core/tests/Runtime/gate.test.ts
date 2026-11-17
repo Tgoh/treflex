@@ -94,7 +94,7 @@ function build(options?: { onError?: (error: unknown) => void }) {
 	runtime.on("record", (record) => records.push(record));
 	const diags: IRuntimeEventOf<"diag">[] = [];
 	runtime.on("diag", (event) => diags.push(event));
-	const starts = (name: string) => records.filter((r) => r.Kind === "action:start" && r.Name === name);
+	const starts = (name: string) => records.filter((r) => r.Kind === "action:start" && r.Label === name);
 	const endOf = (actionId: string) => records.find((r) => r.Kind === "action:end" && r.ActionId === actionId);
 	return {
 		runtime,
@@ -109,7 +109,7 @@ function build(options?: { onError?: (error: unknown) => void }) {
 		inFlight: () =>
 			internal
 				.get("runtime/inFlightActions")()
-				.map((a) => a.Name)
+				.map((a) => a.Label)
 	};
 }
 
@@ -496,7 +496,7 @@ describe("the gate: what it keys on", () => {
 		const inFlight = () =>
 			internal
 				.get("runtime/inFlightActions")()
-				.map((a) => a.Name);
+				.map((a) => a.Label);
 		expect(inFlight()).toEqual([
 			"typeLate"
 		]);

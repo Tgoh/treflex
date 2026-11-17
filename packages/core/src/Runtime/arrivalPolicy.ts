@@ -1,6 +1,7 @@
 import type { IActionYield, IOpenMark } from "../Types/IAction";
 import type { IEntity } from "../Types/IEntity";
 import { ARRIVAL_POLICY, type IArrivalPolicy, policyOf } from "./arrivals";
+import { displayName } from "./named";
 
 export type IMarkable = (draft: never, ...args: never[]) => Generator<IActionYield | IOpenMark, unknown, any>;
 
@@ -13,7 +14,7 @@ function mark<F extends Function>(action: F, policy: IArrivalPolicy): F {
 	const marked = policyOf(action);
 	if (marked) {
 		throw new Error(
-			`[treflex] ${policy.kind}(): action "${action.name || "(anonymous)"}" is already marked ${marked.kind}. ` +
+			`[treflex] ${policy.kind}(): action "${displayName(action)}" is already marked ${marked.kind}. ` +
 				`A function takes one mark, once, in the module that defines it.`
 		);
 	}

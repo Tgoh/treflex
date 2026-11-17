@@ -9,6 +9,10 @@ export default defineConfig({
 			TREFLEX_VERIFY_INDEX: "always"
 		},
 		environment: "jsdom",
+		// Not "treflex/vitest": Vitest resolves a setup file by Node's conditions, to the dist the workspace doesn't build.
+		setupFiles: [
+			"../core/src/Testing/vitest.ts"
+		],
 		include: [
 			"tests/**/*.test.ts",
 			"tests/**/*.test.tsx"

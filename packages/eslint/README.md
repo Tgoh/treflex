@@ -3,8 +3,11 @@
 The plugin's rules are [`treflex/no-discarded-generator`](#treflexno-discarded-generator),
 [`treflex/no-yield-in-finally`](#treflexno-yield-in-finally),
 [`treflex/no-edit-after-write`](#treflexno-edit-after-write),
-[`treflex/no-hidden-open`](#treflexno-hidden-open) and
-`treflex/no-global-open`, after the setup below.
+[`treflex/no-hidden-open`](#treflexno-hidden-open),
+[`treflex/no-returned-promise`](#treflexno-returned-promise),
+`treflex/no-global-open`, [`treflex/named`](#treflexnamed) and
+[`treflex/require-name`](#treflexrequire-name), after the setup below. Its
+command, [`treflex-eslint name`](#treflex-eslint-name), names a project's actions.
 
 ## Registering it
 
@@ -37,7 +40,7 @@ too: the project's `package.json` has `"type": "module"`, or the file is named
 `eslint.config.mjs`.
 
 `treflex.configs.recommended` covers `.ts` and `.tsx`. It registers the plugin,
-sets every rule on this page to `error`, and turns eslint's `require-yield` off, because
+sets every rule on this page but `treflex/require-name` to `error`, and turns eslint's `require-yield` off, because
 selectors and receivers are generators by contract and one with no `yield` is
 correct. Nothing about a file says it holds one, so the rule is off for every
 file the config covers rather than per file. A preset that turns `require-yield`
@@ -285,3 +288,188 @@ The rule needs type information. It reads the types by name, `IOpenMark`,
 yield type. It also recognises `open` by name, through an import under any
 alias or as an unresolved global, so an `open(...)` whose own type is `any` is
 reported too.
+
+## `treflex/named`
+
+```js
+"treflex/named": "error"
+```
+
+Reports a `named(action, name)` whose name is not a string literal, such as
+`named(save, save.name)`, since a computed name changes when a bundler renames
+the function, and a name a second `named` call in the same file has already
+used ([durable names](../../docs/reference/actions.md#durable-names)). A
+duplicate across files throws at the second module's load in development.
+
+It also reports a `named` call that isn't a statement of its own at the top
+level of its module: one inside a function or a block, or one whose result is
+used, as in `const save = named(function* save() {...}, "Doc/Save")`. A mark
+goes in the module that defines the action, as a statement after the
+declaration, and an action a factory makes on each call can't be named.
+
+The rule needs no type information. It recognises `named` by name, through an
+import of any source under any alias, read off a namespace import such as
+`T.named`, or as an unresolved global.
+
+## `treflex/require-name`
+
+```js
+"treflex/require-name": "error"
+```
+
+Not in `configs.recommended`, since an app that never saves has no need of
+names: an app that saves, and sets `requireNames`
+([requireNames](../../docs/reference/runtime.md#requirenames)), turns it on
+after the recommended config, with the same `files`.
+
+Reports an action with no durable name where it is passed to `start`,
+`dispatch` (a call named `dispatch`, or a method of that name), `leading`,
+`latest`, a work tag's `mark`, or a feature's actions object,
+`createEntityFeature(...)(actions)` or `createComponentFeature(...)(actions)`.
+`start`, `leading`, `latest` and the two feature factories are recognised by
+name: imported from any source under any alias, read off a namespace import
+such as `T.leading`, or as a global that is unresolved or only declared, by
+`declare`, `declare global` or a `.d.ts`; a global with a body is the app's own
+function. A work tag's `mark` is
+recognised by its object's type, `IWorkTag`. An actions object built in another module and passed by reference,
+`createEntityFeature("Planner")(PlannerFeature.actions)`, has each of its
+properties checked. An action is a function the type checker resolves to a
+generator declaration, or a variable initialised with a generator function,
+and it is named when its own module has a `named` call for it. An inline
+generator function passed directly is reported too.
+
+```ts
+export function* increment(draft: ICounter): IActionGenerator {
+    draft.Count++;
+}
+leading(increment);   // reported, until named(increment, "...") is in this module
+```
+
+**It fixes what it reports** in the module that declares the action, at top
+level, with the file's own line break.
+
+- **The mark,** `named(action, "<Prefix>/<Name>")`, goes on a new line at the
+  end of the declaration's last line when only comments that close on that line
+  follow the declaration there, and otherwise on a new line straight after the
+  declaration. Either way it comes ahead of any `leading` or `latest` mark that
+  follows, and an overloaded generator's goes after its implementation.
+- **The import:** the fix adds `named` to the module's `treflex` import, uses
+  `T.named` through a namespace import of `treflex`, or adds
+  `import { named } from "treflex";` on a line of its own where Biome's
+  `organizeImports` keeps it: after the module's last `treflex` import, a
+  type-only one included, and otherwise ahead of its first relative import or
+  import of a package that sorts after `treflex`, or else after its last
+  import. A module with no imports at all gets no fix, and neither does one
+  that already has another binding called `named`.
+
+- **The prefix** is the last segment of the id of a `createEntityFeature("...")`
+  or `createComponentFeature("...")` call in the module, `"TodoList"` for
+  `"Features/TodoList"`, and otherwise the module's folder name in PascalCase,
+  `"TodoList"` for `todo-list/`.
+- **The name** is the function's own name in PascalCase, so `increment` in a
+  `Counter` feature becomes `"Counter/Increment"`.
+- **No fix** is offered for an action declared in another module, which
+  [`treflex-eslint name`](#treflex-eslint-name) names, a variable
+  with a type annotation (`const save: IAction<IDoc> = function* ...`), an inline
+  or anonymous function, a declaration inside another function, whose every call
+  would make a new function claiming the one name, a module whose feature id
+  or folder name gives no prefix, such as an id ending in `/`, or a name
+  another `named` call in the module already has or the fix already gave
+  another action, as `saveDraft` and `save_draft` would both become
+  `SaveDraft`. Nothing in a module is fixed while one of its `named` calls
+  can't be read, as [`treflex-eslint name`](#treflex-eslint-name) defines it.
+
+The fix chooses a name once. Changing it afterwards is like renaming a saved
+field: records and saves made before the change name the old one.
+
+Not seen: an action reached through a conditional, an array, a variable typed
+`IAction` with no generator behind it, or an argument the type checker can't
+follow. The rule doesn't know which entity an action runs on, so it also
+reports an action dispatched only on component state, which the runtime would
+exempt. It needs type information.
+
+## `treflex-eslint name`
+
+```
+npx treflex-eslint name [--check] [-p <tsconfig.json or its folder>]
+```
+
+Names every action `treflex/require-name` reports in a project, including one
+declared in another module than the one that uses it. It writes the mark and
+the import the rule's fix would, in the module that declares the action, and
+takes the prefix from that module too, so a module's actions share one prefix
+whichever of them a feature in another module lists. The project is what its
+`tsconfig.json` includes, in the current folder unless `-p` names another, and
+every project its `references` reach, run as one: a solution-style
+`tsconfig.json` with no files of its own, as Vite's is, stands for the projects
+it references. The command prints each name it gave as `file: Feature/Action`,
+the file relative to the project, and a second run changes nothing. An added
+`import { named } from "treflex"` sits beside the module's `treflex` import, or
+before its relative imports; in a module that uses path aliases (`@/`, `#`,
+`~`) and has no `treflex` import, the formatter's import sort may need to run
+after the command.
+
+It leaves an action alone, and lists it with the reason, where the fix would
+refuse it for a reason other than its being declared in another module: a
+type annotation, an anonymous function, a method written inside an actions
+object, a declaration below the top level, no prefix, a taken name, a module
+with no imports or another binding called `named`. It does the same for an
+action declared outside the project, such as in `node_modules`, and for one a
+`named` call in another module names, since its mark belongs in the module
+that declares it. A name is taken when a `named` call has it in any source
+file the project compiles but a declaration file, installed packages and files
+imported from outside the project included, or when the run has already given
+it to another action.
+
+A `named` call it can't read blocks the run: one whose action doesn't resolve
+to a function declaration, or whose name isn't a known string, such as a
+template string with a part computed at run time; a string constant, an
+`as const` or a template string of constants is known. The command lists each
+such call, writes nothing and exits 1, since any name could then clash. It
+sees `named` itself, imported or read off a namespace import, and not a mark
+made through the app's own wrapper around it.
+
+It exits 1 when it leaves an action unnamed, which the rule still reports and
+the runtime still refuses, or can't write a file, which it lists with the
+reason, and 2 on bad arguments or when it can't read the project. `--check`
+lists what it would name, writes nothing, and exits 1 when any action is
+unnamed, for CI.
+
+## `treflex/no-returned-promise`
+
+```js
+"treflex/no-returned-promise": "error"
+```
+
+Reports a `return` in a generator function whose value is a promise or a
+thenable. [An action returns plain data](../../docs/reference/actions.md#a-dispatchs-result):
+one that returns a promise, a `parallel` or `parallelSettled` branch included,
+fails with `NonPlainDataError`, and only once it has run to its end. The fix is
+to declare the async work as an effect and `yield*` it.
+
+```ts
+const save = defineEffect<ISave, string>("app/save");
+
+function* store(draft: IDoc) {
+    return api.save(draft.Text);                  // reported
+}
+
+function* storeThroughAnEffect(draft: IDoc) {
+    return yield* save({ Text: draft.Text });     // fine
+}
+```
+
+The rule needs type information. A value is a thenable when its type has a
+callable `then`. A union is reported when any of its members is a promise or a
+thenable, so `Promise<T> | T` is reported, and a type parameter is judged by its
+constraint. The rule checks every generator in the files it covers, actions or
+not, since a helper's promise reaches the action that called it as a value. A
+`return` in a function nested inside the generator belongs to that function and
+isn't checked.
+
+An async generator isn't checked, because the language awaits a promise it
+returns. Not seen:
+
+- A value typed `any` or `unknown`. The runtime still refuses one that an
+  action or a branch returns.
+- A promise inside the returned value, `return { saved: api.save(x) }`.

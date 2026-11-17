@@ -77,7 +77,7 @@ describe("journal cost", () => {
 			await nextWait;
 
 			expect(runtime.state.Count).toBe(cycles);
-			expect(inFlight().map((action) => action.Name)).toEqual([
+			expect(inFlight().map((action) => action.Label)).toEqual([
 				"tick"
 			]);
 
@@ -90,7 +90,7 @@ describe("journal cost", () => {
 				rootSetState(runtime),
 				() => "root"
 			);
-			expect(inFlight().map((action) => action.Name)).toEqual([
+			expect(inFlight().map((action) => action.Label)).toEqual([
 				"tick"
 			]);
 

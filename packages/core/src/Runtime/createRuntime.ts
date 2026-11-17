@@ -1,14 +1,15 @@
+import type { IExternalKey, IExternalValue } from "../Registries/IExternalRegistry";
 import type { IResourceKey, IResourceSupplyOf, IResourceSupplyResponseOf, IResourceTypeName } from "../Registries/IResourceRegistry";
 import type { IRuntimeServiceKey, IRuntimeServiceValue } from "../Registries/IRuntimeServiceRegistry";
 import type { IAction } from "../Types/IAction";
 import type { IEntity } from "../Types/IEntity";
-import type { IExternalSource } from "../Types/IExternalSource";
 import type { IReceiver } from "../Types/IReceiver";
 import type { IResourceImplementation, IResourceTypeOptions, IUntypedResourceImplementation } from "../Types/IResource";
 import type { IDiagEmitter } from "../Types/IRuntimeEvent";
 import type { IRead, ISelector } from "../Types/ISelector";
 import type { IEffectImplementation, IRegisterImplementation } from "./createEffectRegistry";
 import type { IEventBus } from "./createEventBus";
+import type { IExternalHandle, IExternalProvider } from "./createExternalTable";
 import type { IOwnerResolver, IResolvedOwner } from "./createResourceManager";
 import type { IResourceRow } from "./createResourceTable";
 import type { ITimerRow } from "./createTimerTable";
@@ -22,14 +23,13 @@ import { implement as generateGuidImpl } from "../Implementations/generateGuid";
 import { host } from "../Solid/host";
 import { pairDiag } from "../Types/IRuntimeEvent";
 import { type IInFlightStub, IN_FLIGHT_YIELD, readInFlight } from "./arrivals";
-import { createActivityLogSource } from "./createActivityLogSource";
 import { createAskTable } from "./createAskTable";
 import { createBindingIndex } from "./createBindingIndex";
 import { createDataSourceMap } from "./createDataSourceMap";
 import { createDiagService } from "./createDiagService";
 import { createEffectRegistry } from "./createEffectRegistry";
 import { createEventBus } from "./createEventBus";
-import { createExternalSourceRegistry } from "./createExternalSourceRegistry";
+import { createExternalTable } from "./createExternalTable";
 import { createGetDataCache } from "./createGetDataCache";
 import { createJournal } from "./createJournal";
 import { createReceiverRegistry } from "./createReceiverRegistry";
@@ -42,6 +42,7 @@ import { createTimerTable } from "./createTimerTable";
 import { COMPONENT_ROOT_KEY, createWriteGateway, type IVerifyIndexMode } from "./createWriteGateway";
 import { mintedId, seat } from "./draftNode";
 import { EntityGoneError } from "./entityGoneError";
+import { hearCollisions } from "./named";
 import { refuseReservedType } from "./operations";
 import { PENDING_ASKS_YIELD, readPendingAsks, shareAsks } from "./pendingAsks";
 import { createProcessAction } from "./processAction";
@@ -53,11 +54,6 @@ import { copyComponentSeed, copySeed, rawOf, setViewDiagEmitter, view } from "./
 
 export interface IRuntimeOptions {
 	onError?: IErrorHandler | undefined;
-	activityLog?:
-		| boolean
-		| {
-				cap?: number;
-		  };
 	/**
 	 * The index consistency walk: `true` on every reconciliation, `false`
 	 * never, `"budgeted"` scaled by tree size. Omitted, it is budgeted under
@@ -74,6 +70,20 @@ export interface IRuntimeOptions {
 	pauseTimers?: boolean | undefined;
 	/** Pauses the resource manager for good: rows record and nothing connects. Methods and supplies resolve undefined. */
 	pauseResources?: boolean | undefined;
+	/**
+	 * Requires a `named` mark on every action dispatched on an entity in AppState with no resource
+	 * origin. Unnamed, it fails with `UnnamedActionError` in development, and runs with `Name: null`
+	 * and diags `action/unnamed` in production. See docs/reference/runtime.md#requirenames.
+	 */
+	requireNames?: boolean | undefined;
+	/** The code this runtime runs, written into a snapshot as `Build`. A non-empty string. See docs/reference/runtime.md#build. */
+	build?: string | undefined;
+}
+
+declare module "../Registries/IRuntimeServiceRegistry" {
+	interface IRuntimeServiceRegistry {
+		"runtime/build": string | null;
+	}
 }
 
 /** An entity's `$Id`, or its live node in the tree (a view or a raw node). A copy carrying the `$Id` is refused. */
@@ -119,7 +129,11 @@ export interface IRuntime<T extends object> {
 		key: K,
 		value: IResourceSupplyOf<K>
 	) => Promise<IResourceSupplyResponseOf<K> | undefined>;
-	registerExternalSource: (source: IExternalSource) => void;
+	/**
+	 * Gives this runtime a value under `key`, which `external(key)` reads. Providing a key again
+	 * replaces its provider. See docs/reference/derived-reads.md#providing-a-value.
+	 */
+	provideExternal: <K extends IExternalKey>(key: K, provider: IExternalProvider<IExternalValue<K>>) => IExternalHandle;
 	set: <K extends IRuntimeServiceKey>(key: K, value: IRuntimeServiceValue<K>) => void;
 	on: IEventBus["on"];
 	dispose: () => void;
@@ -127,6 +141,12 @@ export interface IRuntime<T extends object> {
 
 export function createRuntime<T extends object>(initialState: T, options?: IRuntimeOptions): IRuntime<T> {
 	assertReactiveHost();
+	const build = options?.build;
+	if (build !== undefined && (typeof build !== "string" || build === "")) {
+		throw new TypeError(
+			`[treflex] createRuntime(): build is a non-empty string naming the code, or undefined, not ${build === "" ? '""' : String(build)}.`
+		);
+	}
 	// The "record" channel is closed over, so the bus and the journal can be
 	// constructed in either order.
 	const bus = createEventBus(
@@ -410,25 +430,13 @@ export function createRuntime<T extends object>(initialState: T, options?: IRunt
 			};
 		});
 
-	const externalSources = createExternalSourceRegistry(emitDiag);
-	if (options?.activityLog) {
-		const cap = typeof options.activityLog === "object" ? options.activityLog.cap : undefined;
-		externalSources.register(createActivityLogSource(journal.tap, cap));
-	}
+	const externals = createExternalTable(host, emitDiag);
 
 	const getDataCache = createGetDataCache({
 		onDispose: (callback) => gateway.onDispose(callback, "caches"),
 		report: emitDiag,
 		resolveData: (key, fromId) => dataSources.resolve(key, fromId, stateIdLookupAccessor()),
-		// External sources only here: a source is rootless, so it can answer
-		// the flat key and nothing on a lineage.
-		resolveGlobalData: (key) => {
-			const treeResult = dataSources.resolveGlobal(key, stateIdLookupAccessor());
-			if (treeResult !== undefined) {
-				return treeResult;
-			}
-			return externalSources.resolveData(key);
-		}
+		resolveGlobalData: (key) => dataSources.resolveGlobal(key, stateIdLookupAccessor())
 	});
 
 	set("runtime/journal", journal);
@@ -448,8 +456,9 @@ export function createRuntime<T extends object>(initialState: T, options?: IRunt
 		}
 	});
 	set("runtime/stateIdLookup", stateIdLookupAccessor);
-	set("runtime/externalSources", externalSources);
+	set("runtime/externals", externals);
 	set("runtime/writeGateway", gateway);
+	set("runtime/build", build ?? null);
 
 	const dispatchLoop = createProcessAction({
 		effectProcessor: processEffect,
@@ -462,7 +471,8 @@ export function createRuntime<T extends object>(initialState: T, options?: IRunt
 		journal,
 		gateway,
 		resolvePath,
-		emitFailure: (event) => bus.emit("failure", event)
+		emitFailure: (event) => bus.emit("failure", event),
+		requireNames: options?.requireNames === true
 	});
 	const { processAction, dispatchInternal } = dispatchLoop;
 	set("runtime/inFlightActions", dispatchLoop.inFlightActions);
@@ -524,7 +534,7 @@ export function createRuntime<T extends object>(initialState: T, options?: IRunt
 				// An action's read runs fresh: a memo a view built can lag the record of running
 				// work by a microtask, and its nested inFlight answers would go unrecorded.
 				if (ctx.inFlightAnswers) {
-					return processSelectorImpl(yielded.Selector, ctx.getState, resolvedAccessor, processRead, ctx.inFlightAnswers);
+					return processSelectorImpl(yielded.Selector, ctx.getState, resolvedAccessor, processRead, ctx.inFlightAnswers, ctx.externalReads);
 				}
 				return selectorCache.runSelector(yielded.Selector, ctx.getState, resolvedAccessor, false);
 			}
@@ -537,6 +547,21 @@ export function createRuntime<T extends object>(initialState: T, options?: IRunt
 			}
 			case PENDING_ASKS_YIELD:
 				return readPendingAsks(yielded.Owner);
+			case "external": {
+				const reads = ctx.externalReads;
+				if (!reads) {
+					return externals.read(yielded.Key);
+				}
+				const read = externals.peek(yielded.Key);
+				const value = reads.copy(read.value, yielded.Key);
+				reads.answers.push({
+					key: yielded.Key,
+					provided: read.provided,
+					redacted: read.redacted,
+					value
+				});
+				return value;
+			}
 			default: {
 				const unhandled: never = yielded;
 				throw new Error(
@@ -690,14 +715,23 @@ export function createRuntime<T extends object>(initialState: T, options?: IRunt
 		}
 	};
 
+	let stopHearingCollisions = (): void => {};
+	// A microtask late, so a diag listener attached straight after construction hears the collisions raised before it.
+	queueMicrotask(() => {
+		if (!disposed) {
+			stopHearingCollisions = hearCollisions(emitDiag);
+		}
+	});
+
 	function dispose() {
 		disposed = true;
 		unregisterViewDiag();
+		stopHearingCollisions();
 		// Before the cascade: no tick or delivery may dispatch into a disposing
 		// runtime.
 		timerScheduler.dispose();
 		resourceManager.dispose();
-		externalSources.dispose();
+		externals.dispose();
 		gateway.dispose();
 		// getDataGlobal memos live in detached roots the cascade never reaches.
 		getDataCache.dispose();
@@ -735,7 +769,7 @@ export function createRuntime<T extends object>(initialState: T, options?: IRunt
 		timers: (owner) => rowsOf(timers.entries(), owner),
 		supplyResource: (owner, key, value) =>
 			resourceManager.supply(key, typeof owner === "string" ? owner : owner.$Id, value) as Promise<any>,
-		registerExternalSource: externalSources.register,
+		provideExternal: (key, provider) => externals.provide(key, provider as IExternalProvider<unknown>),
 		set,
 		on: bus.on,
 		dispose,

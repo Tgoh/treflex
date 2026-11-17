@@ -35,7 +35,9 @@ export function startPortal({ store, document, window, reload, render, fail }: I
 
 	return boot(store, {
 		options: {
-			onError: (error) => console.error("[portal] action failed:", error)
+			onError: (error) => console.error("[portal] action failed:", error),
+			requireNames: true,
+			build: import.meta.env.VITE_BUILD_ID
 		},
 		attach: (runtime) => {
 			autosave = createAutosave(runtime, store, {

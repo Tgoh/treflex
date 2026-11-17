@@ -86,7 +86,8 @@ function createTraceCollector(runtime: { on: (name: any, handler: any) => () => 
 		switch (record.Kind) {
 			case "action:start":
 				lines.push(
-					`action:start ${name(record.Name)} action=${sym(record.ActionId)} entity=${record.EntityId} ` + `path=${record.Path.join("/")}`
+					`action:start ${name(record.Name ?? record.Label)} action=${sym(record.ActionId)} entity=${record.EntityId} ` +
+						`path=${record.Path.join("/")}`
 				);
 				break;
 			case "action:end": {

@@ -97,6 +97,9 @@ describe("createTestRuntime: resources", () => {
 			initial(),
 			{},
 			{
+				allowDiags: [
+					"resource/not-open"
+				],
 				resources: {
 					methods: {
 						"Stub/Upload": {
@@ -140,7 +143,15 @@ describe("createTestRuntime: resources", () => {
 	});
 
 	it("throws for an unstubbed method or supply on a cell with a row", async () => {
-		const runtime = createTestRuntime(initial());
+		const runtime = createTestRuntime(
+			initial(),
+			{},
+			{
+				allowFailures: [
+					upload
+				]
+			}
+		);
 		await runtime.dispatch(open, "dialog");
 		await expect(runtime.dispatch(upload, "dialog", "f1")).rejects.toThrow(/has no stub/);
 		await expect(

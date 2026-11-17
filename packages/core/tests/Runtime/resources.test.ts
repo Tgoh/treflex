@@ -510,7 +510,9 @@ describe("resources: emit and delivery", () => {
 		]);
 		const start = world.records.find((r) => r.Kind === "action:start" && r.Origin?.Kind === "resource:deliver");
 		expect(start).toMatchObject({
-			Name: "FeedReceiver",
+			Name: null,
+			Label: "FeedReceiver",
+			Receiver: "FeedReceiver",
 			EntityId: "root",
 			Origin: {
 				Kind: "resource:deliver",

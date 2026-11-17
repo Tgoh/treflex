@@ -10,8 +10,9 @@ A Solid app on [treflex](https://tgoh.github.io/treflex/docs/). [`README.md`](./
 - **An action holds its entity until it ends,** and other work on that entity queues behind it. To let work in during a wait, wrap the wait in `open(...)`, and leave an action that uses `open` without a return type annotation. `leading(action)` drops a repeat; `latest(action)` replaces the running one.
 - **A view reads state and dispatches actions.** It starts no work and cleans nothing up. Busy state is `useInFlight`, not a flag in state, and not a store or signal of the view's own. Data the app needs when it opens is loaded from the boot.
 - **A feature's id is a string no other feature uses,** never `import.meta.url`.
+- **Every action has a name,** `named(action, "Feature/Action")` after its declaration, because the runtime refuses one without in development; a production build runs it unnamed, and a restore can't say what it was. Run `npx treflex-eslint name` after adding actions to name them; `npm run check` reports one left unnamed. Changing a name afterwards is like renaming a saved field: a save made before the change names the old one.
 - **A change to the state's shape raises `APP_VERSION`** in `src/boot.ts`.
-- **Tests run on `createTestRuntime`** with a stub for every effect the code yields, `generateGuid: guids("…")` among them when an action makes an entity. Await `settled()` before asserting, and pass `onError` when a failure is expected.
+- **Tests run on `createTestRuntime`** with a stub for every effect the code yields, `generateGuid: guids("…")` among them when an action makes an entity. Await `settled()` before asserting. The test runtime fails a test on any diag or failure it doesn't allow: list an action that is meant to fail in `allowFailures`, as the function itself, and an expected diag's code in `allowDiags`. Keep `treflex/vitest` in the Vitest config's `setupFiles`, which makes the failing test the one that caused it.
 
 ## Before you finish
 

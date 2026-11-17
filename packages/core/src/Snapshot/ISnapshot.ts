@@ -3,21 +3,27 @@ import type { IResourceRow } from "../Runtime/createResourceTable";
 import type { ITimerRow } from "../Runtime/createTimerTable";
 
 // The reader validates and consumes exactly the sections declared below and
-// ignores anything else the envelope carries. A bump means older envelopes are
-// refused and the caller discards them and boots fresh, so a section is dropped
-// without one only when ignoring it in an older envelope loses nothing.
-export const SNAPSHOT_FORMAT_VERSION = 7;
+// ignores anything else the envelope carries. It reads this version and
+// PREVIOUS_SNAPSHOT_FORMAT_VERSION and refuses any other, so a section is dropped
+// without a bump only when ignoring it in an older envelope loses nothing.
+export const SNAPSHOT_FORMAT_VERSION = 8;
+
+export const PREVIOUS_SNAPSHOT_FORMAT_VERSION = 7;
 
 export interface ISnapshotInFlightEntry {
 	ActionId: string;
-	// Best-effort and build-dependent: the writing build's minifier decides
-	// what a name looks like, so a reader must treat it as a label, never as
-	// a key it can resolve.
 	Name: string | null;
+	Label: string | null;
+	Receiver?: string;
 	EntityId: string;
-	// Older envelopes spelled Name this way. The reader falls back to it, and
-	// nothing writes it.
+}
+
+/** An in-flight entry of a version 7 envelope, whose `Name`, or older `Key`, is a label. */
+export interface ISnapshotInFlightEntryV7 {
+	ActionId: string;
+	Name?: string | null;
 	Key?: string | null;
+	EntityId: string;
 }
 
 export interface ISnapshotTimerRow extends ITimerRow {
@@ -26,6 +32,8 @@ export interface ISnapshotTimerRow extends ITimerRow {
 
 export interface ISnapshot {
 	Version: number;
+	/** The writing runtime's `build`, or null when it had none. */
+	Build: string | null;
 	AppState: unknown;
 	DataSources: IDataSourceCell[];
 	Timers: ISnapshotTimerRow[];

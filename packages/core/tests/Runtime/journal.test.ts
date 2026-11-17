@@ -16,6 +16,7 @@ import { unregisterDataSource } from "../../src/Effects/unregisterDataSource";
 import { bind } from "../../src/Runtime/bind";
 import { createJournal } from "../../src/Runtime/createJournal";
 import { createRuntime } from "../../src/Runtime/createRuntime";
+import { named } from "../../src/Runtime/named";
 import { open } from "../../src/Runtime/open";
 import { createProcessAction } from "../../src/Runtime/processAction";
 import { receiver } from "../../src/Runtime/receiver";
@@ -156,6 +157,7 @@ const startRecord = (actionId: string): IJournalAppend => ({
 	Root: "AppState",
 	ActionId: actionId,
 	Name: null,
+	Label: null,
 	EntityId: "e",
 	Path: [
 		"e"
@@ -320,11 +322,11 @@ describe("journal (runtime integration)", () => {
 				}
 
 				expect(records[0]).toMatchObject({
-					Name: "actionA",
+					Label: "actionA",
 					EntityId: "parent"
 				});
 				expect(records[2]).toMatchObject({
-					Name: "actionB"
+					Label: "actionB"
 				});
 
 				expect(records[1]).toMatchObject({
@@ -724,7 +726,7 @@ describe("journal (runtime integration)", () => {
 		});
 	});
 
-	it("journals receiver-dispatched work with the receiver id as its Name", async () => {
+	it("journals receiver-dispatched work with its receiver's id as Receiver and Label, and no Name", async () => {
 		await createRoot(async (dispose) => {
 			try {
 				vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -759,8 +761,12 @@ describe("journal (runtime integration)", () => {
 						Kind: "action:start";
 					}
 				>[];
-				const receiverStart = starts.find((r) => r.Name === "PingReceiver");
-				expect(receiverStart).toBeDefined();
+				const receiverStart = starts.find((r) => r.Receiver === "PingReceiver");
+				expect(receiverStart).toMatchObject({
+					Name: null,
+					Label: "PingReceiver",
+					Receiver: "PingReceiver"
+				});
 				expect((runtime.state as TestState).Data).toBe("pinged");
 
 				barrier.resolve(undefined);
@@ -1123,7 +1129,7 @@ describe("journal owns Args and Descriptors", () => {
 						Kind: "action:start";
 					}
 				>;
-				expect(start.Name).toBe("holds");
+				expect(start.Label).toBe("holds");
 				expect(start.Args).toEqual([
 					{
 						Mode: "at-dispatch"
@@ -1174,7 +1180,7 @@ describe("journal owns Args and Descriptors", () => {
 				await new Promise((r) => setTimeout(r, 0));
 
 				const records = journal.records();
-				const openerStart = records.find((r) => r.Kind === "action:start" && r.Name === "opener") as Extract<
+				const openerStart = records.find((r) => r.Kind === "action:start" && r.Label === "opener") as Extract<
 					IRecord,
 					{
 						Kind: "action:start";
@@ -1196,7 +1202,7 @@ describe("journal owns Args and Descriptors", () => {
 				).toEqual([]);
 
 				await dispatch(runtime, midArray, undefined, 2);
-				const midStart = journal.records().find((r) => r.Kind === "action:start" && r.Name === "midArray") as Extract<
+				const midStart = journal.records().find((r) => r.Kind === "action:start" && r.Label === "midArray") as Extract<
 					IRecord,
 					{
 						Kind: "action:start";
@@ -1215,7 +1221,7 @@ describe("journal owns Args and Descriptors", () => {
 		});
 	});
 
-	it("a start effect journals its target's ActionName in the normalized descriptor", async () => {
+	it("a start effect journals its target's Name and Label in the normalized descriptor", async () => {
 		await createRoot(async (dispose) => {
 			try {
 				const barrier = createBarrier();
@@ -1229,6 +1235,7 @@ describe("journal owns Args and Descriptors", () => {
 				function* childWrite(draft: ChildState, tag: string): IActionGenerator {
 					draft.Data = tag;
 				}
+				named(childWrite, "Journal/ChildWrite");
 				function* parentStarts(_draft: TestState): IActionGenerator {
 					yield* start(childWrite, "child-1", "tagged");
 				}
@@ -1249,7 +1256,8 @@ describe("journal owns Args and Descriptors", () => {
 				expect(startEffects[0].Descriptor).toEqual({
 					Type: "start",
 					EntityId: "child-1",
-					ActionName: "childWrite",
+					Name: "Journal/ChildWrite",
+					Label: "childWrite",
 					Args: [
 						"tagged"
 					]
@@ -1346,7 +1354,8 @@ describe("journal owns Args and Descriptors", () => {
 				expect(descriptorOf("start")).toEqual({
 					Type: "start",
 					EntityId: "child-1",
-					ActionName: "childWrite",
+					Name: null,
+					Label: "childWrite",
 					Args: []
 				});
 
@@ -1599,7 +1608,7 @@ describe("journal owns Args and Descriptors", () => {
 
 				expect(runtime.state.Count).toBe(7);
 				const records = journal.records();
-				const start = records.find((r) => r.Kind === "action:start" && r.Name === "act") as Extract<
+				const start = records.find((r) => r.Kind === "action:start" && r.Label === "act") as Extract<
 					IRecord,
 					{
 						Kind: "action:start";
@@ -1730,7 +1739,7 @@ describe("journal owns Args and Descriptors", () => {
 				await dispatch(runtime, daemon);
 
 				const records = journal.records();
-				const start = records.find((r) => r.Kind === "action:start" && r.Name === "daemon") as Extract<
+				const start = records.find((r) => r.Kind === "action:start" && r.Label === "daemon") as Extract<
 					IRecord,
 					{
 						Kind: "action:start";
@@ -2018,17 +2027,17 @@ describe("createJournal: the record tap", () => {
 });
 
 describe("action names", () => {
-	it("journals a named function's own name, and null for an anonymous one", async () => {
+	it("journals a function's own name as its Label, and null for an anonymous one", async () => {
 		await createRoot(async (dispose) => {
 			try {
 				const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 				const runtime = createRuntime<TestState>(initialState(), {});
 				const journal = await grabJournal(runtime);
 
-				function* named(draft: TestState): IActionGenerator {
+				function* labelled(draft: TestState): IActionGenerator {
 					draft.Data = "ran";
 				}
-				await dispatch(runtime, named);
+				await dispatch(runtime, labelled);
 				expect(runtime.state.Data).toBe("ran");
 				// Inline on purpose: binding it to a const would give it a name.
 				await dispatch(runtime, function* (draft: TestState): IActionGenerator {
@@ -2042,8 +2051,8 @@ describe("action names", () => {
 						Kind: "action:start";
 					}
 				>[];
-				expect(starts.map((r) => r.Name)).toEqual([
-					"named",
+				expect(starts.map((r) => r.Label)).toEqual([
+					"labelled",
 					null
 				]);
 				expect(warn).not.toHaveBeenCalled();

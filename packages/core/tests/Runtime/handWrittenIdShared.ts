@@ -1,5 +1,5 @@
 import type { IRuntimeInternal } from "../../src/Runtime/internals";
-import type { IActionGenerator } from "../../src/Types/IAction";
+import type { IAction, IActionGenerator } from "../../src/Types/IAction";
 import type { IEntity, IEntityId } from "../../src/Types/IEntity";
 import { describe, expect, expectTypeOf, it } from "vitest";
 import { entity, idOf, withoutIds } from "../../src/Effects/entity";
@@ -34,10 +34,16 @@ const seed = (): IWorld => ({
 	Slot: null
 });
 
-function build() {
-	const runtime = createTestRuntime<IWorld>(seed(), {
-		generateGuid: guids("m")
-	});
+function build(allowFailures?: readonly IAction<any, any, any>[]) {
+	const runtime = createTestRuntime<IWorld>(
+		seed(),
+		{
+			generateGuid: guids("m")
+		},
+		{
+			allowFailures
+		}
+	);
 	return {
 		runtime,
 		run: <R>(action: (draft: IWorld) => IActionGenerator<R>): Promise<R | undefined> => runtime.dispatch(action, "root")
@@ -107,22 +113,26 @@ export function handWrittenIdRules(build_: string): void {
 				}
 			]
 		])("is refused %s, ahead of the write", async (_way, write) => {
-			const { runtime, run } = build();
-			await expect(
-				run(function* (draft) {
-					write(draft);
-				})
-			).rejects.toThrow(HandWrittenIdError);
+			function* writes(draft: IWorld): IActionGenerator {
+				write(draft);
+			}
+			const { runtime, run } = build([
+				writes
+			]);
+			await expect(run(writes)).rejects.toThrow(HandWrittenIdError);
 			expect(runtime.state).toEqual(seed());
 		});
 
 		it("says what to do, and carries the id", async () => {
-			const { run } = build();
-			const thrown = await run(function* (draft) {
+			function* writesTyped(draft: IWorld): IActionGenerator {
 				draft.Slot = {
 					$Id: "typed"
 				};
-			}).catch((error) => error);
+			}
+			const { run } = build([
+				writesTyped
+			]);
+			const thrown = await run(writesTyped).catch((error) => error);
 			expect(thrown).toBeInstanceOf(HandWrittenIdError);
 			expect(thrown.name).toBe("HandWrittenIdError");
 			expect(thrown.id).toBe("typed");
@@ -184,69 +194,82 @@ export function handWrittenIdRules(build_: string): void {
 		});
 
 		it("gives a copy of a seed's row the same-$Id refusal while the row stands, and the hand-written one once it's gone", async () => {
-			const { run } = build();
 			let copy!: IRow;
-			await expect(
-				run(function* (draft) {
-					copy = {
-						...draft.Rows[0]
-					};
-					draft.Rows.push(copy);
-				})
-			).rejects.toThrow(EntityReplacedError);
+			function* pushesACopy(draft: IWorld): IActionGenerator {
+				copy = {
+					...draft.Rows[0]
+				};
+				draft.Rows.push(copy);
+			}
+			function* pushesTheCopyAgain(draft: IWorld): IActionGenerator {
+				draft.Rows.push(copy);
+			}
+			const { run } = build([
+				pushesACopy,
+				pushesTheCopyAgain
+			]);
+			await expect(run(pushesACopy)).rejects.toThrow(EntityReplacedError);
 			await run(function* (draft) {
 				draft.Rows.splice(0, 1);
 			});
-			await expect(
-				run(function* (draft) {
-					draft.Rows.push(copy);
-				})
-			).rejects.toThrow(HandWrittenIdError);
+			await expect(run(pushesTheCopyAgain)).rejects.toThrow(HandWrittenIdError);
 		});
 
 		it("is refused from reconcileRows' add before anything moves", async () => {
-			const { runtime, run } = build();
-			await expect(
-				run(function* (draft) {
-					yield* reconcileRows(
-						draft.Rows,
-						[
-							{
-								Name: "new"
-							}
-						],
-						(row) => row.Name,
+			function* addsTyped(draft: IWorld): IActionGenerator {
+				yield* reconcileRows(
+					draft.Rows,
+					[
 						{
-							add: (item) => ({
-								$Id: "typed",
-								Name: item.Name
-							}),
-							update: () => {}
+							Name: "new"
 						}
-					);
-				})
-			).rejects.toThrow(HandWrittenIdError);
+					],
+					(row) => row.Name,
+					{
+						add: (item) => ({
+							$Id: "typed",
+							Name: item.Name
+						}),
+						update: () => {}
+					}
+				);
+			}
+			const { runtime, run } = build([
+				addsTyped
+			]);
+			await expect(run(addsTyped)).rejects.toThrow(HandWrittenIdError);
 			expect(runtime.state).toEqual(seed());
 		});
 
 		it("is refused in a transient, like the tree", async () => {
-			const { run } = build();
 			const shelf = (owner: IRow) =>
 				transient(owner, "Test/Shelf", {
 					Rows: [] as unknown[]
 				});
-			await expect(
-				run(function* (draft) {
-					(yield* shelf(draft.Rows[0])).Rows.push({
-						$Id: "typed"
-					});
-				})
-			).rejects.toThrow(HandWrittenIdError);
+			function* shelvesTyped(draft: IWorld): IActionGenerator {
+				(yield* shelf(draft.Rows[0])).Rows.push({
+					$Id: "typed"
+				});
+			}
+			const { run } = build([
+				shelvesTyped
+			]);
+			await expect(run(shelvesTyped)).rejects.toThrow(HandWrittenIdError);
 		});
 
 		it("is refused in a transient default at any depth, minted or not, since each owner's copy would share it", async () => {
-			const { run } = build();
-			for (const held of [
+			let held: object = {};
+			function* defaultsHeld(draft: IWorld): IActionGenerator {
+				yield* transient(draft.Rows[0], "Test/Defaulted", {
+					Deep: [
+						held
+					]
+				});
+			}
+			const { run } = build([
+				defaultsHeld
+			]);
+			for (const value of [
 				{
 					$Id: "typed"
 				},
@@ -254,15 +277,8 @@ export function handWrittenIdRules(build_: string): void {
 					$Id: "~minted"
 				}
 			]) {
-				await expect(
-					run(function* (draft) {
-						yield* transient(draft.Rows[0], "Test/Defaulted", {
-							Deep: [
-								held
-							]
-						});
-					})
-				).rejects.toThrow(HandWrittenIdError);
+				held = value;
+				await expect(run(defaultsHeld)).rejects.toThrow(HandWrittenIdError);
 			}
 		});
 	});
@@ -306,12 +322,13 @@ export function handWrittenIdRules(build_: string): void {
 				}
 			]
 		])("is refused %s", async (_way, write) => {
-			const { runtime, run } = build();
-			await expect(
-				run(function* (draft) {
-					write(draft);
-				})
-			).rejects.toThrow(HandWrittenIdError);
+			function* writes(draft: IWorld): IActionGenerator {
+				write(draft);
+			}
+			const { runtime, run } = build([
+				writes
+			]);
+			await expect(run(writes)).rejects.toThrow(HandWrittenIdError);
 			expect(runtime.state.Rows[0].$Id).toBe("row-1");
 		});
 

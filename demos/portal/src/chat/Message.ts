@@ -1,6 +1,6 @@
 import type { IActionGenerator, IEntity, ISelectorGenerator } from "treflex";
 import type { IChatDay } from "../backend/backend";
-import { inFlight, leading, publishToNearest, start } from "treflex";
+import { inFlight, leading, named, publishToNearest, start } from "treflex";
 import { postMessage, SendError } from "../backend/backend";
 
 declare module "treflex" {
@@ -63,12 +63,14 @@ export function* deliver(draft: IMessage): IActionGenerator {
 	draft.Sent = true;
 	yield* publishToNearest(draft, "Chat/Sent");
 }
+named(deliver, "Chat/Deliver");
 leading(deliver);
 
 export function* retry(draft: IMessage): IActionGenerator {
 	if (draft.Sent) return;
 	yield* start(deliver, draft);
 }
+named(retry, "Chat/RetryMessage");
 
 export const actions = {
 	retry
