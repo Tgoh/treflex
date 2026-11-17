@@ -106,7 +106,7 @@ export const FeedReceiver = receiver<IFeed>("FeedReceiver")({
 
 ### Closing
 
-**Close a resource where the thing that ends it is handled.** When that thing is its owner leaving, the removal is the close and nothing else is written. Otherwise, sign-out or a cancel say, write `closeResource(entity, key)` there. The dispose cascade is the backstop: a resource never outlives its owner. Don't make an entity only so its removal closes a resource.
+**Close a resource where the thing that ends it is handled.** When that thing is its owner leaving, the removal is the close and nothing else is written. Otherwise, sign-out or a cancel say, write `closeResource(entity, key)` there. The dispose cascade is the backstop: a resource never outlives its owner. Don't make an entity only so its removal closes a resource: when the end is some other event, write `closeResource` there. A resource that lives exactly as long as one component shows it, such as a subscription only that view reads, is owned by the component's state: the unmount is the thing that ends it, and [component state](./views.md#component-states-lifetime) is that lifetime in the tree.
 
 ### Timers
 

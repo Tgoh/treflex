@@ -304,7 +304,7 @@ Held draft references and lookup results age in opposite directions. The draft i
 
 | Rule | Reported by |
 |---|---|
-| Call effects, reads and generators with `yield*` | The `require-yield-star` Biome plugin, for the shapes it knows |
+| Call effects, reads and generators with `yield*` | The `require-yield-star` Biome plugin, for the shapes and names it knows, and `treflex/no-discarded-generator` for a generator called and dropped |
 | A normal action doesn't call an open function, and `open(x)` takes an `x` that doesn't open | The compiler, `treflex/no-hidden-open` for `any`, and a refusal at runtime |
 | Don't use the draft after a wait inside `open(...)` until it ends | `DraftInsideOpenError` |
 | A `start`'s node is the tree's own, or what `entity()` returned | An `Error` in the starter, and `dispatch/node-mismatch` |

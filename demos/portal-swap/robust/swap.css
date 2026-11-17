@@ -1,0 +1,117 @@
+body {
+	--swap-bar-h: 40px;
+	display: flex;
+	flex-direction: column;
+}
+
+#root {
+	display: flex;
+	flex-direction: column;
+	flex: 1 1 auto;
+	min-height: 0;
+}
+
+#root .portal,
+#root .boot {
+	flex: 1 1 auto;
+	min-height: 0;
+	height: auto;
+}
+
+/* Outside the drawer layout portal.css gives these columns 100vh, which the bar would push past the portal's clipped bottom. */
+@media not ((max-width: 900px) or ((max-height: 500px) and (pointer: coarse))) {
+	#root .portal {
+		grid-template-rows: minmax(0, 1fr);
+	}
+
+	#root .side,
+	#root main,
+	#root .records {
+		height: auto;
+		min-height: 0;
+	}
+}
+
+.swap-bar {
+	position: relative;
+	z-index: 60;
+	flex: none;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	height: var(--swap-bar-h);
+	padding: 0 4px 0 16px;
+	background: var(--rose-soft);
+	border-bottom: 1px solid #f0c7cf;
+	color: #7d1d2f;
+	font-size: 13px;
+	font-weight: 500;
+}
+
+.swap-bar .swap-note {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}
+
+.swap-bar button {
+	flex: none;
+	display: grid;
+	place-items: center;
+	width: 32px;
+	height: 32px;
+	border: 0;
+	border-radius: 8px;
+	background: none;
+	color: inherit;
+	font-size: 18px;
+	line-height: 1;
+}
+
+.swap-bar button:hover {
+	background: rgba(125, 29, 47, 0.08);
+}
+
+/* Empty, the bar stays rendered, so the line it later gets is announced, but has no size. */
+.swap-bar.idle {
+	height: 0;
+	padding: 0;
+	border: 0;
+	overflow: hidden;
+}
+
+.swap-bar.idle button {
+	display: none;
+}
+
+@media (pointer: coarse) {
+	body {
+		--swap-bar-h: 48px;
+	}
+
+	.swap-bar button {
+		width: 44px;
+		height: 44px;
+	}
+}
+
+/* The drawer layout, as portal.css keys it: the drawer and its scrim are fixed to the viewport, so they start below the bar. */
+@media (max-width: 900px), (max-height: 500px) and (pointer: coarse) {
+	body:has(.swap-bar:not(.idle)) .side,
+	body:has(.swap-bar:not(.idle)) .drawer-open .scrim {
+		top: var(--swap-bar-h);
+	}
+}
+
+/* Where portal.css pins the toast under the menu bar, fixed to the viewport, so it moves down with the bar. */
+@media (max-width: 600px), (max-height: 500px) and (pointer: coarse) {
+	body:has(.swap-bar:not(.idle)) main .toast {
+		top: calc(var(--bar-h) + 48px + var(--swap-bar-h));
+	}
+
+	body:has(.swap-bar:not(.idle)) .portal.with-records main .toast {
+		top: calc(var(--bar-h) + 60px + var(--swap-bar-h));
+	}
+}

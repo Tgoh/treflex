@@ -20,21 +20,26 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
-          node-version: "22"
+          node-version: "lts/*"
           cache: npm
       - run: npm ci
-      # Each build's switch links to the other at the path the assemble step puts it.
+      # The Solid and React builds' switches link to each other at the paths the assemble step puts them.
       - run: npm --prefix demos/portal run build
         env:
           VITE_OTHER_BUILD_URL: ./react/
       - run: npm --prefix demos/react-portal run build
         env:
           VITE_OTHER_BUILD_URL: ../
+      - run: npm --prefix demos/portal-swap run build
+      # The base is the path the assemble step puts the docs at, under the repo's Pages root.
+      - run: npm run docs:build -- --base /treflex/docs/
       - name: Assemble the site
         run: |
           mkdir site
           cp -r demos/portal/dist/. site/
           cp -r demos/react-portal/dist site/react
+          cp -r demos/portal-swap/dist site/swap
+          cp -r docs/.vitepress/dist site/docs
       - uses: actions/upload-pages-artifact@v4
         with:
           path: site

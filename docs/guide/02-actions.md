@@ -53,7 +53,7 @@ export function* refresh(draft: IFeed): IActionGenerator {
 }
 ```
 
-The first argument is the **draft**, the entity the action was dispatched on. Writes to it go straight into state, and views see them at the next yield. Call effects, and anything else that yields, with `yield*`. A generator called without it runs nothing; the [`require-yield-star.grit`](../../packages/core/biome/require-yield-star.grit) Biome plugin reports the common shapes ([lint setup](../reference/effects.md#lint-setup)).
+The first argument is the **draft**, the entity the action was dispatched on. Writes to it go straight into state, and views see them at the next yield. Call effects, and anything else that yields, with `yield*`. A generator called without it runs nothing ([lint setup](../reference/effects.md#lint-setup)).
 
 **Dispatch an action on the entity it works on.** `refresh` runs on the feed, `runtime.dispatch(refresh, feedId)`, not on the reader with a feed id as an argument. The entity it runs on decides what it holds and what ends it.
 

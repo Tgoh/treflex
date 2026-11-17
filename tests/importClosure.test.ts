@@ -13,7 +13,7 @@ const manifests = import.meta.glob("../packages/*/package.json", {
 	string,
 	{
 		name: string;
-		exports: Record<
+		exports?: Record<
 			string,
 			{
 				"treflex-source": string;
@@ -32,6 +32,9 @@ const packageNames: string[] = [];
 for (const key of Object.keys(manifests)) {
 	const dir = key.replace(/^\.\.\//, "").replace(/\/package\.json$/, "");
 	const { name, exports } = manifests[key];
+	if (!exports) {
+		continue;
+	}
 	packageNames.push(name);
 	for (const [subpath, conditions] of Object.entries(exports)) {
 		entries[subpath === "." ? name : `${name}/${subpath.slice(2)}`] = `${dir}/${conditions["treflex-source"].slice(2)}`;

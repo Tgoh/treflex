@@ -1,6 +1,6 @@
 {
 	"name": "treflex-react",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"description": "React bindings for treflex",
 	"license": "MIT",
 	"author": "Tam Goh",
@@ -30,9 +30,8 @@
 		}
 	},
 	"peerDependencies": {
-		"react": "^19.1.0",
-		"solid-js": "^1.9.7",
-		"treflex": "0.1.0"
+		"react": "^18.3.0 || ^19.1.0",
+		"treflex": "0.1.1"
 	},
 	"devDependencies": {
 		"@testing-library/dom": "10.4.1",

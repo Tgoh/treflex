@@ -8,7 +8,8 @@
 		"demos/*"
 	],
 	"engines": {
-		"node": ">=22"
+		"node": ">=22",
+		"npm": ">=11"
 	},
 	"scripts": {
 		"build": "node scripts/build.mjs",
@@ -18,15 +19,19 @@
 		"test:watch": "vitest",
 		"test:eslint": "vitest run --project treflex-eslint",
 		"test:react": "vitest run --project treflex-react",
-		"typecheck": "tsc --noEmit && tsc --noEmit -p packages/core && tsc --noEmit -p packages/solid && tsc --noEmit -p packages/react && tsc --noEmit -p packages/eslint && tsc -p tsconfig.consumer.json",
-		"lint": "biome check packages/ tests/ demos/react-todo/src demos/portal/src demos/react-portal/src scripts/",
-		"lint:fix": "biome check --write packages/ tests/ demos/react-todo/src demos/portal/src demos/react-portal/src scripts/",
-		"format": "biome format --write packages/ tests/ demos/react-todo/src demos/portal/src demos/react-portal/src scripts/",
-		"test:demos": "npm --prefix demos/portal test && npm --prefix demos/react-portal test",
-		"typecheck:demos": "npm --prefix demos/todo run typecheck && npm --prefix demos/react-todo run typecheck && npm --prefix demos/portal run typecheck && npm --prefix demos/react-portal run typecheck",
+		"test:react18": "npm ci --prefix scripts/react18 --no-audit --no-fund && vitest run --config scripts/react18/vitest.config.mjs",
+		"typecheck": "tsc --noEmit && tsc --noEmit -p packages/core && tsc --noEmit -p packages/solid && tsc --noEmit -p packages/react && tsc --noEmit -p packages/eslint && tsc -p packages/create-treflex && tsc -p tsconfig.consumer.json && tsc -p docs/.vitepress",
+		"lint": "biome check packages/ tests/ demos/react-todo/src demos/portal/src demos/react-portal/src demos/portal-swap/src demos/portal-swap/robust scripts/ docs/.vitepress/",
+		"lint:fix": "biome check --write packages/ tests/ demos/react-todo/src demos/portal/src demos/react-portal/src demos/portal-swap/src demos/portal-swap/robust scripts/ docs/.vitepress/",
+		"format": "biome format --write packages/ tests/ demos/react-todo/src demos/portal/src demos/react-portal/src demos/portal-swap/src demos/portal-swap/robust scripts/ docs/.vitepress/",
+		"test:demos": "npm --prefix demos/portal test && npm --prefix demos/react-portal test && npm --prefix demos/portal-swap test",
+		"typecheck:demos": "npm --prefix demos/todo run typecheck && npm --prefix demos/react-todo run typecheck && npm --prefix demos/portal run typecheck && npm --prefix demos/react-portal run typecheck && npm --prefix demos/portal-swap run typecheck",
 		"demo:todo": "npm --prefix demos/todo run dev",
 		"demo:portal": "npm --prefix demos/portal run dev",
-		"demo:react-portal": "npm --prefix demos/react-portal run dev"
+		"demo:react-portal": "npm --prefix demos/react-portal run dev",
+		"demo:portal-swap": "npm --prefix demos/portal-swap run dev",
+		"docs:dev": "vitepress dev docs",
+		"docs:build": "vitepress build docs"
 	},
 	"devDependencies": {
 		"@babel/core": "^7.29.13",
@@ -34,16 +39,20 @@
 		"@secretlint/core": "^14.0.0",
 		"@types/node": "^24.0.3",
 		"@types/uuid": "^10.0.0",
-		"@typescript-eslint/parser": "^8.69.0",
-		"@typescript-eslint/rule-tester": "^8.69.0",
-		"@typescript-eslint/utils": "^8.69.0",
 		"babel-preset-solid": "^1.9.19",
 		"esbuild": "^0.25.9",
 		"eslint": "^10.9.1",
 		"solid-js": "^1.9.7",
-		"typescript": "^6.0.2",
+		"typescript": "^7.0.2",
+		"typescript6": "npm:typescript@^6.0.2",
 		"vite": "^6.3.5",
 		"vite-plugin-solid": "^2.11.7",
+		"vitepress": "1.6.4",
 		"vitest": "^4.1.4"
+	},
+	"overrides": {
+		"ts-api-utils": {
+			"typescript": "~6.0.2"
+		}
 	}
 }

@@ -8,7 +8,7 @@ A set of apps that keep running while their view is unmounted, and come back aft
 
 When an app's work finishes while its view isn't on screen, a notice says so over whichever app is open.
 
-The guided tour across the top walks through it. The session card in the sidebar saves to this browser, reloads and resets. The record stream toggle opens a live tail of what the runtime records.
+The guided tour across the top walks through it. The session card in the sidebar, a drawer behind the menu button on a phone or in a narrow window, saves to this browser, reloads and resets. The record stream toggle opens a live tail of what the runtime records.
 
 ## Running it
 
@@ -16,15 +16,19 @@ The guided tour across the top walks through it. The session card in the sidebar
 npm install          # at the repo root
 npm run demo:portal         # the Solid build, on port 5173
 npm run demo:react-portal   # the React build, on port 5174
+npm run demo:portal-swap    # the swap build, on port 5175
 npm --prefix demos/portal test
 npm --prefix demos/react-portal test
+npm --prefix demos/portal-swap test
 ```
 
-The portal's tests are headless: they run the apps on a runtime with no view. The React build's tests render its views in jsdom, and check that it loads one copy of treflex.
+On a dev server, `?fast` in the address, as in `http://localhost:5173/?fast`, runs the scripted chat and the fake backend's delays at a seventh of their length, so Marcus's voucher arrives a few seconds in, with the same cues in the same order ([`backend/fast.ts`](./src/backend/fast.ts)). It is read when the page loads, and a saved session keeps the cue interval it started with, so press Reset to switch. Production builds ignore it.
 
-The session card's Solid / React switch is a link to the other build, at the address in `VITE_OTHER_BUILD_URL`, read at build time (`otherBuildUrl` in [`shell/builds.ts`](./src/shell/builds.ts)). Unset, a dev server links to the other build's dev server, and a production build disables the other side. A session is shared only between builds served from the same origin, so the two dev servers, on different ports, each keep their own.
+The portal's tests are headless: they run the apps on a runtime with no view. The React build's tests render its views in jsdom, and check that it loads one copy of treflex. The swap build's tests swap renderers in jsdom while a trip search runs, and check that it loads one copy of treflex and of each renderer.
 
-The live demo is built by [`.github/workflows/pages.yml`](../../.github/workflows/pages.yml), which serves this build at the site root and the React build under `react/`, on one origin, so a session saved in one restores in the other. The workflow sets each build's `VITE_OTHER_BUILD_URL` to the other's relative path.
+In the Solid and React builds, the session card's Solid / React switch is a link to the other build, at the address in `VITE_OTHER_BUILD_URL`, read at build time. Unset, a dev server links to the other build's dev server, and a production build disables the other side. In the swap build it swaps in place instead (`otherBuild` in [`shell/builds.ts`](./src/shell/builds.ts) decides, for both builds' cards). A session is shared only between builds served from the same origin, so the dev servers, on different ports, each keep their own.
+
+The live demo is built by [`.github/workflows/pages.yml`](../../.github/workflows/pages.yml), which serves this build at the site root, the React build under `react/` and the swap build under `swap/`, on one origin, so a session saved in one restores in the others. The workflow sets the Solid and React builds' `VITE_OTHER_BUILD_URL` to each other's relative path.
 
 ## Where each capability lives
 
@@ -50,7 +54,7 @@ The live demo is built by [`.github/workflows/pages.yml`](../../.github/workflow
 | An optimistic send | `send` and `deliver` in `Conversation.ts` and [`chat/Message.ts`](./src/chat/Message.ts): `sendStatus` reads "sending" from `inFlight` and "failed" from a message neither sent nor in flight |
 | A notice from any app | Work publishes `Portal/Finished`; `PortalReceiver` in `Portal.ts` shows it unless its trip or conversation is on screen, in a transient cleared by a timer row |
 | One app acting on another | `applyVoucher` in [`chat/Chat.ts`](./src/chat/Chat.ts) publishes `Portal/VoucherApplied`, and `PlannerReceiver` in `Planner.ts` records it whether or not its view is mounted; `priced` in `Planner.ts` discounts each trip's total |
-| Something that plays once | The voucher's flourish: `Played` on the planner's voucher is saved, and the `Planner/Flourish` transient that tells the view to play isn't, so a reload doesn't replay it. `tickerText` gives the countdown's values, and `runTicker` in [`trips/flourish.ts`](./src/trips/flourish.ts) animates them |
+| Something that plays once | The voucher's flourish: a planner view starts it when `callsForFlourish` in [`trips/flourish.ts`](./src/trips/flourish.ts) says so, and dispatches `flourishPlayed` as it starts; whether it is playing is the view's own state. `Played` is saved, so neither a remount nor a reload replays it. `tickerText` gives the countdown's values, and `runTicker` animates them |
 | One restore banner across apps | Each app's `Portal/Restored` case records a note, and [`portal/restoreBanner.ts`](./src/portal/restoreBanner.ts) joins their lines |
 | A record tap | [`portal/monitor.ts`](./src/portal/monitor.ts) |
 
@@ -58,4 +62,13 @@ The live demo is built by [`.github/workflows/pages.yml`](../../.github/workflow
 
 [`demos/react-portal`](../react-portal/) renders the same apps through `treflex-react`. The `.tsx` files and each folder's `contexts.ts` here are the Solid part, and `demos/react-portal/src` holds their React counterparts, folder for folder. Every other module here imports no renderer, so both builds run the same feature files, and the CSS in [`styles/`](./src/styles/) is plain global classes both use. Both start through `startPortal` in [`shell/start.ts`](./src/shell/start.ts), so they read and write one session key and envelope.
 
-The feature files resolve `treflex` from this folder, and `treflex-react` from the React build's. `resolve.dedupe` in `demos/react-portal/vite.config.mts` holds them to one copy in its dev server, build and tests. `demos/react-portal/src/oneCopy.test.ts` checks three things: the node_modules lookups that tsc follows, from both demos and from treflex-react's source, find the linked `packages/core` and `packages/react`; the dev server resolves `treflex`, `treflex/snapshot`, `treflex/internal` and `treflex-react` to those packages' sources from a feature file, the app, the binding, and a folder with its own copy of both in its `node_modules`; and the production bundle holds one copy each of treflex, treflex-react, solid-js, react and react-dom.
+The feature files resolve `treflex` from this folder, and `treflex-react` from the React build's. `resolve.dedupe` in `demos/react-portal/vite.config.mts` holds them to one copy in its dev server, build and tests. `demos/react-portal/src/oneCopy.test.ts` checks three things: the node_modules lookups that tsc follows, from both demos and from treflex-react's source, find the linked `packages/core` and `packages/react`; the dev server resolves `treflex`, `treflex/snapshot`, `treflex/internal` and `treflex-react` to those packages' sources from a feature file, the app, the binding, and a folder with its own copy of both in its `node_modules`; and the production bundle, built in production mode, holds one copy each of treflex, treflex-react, solid-js, react and react-dom, each its production build.
+
+## The swap build
+
+[`demos/portal-swap`](../portal-swap/) boots the portal once and mounts either build's views over the same runtime. The session card's switch unmounts one and mounts the other in place, so a trip search, a streaming message and the fish carry on through it; only what a view holds itself, such as an unsent draft, is lost. It opens in Solid, or in React with `?renderer=react`, and keeps the renderer in the address so a reload comes back to it. The other renderer's views load on the first swap.
+
+- [`src/swap.ts`](../portal-swap/src/swap.ts) holds the runtime and swaps the views; it imports no renderer. Each renderer's `mount.tsx` mounts its views into the element `swap.ts` gives it. While the other renderer's views load, its button on the card is marked busy. When they don't load or fail to mount, the page reloads in the renderer it was in.
+- [`vite.config.mts`](../portal-swap/vite.config.mts) gives the React views to `@vitejs/plugin-react` and every other `.tsx` to `vite-plugin-solid`, and two tsconfigs, `tsconfig.solid.json` and `tsconfig.react.json`, check each side with its own JSX.
+- [`src/oneCopy.test.ts`](../portal-swap/src/oneCopy.test.ts) checks the dev server's resolution and the production bundle as the React build's does, for both bindings, solid-js, react, react-dom and scheduler, and that each `.tsx` goes through one JSX transform.
+- [`robust/`](../portal-swap/robust/) is a version of the swap that recovers from failure instead of reloading: it keeps or remounts the current view, reports a swap as pending or failed, and says it failed in a dismissible bar above the portal. Its own tests run with the build's, but the demo doesn't use it.

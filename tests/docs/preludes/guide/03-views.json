@@ -1,0 +1,3 @@
+{
+	"wrap": [{ "match": "import { Root } from \"./Root\";", "before": "", "after": "", "replace": [["import { Root } from \"./Root\";", ""]] }]
+}

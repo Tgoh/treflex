@@ -1,4 +1,4 @@
-import ts from "typescript";
+import ts from "typescript6";
 import { describe, expect, it } from "vitest";
 
 // OPTIONS below is a hand-maintained mirror of packages/solid/tsconfig.json — drift between the two shows up
@@ -286,7 +286,8 @@ describe("discarded generator calls", () => {
 	it("finds none in src/, tests/, or the demo sources", {
 		timeout: 60_000
 	}, () => {
-		// Both sides of the length check below derive from the glob, so a renamed folder would empty both and pass.		expect(realFiles).toContain(`${cwd}/packages/core/src/index.ts`);
+		// Both sides of the length check below derive from the glob, so a renamed folder would empty both and pass.
+		expect(realFiles).toContain(`${cwd}/packages/core/src/index.ts`);
 		expect(realFiles).toContain(`${cwd}/packages/core/tests/testHelpers.ts`);
 		expect(realFiles).toContain(`${cwd}/packages/solid/src/index.ts`);
 		expect(realFiles).toContain(`${cwd}/packages/solid/src/Context/TreflexContext.tsx`);

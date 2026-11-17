@@ -61,7 +61,7 @@ The snapshot holds the state tree with every binding in it, data sources, timer 
 
 ## Restoring
 
-The boot either restores the save or starts fresh. Both paths register the same things, so registration moves into one `setup` function:
+The boot either restores the save or starts fresh. It replaces `createRuntime` in the module that renders, which still declares no component ([page 3](./03-views.md#booting)). Both paths register the same things, so registration moves into one `setup` function:
 
 ```ts
 import { createRuntime, type IRuntime, type IRuntimeOptions } from "treflex";

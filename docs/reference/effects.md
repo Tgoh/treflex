@@ -166,12 +166,12 @@ Register both plugins, `no-nondeterminism.grit` and [`require-yield-star.grit`](
             "plugins": ["./node_modules/treflex/biome/require-yield-star.grit"],
             "linter": { "rules": { "correctness": { "useYield": "off" } } }
         },
-        { "includes": ["src/**", "!src/implementations/**"], "plugins": ["./node_modules/treflex/biome/no-nondeterminism.grit"] }
+        { "includes": ["src/**", "!src/**/implementations/**"], "plugins": ["./node_modules/treflex/biome/no-nondeterminism.grit"] }
     ]
 }
 ```
 
-`require-yield-star` matches names, not resolved symbols, so where a local function shares one of its names, suppress that call with `// biome-ignore lint/plugin: <reason>`. An app's own effect creators can be covered by a sibling plugin with the same shape and the app's names.
+`require-yield-star` runs without type information, so it matches treflex's own names, not resolved symbols. Where a local function shares one of its names, suppress that call with `// biome-ignore lint/plugin: <reason>`. An app's own effect creators and helper generators called and dropped are not reported. `treflex-eslint`'s [`no-discarded-generator`](../../packages/eslint/README.md#treflexno-discarded-generator) reads types instead, so it reports a generator a call creates and drops, an app's own included, with no names to list. It doesn't report a bare `yield` of a call or a read used as a condition; only the Biome plugin does. A project on Biome alone covers its own creators with a sibling plugin of the same shape that lists the app's names.
 
 Run Biome from a pinned `@biomejs/biome` dev dependency: `npx biome` can resolve to an unrelated package that exits 0 without linting. The eslint rules, `treflex-eslint`'s `configs.recommended`, are registered as [its README](../../packages/eslint/README.md#registering-it) says.
 

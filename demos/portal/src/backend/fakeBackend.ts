@@ -5,6 +5,7 @@ import { wallClock } from "../portal/clock";
 import { CARRIERS, DESTINATIONS } from "../trips/destinations";
 import { chatCue, chatHistory, chatTime, checkProvider, now, ProviderError, postMessage, random, SendError } from "./backend";
 import { CUES, HISTORY, lineText } from "./chatScript";
+import { paced } from "./fast";
 
 export type IWait = (ms: number, signal: AbortSignal | undefined, effect: ICheckProvider) => Promise<void>;
 
@@ -221,7 +222,7 @@ const sleep = (ms: number, signal: AbortSignal | undefined): Promise<void> =>
 		});
 	});
 
-export const realWait: IWait = (ms, signal) => sleep(ms, signal);
+export const realWait: IWait = (ms, signal) => sleep(paced(ms), signal);
 
 export function fakeBackend(wait: IWait = realWait) {
 	return implementation(checkProvider, async (effect, action) => {
@@ -245,7 +246,7 @@ export interface IChatWaitFor {
 
 export type IChatWait = (ms: number, signal: AbortSignal | undefined, what: IChatWaitFor) => Promise<void>;
 
-const realChatWait: IChatWait = (ms, signal) => sleep(ms, signal);
+const realChatWait: IChatWait = (ms, signal) => sleep(paced(ms), signal);
 
 export function sendFails(effect: IPostMessage): boolean {
 	if (effect.Attempt > 0) return false;

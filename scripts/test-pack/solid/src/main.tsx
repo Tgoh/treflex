@@ -1,7 +1,7 @@
-import { For } from "solid-js";
+import { $TRACK, For } from "solid-js";
 import { render } from "solid-js/web";
 import { createRuntime, generateGuid, type IActionGenerator, type IEntity, type ISelectorGenerator } from "treflex";
-import { DEV } from "treflex/internal";
+import { DEV, solidTrack } from "treflex/internal";
 import { createEntityFeature, TreflexProvider } from "treflex-solid";
 import { expect, report, waitFor } from "../../shared/report.js";
 
@@ -67,5 +67,5 @@ report(async () => {
 	box.click();
 	await waitFor(() => remainingText() === "0 remaining", "the view's toggle to dispatch and re-render");
 
-	return { dev: DEV };
+	return { dev: DEV, oneSolid: solidTrack === $TRACK };
 });

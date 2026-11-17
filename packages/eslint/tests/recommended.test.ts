@@ -1,6 +1,6 @@
 import parser from "@typescript-eslint/parser";
 import { ESLint } from "eslint";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import plugin from "../src/index";
 
 const FIXTURE = decodeURIComponent(new URL("./fixture", import.meta.url).pathname).replace(/^\/(?=[A-Za-z]:)/, "");
@@ -20,7 +20,8 @@ async function lint(code: string, filePath = `${FIXTURE}/file.ts`, after: object
 					parser,
 					parserOptions: {
 						project: "./tsconfig.json",
-						tsconfigRootDir: FIXTURE
+						tsconfigRootDir: FIXTURE,
+						disallowAutomaticSingleRunInference: true
 					}
 				},
 				rules: {
@@ -54,6 +55,20 @@ describe("configs.recommended", () => {
 		expect(await lint(YIELD_IN_FINALLY)).toEqual([
 			"treflex/no-yield-in-finally"
 		]);
+	});
+
+	it("lints the code it is given, each time, when CI lints the same file twice", async () => {
+		vi.stubEnv("CI", "true");
+		try {
+			expect(await lint(YIELD_IN_FINALLY)).toEqual([
+				"treflex/no-yield-in-finally"
+			]);
+			expect(await lint(YIELD_IN_FINALLY)).toEqual([
+				"treflex/no-yield-in-finally"
+			]);
+		} finally {
+			vi.unstubAllEnvs();
+		}
 	});
 
 	it("reports a rule that needs type information", async () => {

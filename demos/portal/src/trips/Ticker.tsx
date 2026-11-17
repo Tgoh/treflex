@@ -1,6 +1,34 @@
-import type { IPrice } from "./Planner";
+import type { IPrice, IVoucherView } from "./Planner";
 import { createEffect, createSignal, on, onCleanup, Show } from "solid-js";
-import { runTicker } from "./flourish";
+import { callsForFlourish, runTicker } from "./flourish";
+
+/**
+ * Whether this view is playing the voucher's flourish, and the call that ends it. It starts when `callsForFlourish`
+ * says so, at mount or later, and calls `markPlayed` as it starts.
+ */
+export function createFlourish(
+	voucher: () => IVoucherView | null,
+	markPlayed: () => void
+): [
+	() => boolean,
+	() => void
+] {
+	const [playing, setPlaying] = createSignal(false);
+	createEffect(
+		on(
+			() => callsForFlourish(voucher()),
+			(calls) => {
+				if (!calls) return;
+				setPlaying(true);
+				markPlayed();
+			}
+		)
+	);
+	return [
+		playing,
+		() => setPlaying(false)
+	];
+}
 
 /**
  * A discounted price that, while `playing`, counts down from its full price to the discounted one after `delayMs`.

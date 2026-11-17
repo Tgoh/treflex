@@ -883,21 +883,24 @@ describe("hot reload", () => {
 		const runtime = createRuntime(seed());
 		let module = evaluate(1);
 		let version = 1;
-		let localId = "";
+		const localIds = new Set<string>();
 		let board!: ReturnType<ReturnType<typeof evaluate>["board"]["use"]>;
 		function Child() {
 			const [clicks, setClicks] = useState(0);
 			const local = useComponentState(() => ({
 				Count: 0
 			}));
-			localId ||= local.state.$Id;
+			// React 18's StrictMode discards the first mount render's hooks, so its id is never seated; record ids at commit.
+			useLayoutEffect(() => {
+				localIds.add(local.state.$Id);
+			});
 			board = module.board.use() as typeof board;
 			const panel = module.panel.use();
 			const label = version < 3 ? (board as any).label() : "gone";
 			const extra = version > 1 ? `${typeof (board as any).rename} ${(board as any).added()}` : "-";
 			return (
 				<button type="button" onClick={() => setClicks(clicks + 1)}>
-					{label} {panel.size()} {extra} {clicks} {local.state.$Id === localId ? "same" : "fresh"}
+					{label} {panel.size()} {extra} {clicks}
 				</button>
 			);
 		}
@@ -916,23 +919,24 @@ describe("hot reload", () => {
 			/>,
 			runtime
 		);
-		expect(screen.getByText("v1:Board panel:0 - 0 same")).toBeTruthy();
+		expect(screen.getByText("v1:Board panel:0 - 0")).toBeTruthy();
 		module = evaluate(2);
 		version = 2;
 		await act(async () => {
-			fireEvent.click(screen.getByText("v1:Board panel:0 - 0 same"));
+			fireEvent.click(screen.getByText("v1:Board panel:0 - 0"));
 		});
-		expect(screen.getByText("v2:Board panel2:0 function 2 1 same")).toBeTruthy();
+		expect(screen.getByText("v2:Board panel2:0 function 2 1")).toBeTruthy();
 		await act(async () => {
 			await (board as any).bump();
 		});
-		expect(screen.getByText("v2:Board++ panel2:0 function 2 1 same")).toBeTruthy();
+		expect(screen.getByText("v2:Board++ panel2:0 function 2 1")).toBeTruthy();
 		module = evaluate(3);
 		version = 3;
 		await act(async () => {
-			fireEvent.click(screen.getByText("v2:Board++ panel2:0 function 2 1 same"));
+			fireEvent.click(screen.getByText("v2:Board++ panel2:0 function 2 1"));
 		});
-		expect(screen.getByText("gone panel2:0 undefined 2 2 same")).toBeTruthy();
+		expect(screen.getByText("gone panel2:0 undefined 2 2")).toBeTruthy();
+		expect(localIds.size).toBe(1);
 	});
 });
 
@@ -1317,12 +1321,13 @@ describe("selector inputs outside the tree", () => {
 
 		it("refuses a view as a transient's owner, pointing at a selector", () => {
 			const { runtime } = parking();
-			vi.spyOn(console, "error").mockImplementation(() => {});
+			consoleErrors.mockImplementation(() => {});
 			function Gate() {
 				const view = useRoot<IBoard>();
 				return <p>loading {runtime.processSelector(count, () => view)}</p>;
 			}
 			expect(() => mount(<Gate />, runtime)).toThrow("through a selector");
+			consoleErrors.mockReset();
 		});
 	});
 
@@ -1863,7 +1868,10 @@ describe("ComponentState under StrictMode's double mount", () => {
 			const local = useComponentState(() => ({
 				Starts: 0
 			}));
-			seen.add(local.id);
+			// React 18's StrictMode discards the first mount render's hooks, so its id is never seated; record ids at commit.
+			useLayoutEffect(() => {
+				seen.add(local.id);
+			});
 			const { dispatch } = local;
 			useLayoutEffect(() => {
 				void dispatch(start);

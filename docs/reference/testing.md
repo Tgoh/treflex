@@ -33,7 +33,7 @@ it("loads templates", async () => {
 It passes `createRuntime` these, and nothing else differs:
 
 - **`effectStubs` as `implementations`**, so each yielded effect goes to the test's stub.
-- **`generateGuid` refused** unless stubbed, with the message any unimplemented type gets: `No implementation registered for effect type: "generateGuid"`. A test that forgot it would otherwise draw a real uuid and pass.
+- **`generateGuid` refused** unless stubbed, with an error that starts `No implementation registered for effect type: "generateGuid"` and names `guids`. A test that forgot it would otherwise draw a real uuid and pass. Any action that makes an entity yields it, so a test's stubs usually include `generateGuid: guids("row")`.
 - **`pauseTimers: true`**: rows record, nothing ticks ([below](#timers-and-resources-in-tests)).
 - **`pauseResources: true`** ([`live-sources.md`](./live-sources.md#restore-and-tests)), and the resource stubs from `options` installed, so methods and supplies answer from stubs ([below](#resources)).
 - **`onError`** and the **`inFlight` stub** from `options`, which takes those two and `resources`, nothing more.
@@ -194,6 +194,21 @@ What waits on something outside doesn't hold it up, so it always returns: an una
 
 **A failing action rejects its dispatch,** even when `onError` takes the failure ([the dispatch promise](./failure.md#the-dispatch-promise)), so a test that expects a failure awaits `expect(runtime.dispatch(...)).rejects`, and one that only checks the state after it catches the promise.
 
+**A failure the test doesn't await or catch needs `onError`.** The test runtime has no `onError` unless `options` gives one. So when work fails whose promise the test neither awaits nor catches, such as a discarded dispatch, a click in a component test, or a started action, the failure is raised as an unhandled rejection, which fails the run under Vitest. A test that fails such work on purpose passes one:
+
+```ts
+it("keeps the list empty when the fetch fails", async () => {
+    const runtime = createTestRuntime<IList>(
+        { $Id: "List", Templates: [] },
+        { "Api/FetchTemplates": () => Promise.reject(new Error("offline")) },
+        { onError: () => {} }
+    );
+    void runtime.dispatch(loadTemplates, "List");
+    await settled();
+    expect(runtime.state.Templates).toEqual([]);
+});
+```
+
 **A test can pin "no diags"** by collecting them: `const diags: string[] = []; runtime.on("diag", (event) => diags.push(event.code));`, then `expect(diags).toEqual([])` at the end ([diags](./troubleshooting.md)).
 
 **A topic a test declares is declared for the whole program.** A `declare module "treflex"` in one test file applies to every file the compiler sees with it, so give test topics a prefix the app never uses, as `Test/` above.
@@ -324,7 +339,7 @@ it("renders state and dispatches on a click", async () => {
 });
 ```
 
-The vitest config runs `vite-plugin-solid` with hot reload off, `solid({ hot: false })`, and sets `test.environment: "jsdom"`. Component state needs a mounted component, so a headless test dispatches the action the component would call.
+The vitest config runs `vite-plugin-solid` with hot reload off, `solid({ hot: false })`, and sets `test.environment: "jsdom"`, or sets `"node"` and the component test's file starts with `// @vitest-environment jsdom`, which runs that file alone in jsdom. Component state needs a mounted component, so a headless test dispatches the action the component would call.
 
 ## Caveats
 

@@ -3,6 +3,7 @@ import type { IConversation } from "./Conversation";
 import type { IMessage } from "./Message";
 import { entity, mapGen, publish, publishToNearest, receiver, start, startTimer, stopTimer } from "treflex";
 import { chatCue, chatHistory } from "../backend/backend";
+import { paced } from "../backend/fast";
 import { plural } from "../text";
 import { newConversation, queueReply, typing } from "./Conversation";
 import { CONVERSATIONS, conversationInfo, conversationLabel, FIRST_CONVERSATION, firstName, PERSON_IDS, person } from "./directory";
@@ -14,7 +15,7 @@ declare module "treflex" {
 	}
 }
 
-export const CUE_MS = 14_000;
+export const CUE_MS = paced(14_000);
 
 /** A teammate's reply on its way: Letters is 0 while they are typing. */
 export interface IReplyStream {

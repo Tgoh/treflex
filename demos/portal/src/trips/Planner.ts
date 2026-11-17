@@ -3,7 +3,7 @@ import type { IFare } from "../backend/backend";
 import type { IDestinationKey, ILegKind } from "./destinations";
 import type { ILeg } from "./Leg";
 import type { ITrip, ITripDot } from "./Trip";
-import { entity, mapGen, publish, publishToNearest, receiver, someGen, start, transient } from "treflex";
+import { entity, mapGen, publish, publishToNearest, receiver, someGen, start } from "treflex";
 import { now } from "../backend/backend";
 import { money, plural } from "../text";
 import { DESTINATIONS, LEG_KINDS } from "./destinations";
@@ -41,7 +41,7 @@ export interface IPlannerVoucher {
 	Percent: number;
 	/** The first name of the teammate who sent it. */
 	From: string;
-	/** Whether the flourish has played, the first time the planner was on screen with the voucher applied. */
+	/** Whether a planner view has started the flourish, which it does the first time it shows the voucher. */
 	Played: boolean;
 }
 
@@ -64,24 +64,6 @@ export function getDefaultState(id: string): IPlanner {
 		Restore: null,
 		Voucher: null
 	};
-}
-
-// A transient, not a field: Played is the saved half, so a reload doesn't play the flourish again.
-const flourishMark = (draft: IPlanner) =>
-	transient(draft, "Planner/Flourish", {
-		Playing: false
-	});
-
-function* playFlourish(draft: IPlanner): IActionGenerator {
-	if (!draft.Voucher || draft.Voucher.Played) return;
-	draft.Voucher.Played = true;
-	const mark = yield* flourishMark(draft);
-	mark.Playing = true;
-}
-
-function* endFlourish(draft: IPlanner): IActionGenerator {
-	const mark = yield* flourishMark(draft);
-	if (mark.Playing) mark.Playing = false;
 }
 
 function* leave(draft: IPlanner): IActionGenerator {
@@ -118,7 +100,6 @@ export function* startTrip(draft: IPlanner, destination: IDestinationKey): IActi
 	});
 	const othersRunning = yield* someGen(draft.Trips, isSearching);
 	if (draft.Visible) yield* leave(draft);
-	yield* endFlourish(draft);
 	draft.Trips.push(trip);
 	draft.OpenTripId = trip.$Id;
 	yield* start(beginTrip, trip);
@@ -130,7 +111,6 @@ export function* startTrip(draft: IPlanner, destination: IDestinationKey): IActi
 export function* openTrip(draft: IPlanner, tripId: string | null): IActionGenerator {
 	if (draft.OpenTripId === tripId) return;
 	if (draft.Visible) yield* leave(draft);
-	yield* endFlourish(draft);
 	draft.OpenTripId = tripId !== null && draft.Trips.some((t) => t.$Id === tripId) ? tripId : null;
 	if (draft.Visible) yield* arrive(draft);
 	yield* publishToNearest(draft, "Portal/Viewed");
@@ -138,19 +118,16 @@ export function* openTrip(draft: IPlanner, tripId: string | null): IActionGenera
 
 export function* removeTrip(draft: IPlanner, tripId: string): IActionGenerator {
 	draft.Trips = draft.Trips.filter((t) => t.$Id !== tripId);
-	if (draft.OpenTripId === tripId) {
-		draft.OpenTripId = null;
-		yield* endFlourish(draft);
-	}
+	if (draft.OpenTripId === tripId) draft.OpenTripId = null;
 	if (draft.Restore) {
 		draft.Restore.Trips = draft.Restore.Trips.filter((t) => t.TripId !== tripId);
 		if (draft.Restore.Trips.length === 0) draft.Restore = null;
 	}
 }
 
-/** The view's word that the flourish has finished, so a remount doesn't play it again. */
+/** A planner view's word that it has started the flourish, so no view plays it again. */
 export function* flourishPlayed(draft: IPlanner): IActionGenerator {
-	yield* endFlourish(draft);
+	if (draft.Voucher && !draft.Voucher.Played) draft.Voucher.Played = true;
 }
 
 export const actions = {
@@ -165,13 +142,11 @@ export const PlannerReceiver = receiver<IPlanner>("PlannerReceiver")({
 		if (message.App !== "trips" || draft.Visible) return;
 		draft.Visible = true;
 		yield* arrive(draft);
-		yield* playFlourish(draft);
 	},
 	*"Portal/AppHidden"(draft, message) {
 		if (message.App !== "trips" || !draft.Visible) return;
 		draft.Visible = false;
 		yield* leave(draft);
-		yield* endFlourish(draft);
 	},
 	*"Portal/VoucherApplied"(draft, message) {
 		if (draft.Voucher) return;
@@ -180,7 +155,6 @@ export const PlannerReceiver = receiver<IPlanner>("PlannerReceiver")({
 			From: message.From,
 			Played: false
 		};
-		if (draft.Visible) yield* playFlourish(draft);
 	},
 	*"Portal/Restored"(draft, message) {
 		const at = yield* now();
@@ -250,8 +224,7 @@ export interface IVoucherView {
 	Percent: number;
 	/** The pill under each discounted total, as "−10% · Marcus's voucher". */
 	Pill: string;
-	/** Whether the discount should drop into the totals now: true once, the first time the planner shows it. */
-	Flourish: boolean;
+	Played: boolean;
 }
 
 export function* voucher(draft: IPlanner): ISelectorGenerator<IVoucherView | null> {
@@ -259,7 +232,7 @@ export function* voucher(draft: IPlanner): ISelectorGenerator<IVoucherView | nul
 	return {
 		Percent: draft.Voucher.Percent,
 		Pill: `−${draft.Voucher.Percent}% · ${draft.Voucher.From}'s voucher`,
-		Flourish: (yield* flourishMark(draft)).Playing
+		Played: draft.Voucher.Played
 	};
 }
 

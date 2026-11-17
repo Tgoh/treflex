@@ -109,7 +109,7 @@
 	position: absolute;
 	left: 0;
 	top: 0;
-	transform: translate(calc(var(--fish-x) * 1cqw), calc(var(--fish-y) * 1cqh));
+	transform: translate(calc(var(--fish-inset, 0px) + var(--fish-x) * (100cqw - 2 * var(--fish-inset, 0px)) / 100), calc(var(--fish-y) * 1cqh));
 	transition: transform 2.6s cubic-bezier(0.4, 0, 0.35, 1);
 	will-change: transform;
 }
@@ -326,4 +326,62 @@ main.app-aquarium:has(.toast) .schools {
 
 .school button:disabled {
 	opacity: 0.35;
+}
+
+@media (max-width: 900px), (pointer: coarse) {
+	.school {
+		padding-top: 2px;
+		padding-bottom: 2px;
+	}
+
+	.school button {
+		width: 44px;
+		height: 44px;
+		font-size: 16px;
+	}
+}
+
+@media (max-width: 600px), (max-height: 500px) and (pointer: coarse) {
+	.tank {
+		flex: 1 0 0;
+		min-height: min(calc(100dvh - var(--bar-h) - 24px), 420px);
+		margin: 12px;
+		border-radius: 16px;
+	}
+
+	.fish-body {
+		zoom: 0.65;
+	}
+
+	.giant-layer .fish-slot {
+		/* Keeps a giant's nose and tail inside a narrow tank at the 7% and 93% edges of its swim, X in aquarium/Fish.ts. */
+		--fish-inset: 80px;
+	}
+
+	.tankbar {
+		top: 12px;
+		left: 14px;
+		right: 14px;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 2px;
+		font-size: 12px;
+	}
+
+	.schools,
+	main.app-aquarium:has(.toast) .schools {
+		left: 12px;
+		right: 12px;
+		bottom: 12px;
+		max-height: none;
+		flex-wrap: nowrap;
+		overflow-x: auto;
+		overflow-y: hidden;
+		gap: 6px;
+		scrollbar-width: none;
+	}
+
+	.school {
+		flex: none;
+	}
 }

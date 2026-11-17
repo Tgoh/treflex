@@ -29,6 +29,8 @@ render(
 
 The root needs an `$Id`: with none, every action a feature dispatches on it rejects ([runtime](./runtime.md#dispatch)). One provider per page is the standard shape.
 
+A runtime can also serve several providers, of either binding, side by side or one after another, such as a React tree unmounted and a Solid tree mounted in its place. Each mount owns its [component state](#component-states-lifetime) and its own view effects, and unmounting ends those, and what the DOM held such as scroll and focus, and nothing else: the rest of the tree, the actions running on it, timers, resources and the records carry on, and the next provider shows them as they stand. Every Solid tree must run on the runtime's copy of `solid-js` ([the Solid build](./runtime.md#the-solid-build)).
+
 ### Features
 
 A **feature** turns an entity type's actions and selectors into a provider and a `use()`:
@@ -40,7 +42,7 @@ import * as actions from "./Actions";
 import * as selectors from "./Selectors";
 import type { ITodoList } from "./State";
 
-export default createEntityFeature<ITodoList>(import.meta.url)(actions, selectors);
+export default createEntityFeature<ITodoList>("Features/TodoList")(actions, selectors);
 ```
 
 `createEntityFeature<T>(id?)` pins the state type, which extends `IEntity`, and the second call takes the modules and returns `{ provider, use }`, typed `IEntityFeature`.
@@ -166,11 +168,12 @@ The mount site takes exactly `state` and the props `Body` declares: an undeclare
 
 ### Hot reload and the id
 
-The `id`, usually `import.meta.url`, keys a registry on `globalThis` that keeps the feature's context across a hot update: mounted providers stay valid, and the actions and selectors are swapped in place. The id is normalised by dropping a query string and hash, so duplicate module loads converge on one entry.
+The `id`, a string the app picks for each feature, such as `"Features/Cart"`, keys a registry on `globalThis` that keeps the feature's context across a hot update: mounted providers stay valid, and the actions and selectors are swapped in place. The id is normalised by dropping a query string and hash, so duplicate module loads converge on one entry.
 
-- **A URL-shaped id registers in development only.** In a production build `import.meta.url` is the URL of the chunk a module landed in, shared by every module in it, so there each call gets its own context. A hand-picked id, such as `"Features/Cart"`, registers in every build. A bundle built in development mode also gives a chunk's modules one URL, and there the URL ids collide, so a feature that can land in such a bundle takes a hand-picked id.
-- **One id is one factory call.** A second call with the same id overwrites the first's actions and selectors, silently. Give each feature its own file, or its own hand-picked id.
+- **One id is one factory call.** A second call with the same id overwrites the first's actions and selectors, silently, and the first feature's views then dispatch the second's actions. Give each feature an id no other uses.
+- **Pick the id by hand, not `import.meta.url`.** Two factory calls in one module share its `import.meta.url`, so the second overwrites the first. A URL-shaped id also registers in development only: in a production build `import.meta.url` is the URL of the chunk a module landed in, shared by every module in it, so there each call gets its own context, and a bundle built in development mode gives a chunk's modules one URL, where the ids collide. A hand-picked id registers in every build.
 - **Keep context factories in a `.ts` file that exports no components,** a raw `createContext` included. A component file is re-evaluated on every edit, and a Vite duplicate load evaluates a module twice; a raw context made there gets a new identity each time, and its consumers stop finding it. The registry protects a treflex feature that has an id, and the same habit covers both.
+- **The module that boots the app must not run again.** An edit Vite can't apply in place goes up to the modules importing the edited one, and an entry module that runs again builds a second runtime beside the first. Declare no component in the entry module, so an update that reaches it reloads the page, and have the module that builds the runtime accept updates of the feature modules it imports, with `import.meta.hot?.accept(["./counter/counter"], () => {})`, so an edit to an action or a selector stops there. In Solid, the entry mounts the views through a component declared in a file of its own, as the template's `AppView` does: a view made by `provider(...)` is no solid-refresh boundary, so an entry that mounts one directly reloads the page at every edit. In React, a module that declares a `provider(...)` view is a Fast Refresh boundary itself, so the entry may mount the view directly. An app from `npm create treflex` does all of this ([the quickstart](../quickstart.md#create-the-app)).
 
 Covered by hot reload: editing an action, a selector or a component, and adding an action or selector.
 
@@ -255,7 +258,7 @@ An action on component state [holds](./actions.md#holds) the widget's entity, so
 The component-bound sibling of `createEntityFeature`, typed `IComponentFeature`: the same `provider` and `use()`, but the provider mounts an entity as `useComponentState` does, from a factory, instead of taking one as a prop.
 
 ```ts
-export const GridFeature = createComponentFeature<IGridState>(import.meta.url)(actions, selectors);
+export const GridFeature = createComponentFeature<IGridState>("Widgets/Grid")(actions, selectors);
 export const Grid = GridFeature.provider(GridBody, () => ({ Widths: {}, Selected: [] }));
 ```
 
@@ -267,7 +270,9 @@ export const Grid = GridFeature.provider(GridBody, () => ({ Widths: {}, Selected
 
 ### React
 
-`treflex-react` offers `TreflexProvider`, `createEntityFeature`, `createComponentFeature`, `useComponentState`, `useInFlight`, `useResource`, `useDispatch` and `useLocate`, with Solid's meaning, plus `useEntity` and `useRoot`. The runtime under it is built on Solid's signals, so a React app installs `solid-js` beside `react`, and its build and test configs resolve Solid's browser build ([runtime](./runtime.md#the-solid-build)).
+`treflex-react` runs on React 18.3 and later 18 releases, and on React 19.1 and later: its `react` peer range is `^18.3.0 || ^19.1.0`.
+
+`treflex-react` offers `TreflexProvider`, `createEntityFeature`, `createComponentFeature`, `useComponentState`, `useInFlight`, `useResource`, `useDispatch` and `useLocate`, with Solid's meaning, plus `useEntity` and `useRoot`. The runtime under it is built on Solid's signals, from the `solid-js` that `treflex` depends on, so a React app's build and test configs resolve Solid's browser build ([runtime](./runtime.md#the-solid-build)).
 
 **The one difference underneath the rest is what a component reads.** A Solid component reads the live tree through a reactive view. A React component reads **entity views**.
 
@@ -325,6 +330,7 @@ A view is a plain copy, so it can't lead to a transient: read it through a selec
 | A component feature's body declares no `state` prop | Nothing |
 | Keep context factories in a `.ts` file with no components | Nothing |
 | One id is one factory call | Nothing: where the id registers, the second call overwrites the first's actions and selectors |
+| The module that boots the app must not run again | Nothing: a second runtime boots. React logs an error that `createRoot()` was called on a container passed to it before; Solid logs nothing, and can render a second app beside the first |
 | A form writes through `locate`: silent for a node that has left, loud for one no dispatch can address | `locate` throws |
 | Busy is for display, and `leading` drops a repeat | Nothing: a click guarded on busy misses a repeat in the same turn, and one dispatched elsewhere |
 | Solid: `useInFlight` takes a live node | `useInFlight` throws |

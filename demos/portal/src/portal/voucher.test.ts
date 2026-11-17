@@ -8,7 +8,8 @@ import { registerFakeBackend } from "../backend/fakeBackend";
 import { applyVoucher, ChatReceiver, init } from "../chat/Chat";
 import { voucherButton } from "../chat/Message";
 import { money } from "../text";
-import { priced, startTrip, tickerText, voucher } from "../trips/Planner";
+import { callsForFlourish } from "../trips/flourish";
+import { flourishPlayed, priced, startTrip, tickerText, voucher } from "../trips/Planner";
 import { soFar } from "../trips/Trip";
 import { applyToastVoucher, getDefaultState, openApp, ROOT_ID, toast, toastVoucher } from "./Portal";
 import { announceDropped, registerReceivers } from "./session";
@@ -68,9 +69,9 @@ const voucherMessage = (runtime: IRuntime<IPortal>): IMessage | undefined =>
 
 const quiet = (runtime: IRuntime<IPortal>) => runtime.state.Chat.Conversations.every((c) => c.Reply === null);
 
-/** Plays the script's first four cues one after another, so Marcus's voucher, the fourth, finishes last. */
+/** Plays the script's first two cues one after another, so Marcus's voucher, the second, finishes last. */
 async function cueThroughVoucher(runtime: IRuntime<IPortal>): Promise<void> {
-	for (let i = 0; i < 4; i++) {
+	for (let i = 0; i < 2; i++) {
 		await runtime.dispatch(
 			ChatReceiver.handle,
 			"Chat",
@@ -208,10 +209,11 @@ describe("the travel voucher from the chat", () => {
 });
 
 describe("the voucher's flourish", () => {
-	const flourish = (runtime: IRuntime<IPortal>) => voucherOf(runtime)?.Flourish ?? false;
+	const calls = (runtime: IRuntime<IPortal>) => callsForFlourish(voucherOf(runtime));
 
-	it("is marked played the first time the planner is shown after the voucher is applied, and isn't replayed after a reload", async () => {
+	it("calls for the flourish once applied, wherever the planner is, until a view marks it played, and not again after a reload", async () => {
 		const runtime = await portal();
+		expect(calls(runtime)).toBe(false);
 		await runtime.dispatch(openApp, ROOT_ID, "chat");
 		await cueThroughVoucher(runtime);
 		await runtime.dispatch(applyVoucher, "Chat");
@@ -221,28 +223,39 @@ describe("the voucher's flourish", () => {
 			From: "Marcus",
 			Played: false
 		});
-		expect(flourish(runtime)).toBe(false);
+		expect(calls(runtime)).toBe(true);
 
 		await runtime.dispatch(openApp, ROOT_ID, "trips");
-		await flush();
-		expect(runtime.state.Trips.Voucher?.Played).toBe(true);
-		expect(flourish(runtime)).toBe(true);
-
 		await runtime.dispatch(openApp, ROOT_ID, "chat");
-		await runtime.dispatch(openApp, ROOT_ID, "trips");
 		await flush();
-		expect(flourish(runtime)).toBe(false);
+		expect(calls(runtime)).toBe(true);
+
+		await runtime.dispatch(flourishPlayed, "Trips");
+		expect(runtime.state.Trips.Voucher?.Played).toBe(true);
+		expect(calls(runtime)).toBe(false);
 
 		const back = await reload(runtime);
 		expect(back.state.Trips.Voucher?.Played).toBe(true);
-		expect(flourish(back)).toBe(false);
-		await back.dispatch(openApp, ROOT_ID, "chat");
-		await back.dispatch(openApp, ROOT_ID, "trips");
-		await flush();
-		expect(flourish(back)).toBe(false);
+		expect(calls(back)).toBe(false);
 	});
 
-	it("plays there and then when the voucher is applied from the toast over the planner", async () => {
+	it("marks it played idempotently, and not before a voucher is applied", async () => {
+		const runtime = await portal();
+		await runtime.dispatch(flourishPlayed, "Trips");
+		expect(runtime.state.Trips.Voucher).toBeNull();
+
+		await cueThroughVoucher(runtime);
+		await runtime.dispatch(applyToastVoucher, ROOT_ID);
+		await flush();
+		expect(runtime.state.Trips.Voucher?.Played).toBe(false);
+		await runtime.dispatch(flourishPlayed, "Trips");
+		expect(runtime.state.Trips.Voucher?.Played).toBe(true);
+		const played = createSnapshot(runtime);
+		await runtime.dispatch(flourishPlayed, "Trips");
+		expect(createSnapshot(runtime)).toBe(played);
+	});
+
+	it("calls for it when the voucher is applied from the toast over the planner", async () => {
 		const runtime = await portal();
 		expect(runtime.state.ActiveApp).toBe("trips");
 		await cueThroughVoucher(runtime);
@@ -252,15 +265,14 @@ describe("the voucher's flourish", () => {
 		await flush();
 		expect(runtime.processSelector(toast, () => runtime.state)).toBeNull();
 		expect(runtime.state.Chat.VoucherApplied).toBe(true);
-		expect(runtime.state.Trips.Voucher?.Played).toBe(true);
-		expect(flourish(runtime)).toBe(true);
+		expect(calls(runtime)).toBe(true);
 	});
 
 	it("ticks from the full price down to the discounted one, every step formatted as the total is", () => {
 		const price = priced(4321, {
 			Percent: 10,
 			Pill: "",
-			Flourish: true
+			Played: true
 		});
 		expect(tickerText(price, 0)).toBe("A$4,321");
 		expect(tickerText(price, 1)).toBe(price.Now);

@@ -58,3 +58,4 @@ interface IColumnInfo {
 	Cards: { CardId: string; Title: string }[];
 }
 declare function refreshNote(draft: { $Id: string; Text: string }): IActionGenerator;
+declare function restoreOrCreate(): Promise<IRuntime<IBoard>>;

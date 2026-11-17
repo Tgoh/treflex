@@ -1,0 +1,20 @@
+{
+	"$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+	"files": {
+		"includes": ["**", "!!**/dist"]
+	},
+	"linter": {
+		"rules": { "complexity": { "noBannedTypes": "off" } }
+	},
+	"overrides": [
+		{
+			"includes": ["src/**"],
+			"plugins": ["./node_modules/treflex/biome/require-yield-star.grit"],
+			"linter": { "rules": { "correctness": { "useYield": "off" } } }
+		},
+		{
+			"includes": ["src/**", "!src/**/implementations/**"],
+			"plugins": ["./node_modules/treflex/biome/no-nondeterminism.grit"]
+		}
+	]
+}

@@ -61,7 +61,13 @@
 			"plugins": ["./packages/core/biome/require-yield-star.grit"]
 		},
 		{
-			"includes": ["packages/react/**", "demos/react-todo/**", "demos/react-portal/**"],
+			"includes": [
+				"packages/react/**",
+				"demos/react-todo/**",
+				"demos/react-portal/**",
+				"demos/portal-swap/src/react/**",
+				"demos/portal-swap/robust/react/**"
+			],
 			"linter": {
 				"domains": {
 					"react": "recommended"
@@ -98,6 +104,7 @@
 			"packages/*/tests/**/*.ts",
 			"packages/*/tests/**/*.tsx",
 			"packages/*/tests/**/*.mjs",
+			"packages/create-treflex/*.js",
 			"tests/**/*.ts",
 			"tests/**/*.tsx",
 			"demos/react-todo/src/**/*.ts",
@@ -106,8 +113,16 @@
 			"demos/portal/src/**/*.tsx",
 			"demos/react-portal/src/**/*.ts",
 			"demos/react-portal/src/**/*.tsx",
+			"demos/portal-swap/src/**/*.ts",
+			"demos/portal-swap/src/**/*.tsx",
+			"demos/portal-swap/robust/**/*.ts",
+			"demos/portal-swap/robust/**/*.tsx",
 			"scripts/**/*.mjs",
+			"docs/.vitepress/*.ts",
+			"docs/.vitepress/*.mts",
+			"docs/.vitepress/theme/**/*.ts",
 			"!scripts/test-pack/**",
+			"!!packages/create-treflex/templates",
 			"!packages/eslint/tests/fixture/**",
 			"!packages/core/tests/SideBySide/baseline",
 			"!tests/docs/preludes/**"

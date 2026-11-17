@@ -45,7 +45,7 @@ function* remaining(draft: ITodoList): ISelectorGenerator<number> {
 	return draft.Todos.filter((t) => !t.Done).length;
 }
 
-const TodoList = createEntityFeature<ITodoList>(import.meta.url)(
+const TodoList = createEntityFeature<ITodoList>("TodoList")(
 	{
 		setDraft,
 		add,

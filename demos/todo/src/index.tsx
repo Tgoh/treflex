@@ -1,5 +1,3 @@
-// The repo README's `add` fragment copies `add` here: change them together.
-
 import { createRuntime, generateGuid, type IActionGenerator, type IEntity, type ISelectorGenerator } from "treflex";
 import { createEntityFeature, TreflexProvider } from "treflex-solid";
 import { For } from "solid-js";
@@ -44,7 +42,7 @@ function* remaining(draft: ITodoList): ISelectorGenerator<number> {
 	return draft.Todos.filter((t) => !t.Done).length;
 }
 
-const TodoList = createEntityFeature<ITodoList>(import.meta.url)(
+const TodoList = createEntityFeature<ITodoList>("TodoList")(
 	{ setDraft, add, toggle },
 	{ remaining }
 );

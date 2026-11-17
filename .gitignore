@@ -4,3 +4,5 @@ packages/*/LICENSE
 /release/
 *.tsbuildinfo
 /packages/core/tests/SideBySide/baseline/
+/docs/.vitepress/cache/
+/packages/create-treflex/templates/*/package-lock.json

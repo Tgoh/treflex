@@ -1,12 +1,13 @@
 import type { IPortalHost } from "./host";
-import { For, Show } from "solid-js";
+import { createEffect, createSignal, For, on, onCleanup, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { Patterns } from "../trips/Art";
 import { APP_VIEWS } from "./apps";
 import { ViewFailed } from "./BootFailed";
 import { Portal } from "./contexts";
 import { Guarded } from "./Guarded";
-import { AppIcon } from "./icons";
+import { AppIcon, MenuIcon } from "./icons";
+import { closeRecords, closesDrawer, closesRecords, DRAWER_ID, focusRecords, syncDrawer, watchDrawer } from "./overlays";
 import { RecordPanel } from "./RecordPanel";
 import { SessionCard } from "./SessionCard";
 import { Toast } from "./Toast";
@@ -24,15 +25,64 @@ export const PortalView = Portal.provider<{
 		onDismiss: () => void portal.dismissRestore()
 	};
 
+	const [drawerOpen, setDrawerOpen] = createSignal(false);
+	let root!: HTMLDivElement;
+	onCleanup(watchDrawer(() => setDrawerOpen(false)));
+	createEffect(
+		on(drawerOpen, (open) => syncDrawer(root, open), {
+			defer: true
+		})
+	);
+	createEffect(
+		on(
+			() => portal.state.RecordsOpen,
+			(open) => {
+				if (open) focusRecords(root);
+			},
+			{
+				defer: true
+			}
+		)
+	);
+	const closePanel = () => closeRecords(root, () => void portal.toggleRecords());
+	const onPick = (event: MouseEvent) => {
+		if (portal.state.RecordsOpen && closesRecords(event.target)) closePanel();
+	};
+
 	return (
 		<div
+			ref={root}
 			class="portal"
 			classList={{
-				"with-records": portal.state.RecordsOpen
+				"with-records": portal.state.RecordsOpen,
+				"drawer-open": drawerOpen()
 			}}
 		>
 			<Patterns />
-			<aside class="side">
+			<header class="mobilebar">
+				<button
+					type="button"
+					class="menu"
+					aria-label="Apps and session"
+					aria-controls={DRAWER_ID}
+					aria-expanded={drawerOpen()}
+					onClick={() => setDrawerOpen(true)}
+				>
+					<MenuIcon />
+				</button>
+				<div class="mark" />
+				<b>{active().Name}</b>
+			</header>
+			<button type="button" class="scrim" aria-label="Close the menu" tabIndex={-1} onClick={() => setDrawerOpen(false)} />
+			{/* biome-ignore lint/a11y/useKeyWithClickEvents: it acts only on clicks from the buttons and links inside, which keys fire too */}
+			<aside
+				id={DRAWER_ID}
+				class="side"
+				onClick={(event) => {
+					if (closesDrawer(event.target)) setDrawerOpen(false);
+					onPick(event);
+				}}
+			>
 				<div class="brand">
 					<div class="mark" />
 					<div>
@@ -85,7 +135,8 @@ export const PortalView = Portal.provider<{
 				</nav>
 				<SessionCard host={props.host} recordsOpen={portal.state.RecordsOpen} onToggleRecords={() => portal.toggleRecords()} />
 			</aside>
-			<main class={`app-${portal.state.ActiveApp}`}>
+			{/* biome-ignore lint/a11y/useKeyWithClickEvents: it acts only on clicks from the buttons and links inside, which keys fire too */}
+			<main class={`app-${portal.state.ActiveApp}`} onClick={onPick}>
 				<TourStrip state={portal.state.Tour} />
 				<Show when={active()} keyed>
 					{(app) => (
@@ -105,7 +156,7 @@ export const PortalView = Portal.provider<{
 				<Toast />
 			</main>
 			<Show when={portal.state.RecordsOpen}>
-				<RecordPanel monitor={props.host.monitor} />
+				<RecordPanel monitor={props.host.monitor} onClose={closePanel} />
 			</Show>
 		</div>
 	);

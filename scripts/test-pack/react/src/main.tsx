@@ -1,3 +1,4 @@
+import { version } from "react";
 import { createRoot } from "react-dom/client";
 import { createRuntime, generateGuid, type IActionGenerator, type IEntity, type ISelectorGenerator } from "treflex";
 import { DEV } from "treflex/internal";
@@ -65,5 +66,5 @@ report(async () => {
 	box.click();
 	await waitFor(() => remainingText() === "0 remaining", "the view's toggle to dispatch and re-render");
 
-	return { dev: DEV };
+	return { dev: DEV, react: version };
 });

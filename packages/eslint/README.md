@@ -1,6 +1,7 @@
 # The eslint plugin
 
-The plugin's rules are [`treflex/no-yield-in-finally`](#treflexno-yield-in-finally),
+The plugin's rules are [`treflex/no-discarded-generator`](#treflexno-discarded-generator),
+[`treflex/no-yield-in-finally`](#treflexno-yield-in-finally),
 [`treflex/no-edit-after-write`](#treflexno-edit-after-write),
 [`treflex/no-hidden-open`](#treflexno-hidden-open) and
 `treflex/no-global-open`, after the setup below.
@@ -52,16 +53,82 @@ typescript 6. Its eslint 10 support arrived earlier, at 8.56.0.
 
 - **typescript 5.4 through 6.0**, a peer dependency, which the rules import
   for the compiler API. 5.4 is the release treflex's own declarations need,
-  and the rules run there; the ceiling is typescript-eslint's: 8.69 peers
-  `<6.1.0`, so typescript 7 cannot run the rules yet, and an unpinned
-  `npm install typescript` now reaches for 7. `treflex` itself declares no
-  typescript peer and installs on a typescript 7 project.
+  and the rules run there. The ceiling is typescript-eslint's, which peers
+  `<6.1.0`, so typescript 7 can't run the rules. An unpinned
+  `npm install typescript` reaches for 7, hence `typescript@^6` above.
+  `treflex` itself declares no typescript peer, so it installs in a
+  typescript 7 project.
 - **eslint 9 or later**, a peer dependency, for the flat config the plugin's
   `configs.recommended` is written in.
 
 A rule that needs type information gets it from `projectService` above.
 Without it `ESLintUtils.getParserServices` throws saying so, rather than
-passing everything silently.
+passing everything silently. Use `projectService`, not the older `project`
+option: on typescript 6, `project` can crash typescript-eslint when one run
+parses a file twice, as `eslint --fix-dry-run` does, or under `CI=true`.
+
+## `treflex/no-discarded-generator`
+
+```js
+"treflex/no-discarded-generator": "error"
+```
+
+Reports a call that creates a generator and drops it. A generator's body runs
+only when something iterates it, so an effect called without `yield*` compiles,
+dispatches nothing and reports nothing. The fix is to call it with `yield*`.
+
+```ts
+const sendChunk = defineEffect<IChunk, void>("app/chunk");
+
+function* stream(draft: IDoc): IActionGenerator {
+    yield* sendChunk({ Text: draft.Next });   // fine
+    sendChunk({ Text: draft.Next });          // reported
+}
+```
+
+The rule needs type information and no list of names. It reports a call typed
+as the standard library's `Generator`, directly, through an alias such as
+`IActionGenerator`, or through an interface that extends it, so it covers an
+app's own effect creators from `defineEffect`, treflex's operations and reads,
+and helper generators alike. A call typed `AsyncGenerator` is reported too, with
+a message to iterate it with `for await`. The rule checks every function in the
+files it covers, actions or not: a generator dropped anywhere runs nothing.
+
+A call is dropped when it is:
+
+- a statement of its own, alone or under `void`, `await`, `as` or `!`;
+- in such a statement, the right side of `&&`, `||` or `??`, either branch of
+  `?:`, or any element of a comma list;
+- the initial value of a `const`, `let` or `var` that is never read and not
+  exported.
+
+A generator passed as an argument, as in `parallel(save(d), load(d))` or
+`open(fetchIt())`, returned, iterated or read later is not reported. Not seen
+either:
+
+- A call typed `any`, or typed as a union that holds anything besides
+  generators, `null` and `undefined`.
+- An iterator whose type isn't a generator's, such as `IterableIterator`. A
+  generator function annotated as returning `IterableIterator` is missed.
+- A generator returned into a callback slot that drops it,
+  `rows.forEach((r) => save(r))`.
+- A generator assigned to an existing variable, `g = save(d);`, that is never
+  read afterwards.
+- A bare `yield` of a call, `yield save(d)`, which hands the runtime the
+  generator unrun. In a function typed `IActionGenerator` it doesn't compile.
+
+A MobX `flow` method runs as soon as it is called, but it is typed as a
+generator, so call it through MobX's `flowResult(...)`, which the rule doesn't
+report.
+
+Inside a generator function, an editor offers the `yield*` as a suggestion.
+It isn't an autofix, because running the effect changes what the code does.
+There is no suggestion where `yield*` would be wrong: outside a generator, in a
+class's static block, in a `finally`, where
+[`treflex/no-yield-in-finally`](#treflexno-yield-in-finally) would report it,
+for a call typed with `undefined` in it, where `yield*` throws on the value the
+dropped call ignored, for an async generator in a function that isn't one, and
+for a variable's initial value.
 
 ## `treflex/no-yield-in-finally`
 

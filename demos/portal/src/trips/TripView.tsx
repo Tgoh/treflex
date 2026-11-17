@@ -8,7 +8,7 @@ import { FlightQuestion } from "./FlightQuestion";
 import { endsFlourish, SPARK_COUNT, TOTAL_TICK_DELAY_MS } from "./flourish";
 import { LegCard } from "./LegCard";
 import { priced } from "./Planner";
-import { Ticker } from "./Ticker";
+import { createFlourish, Ticker } from "./Ticker";
 
 const SPARKS = Array.from(
 	{
@@ -30,7 +30,10 @@ export const TripView = Trip.provider<{
 	const destination = () => DESTINATIONS[trip.state.Destination];
 	const busy = () => trip.tripFacts().Running > 0;
 	const total = () => priced(trip.soFar(), planner.voucher());
-	const flourish = () => planner.voucher()?.Flourish ?? false;
+	const [flourish, endFlourish] = createFlourish(
+		() => planner.voucher(),
+		() => void planner.flourishPlayed()
+	);
 
 	return (
 		<>
@@ -83,7 +86,7 @@ export const TripView = Trip.provider<{
 							vdrop: flourish()
 						}}
 						onAnimationEnd={(event) => {
-							if (endsFlourish(event)) void planner.flourishPlayed();
+							if (endsFlourish(event)) endFlourish();
 						}}
 					>
 						<small>So far</small>

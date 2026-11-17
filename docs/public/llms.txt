@@ -1,0 +1,45 @@
+# treflex
+
+> A runtime for front-end application state and the work that runs on it: requests, timers, live connections and multi-step flows. Work runs as actions on entities in one tree of plain data, views only read state and dispatch actions, and the whole app saves to one JSON string and restores. Bindings for React and Solid. An app from `npm create treflex` has an AGENTS.md with the rules an agent most needs, and `npm run check` to verify a change.
+
+## Start
+
+- [Quickstart](https://tgoh.github.io/treflex/docs/quickstart.html)
+- [Requirements](https://tgoh.github.io/treflex/docs/requirements.html)
+- [Patterns](https://tgoh.github.io/treflex/docs/patterns.html): the shapes that cross concepts
+
+## Guide
+
+- [1. An entity and its state](https://tgoh.github.io/treflex/docs/guide/01-entities.html)
+- [2. An action, and holds](https://tgoh.github.io/treflex/docs/guide/02-actions.html)
+- [3. Views](https://tgoh.github.io/treflex/docs/guide/03-views.html)
+- [4. Rows](https://tgoh.github.io/treflex/docs/guide/04-rows.html)
+- [5. Receivers and messages](https://tgoh.github.io/treflex/docs/guide/05-messages.html)
+- [6. Failures](https://tgoh.github.io/treflex/docs/guide/06-failures.html)
+- [7. Resources and timers](https://tgoh.github.io/treflex/docs/guide/07-live-sources.html)
+- [8. Asks](https://tgoh.github.io/treflex/docs/guide/08-asks.html)
+- [9. Restore](https://tgoh.github.io/treflex/docs/guide/09-restore.html)
+
+## Reference
+
+- [State tree](https://tgoh.github.io/treflex/docs/reference/state-tree.html)
+- [Write path](https://tgoh.github.io/treflex/docs/reference/write-path.html)
+- [Actions](https://tgoh.github.io/treflex/docs/reference/actions.html)
+- [Effects](https://tgoh.github.io/treflex/docs/reference/effects.html)
+- [Fibers](https://tgoh.github.io/treflex/docs/reference/fibers.html)
+- [Derived reads](https://tgoh.github.io/treflex/docs/reference/derived-reads.html)
+- [Lookup](https://tgoh.github.io/treflex/docs/reference/lookup.html)
+- [Messaging](https://tgoh.github.io/treflex/docs/reference/messaging.html)
+- [Live sources](https://tgoh.github.io/treflex/docs/reference/live-sources.html)
+- [Conversations](https://tgoh.github.io/treflex/docs/reference/conversations.html)
+- [Failure](https://tgoh.github.io/treflex/docs/reference/failure.html)
+- [Restart and records](https://tgoh.github.io/treflex/docs/reference/restart-and-records.html)
+- [Views](https://tgoh.github.io/treflex/docs/reference/views.html)
+- [Runtime](https://tgoh.github.io/treflex/docs/reference/runtime.html)
+- [Testing](https://tgoh.github.io/treflex/docs/reference/testing.html)
+- [Troubleshooting](https://tgoh.github.io/treflex/docs/reference/troubleshooting.html): every diag code, what triggers it and what to do
+
+## Optional
+
+- [Principles](https://tgoh.github.io/treflex/docs/design/principles.html)
+- [Implementation choices](https://tgoh.github.io/treflex/docs/design/choices.html)

@@ -9,7 +9,7 @@ function read(monitor: IMonitor) {
 	};
 }
 
-export function RecordPanel(props: { monitor: IMonitor }) {
+export function RecordPanel(props: { monitor: IMonitor; onClose: () => void }) {
 	const monitor = props.monitor;
 	const [{ lines, ticks }, setShown] = useState(() => read(monitor));
 	useEffect(() => {
@@ -46,6 +46,9 @@ export function RecordPanel(props: { monitor: IMonitor }) {
 						</span>
 					))}
 				</div>
+				<button type="button" className="rclose" aria-label="Close the record stream" onClick={() => props.onClose()}>
+					×
+				</button>
 			</div>
 			<div className="rec mono">
 				{lines.length > 0 ? (

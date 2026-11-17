@@ -25,6 +25,9 @@
 	--lane-reykjavik: #5eead4;
 	--lane-aquarium: #38bdf8;
 	--lane-chat: #f472b6;
+	--side-w: 264px;
+	--records-w: 360px;
+	--bar-h: 52px;
 }
 
 * {
@@ -66,13 +69,13 @@ button:disabled {
 
 .portal {
 	display: grid;
-	grid-template-columns: 264px minmax(0, 1fr);
+	grid-template-columns: var(--side-w) minmax(0, 1fr);
 	height: 100vh;
 	overflow: hidden;
 }
 
 .portal.with-records {
-	grid-template-columns: 264px minmax(0, 1fr) 360px;
+	grid-template-columns: var(--side-w) minmax(0, 1fr) var(--records-w);
 }
 
 .boot {
@@ -421,7 +424,8 @@ button:disabled {
 	text-decoration: none;
 }
 
-.seg a:hover {
+.seg a:hover,
+.seg button:enabled:hover {
 	color: #fff;
 }
 
@@ -430,9 +434,19 @@ button:disabled {
 	cursor: not-allowed;
 }
 
-.seg span.on {
+.seg .on {
 	background: #3a3f4a;
 	color: #fff;
+}
+
+fieldset.seg {
+	margin: 0;
+	border: 0;
+	min-width: 0;
+}
+
+.seg button[aria-busy="true"] {
+	cursor: progress;
 }
 
 .toggle {
@@ -1076,5 +1090,399 @@ main.app-chat .toast {
 	.restored > .btn {
 		grid-column: 3;
 		grid-row: 1;
+	}
+}
+
+.mobilebar,
+.scrim,
+.rclose {
+	display: none;
+}
+
+@media (max-width: 900px), (pointer: coarse) {
+	.app {
+		min-height: 52px;
+	}
+
+	.trip {
+		min-height: 44px;
+		padding: 10px;
+	}
+
+	.newtrip {
+		min-height: 44px;
+	}
+
+	.sbtn {
+		min-height: 44px;
+		font-size: 13px;
+		white-space: nowrap;
+	}
+
+	.seg {
+		font-size: 13px;
+	}
+
+	.seg span,
+	.seg a,
+	.seg button {
+		display: grid;
+		place-items: center;
+		min-height: 38px;
+	}
+
+	.toggle {
+		min-height: 44px;
+		font-size: 13px;
+	}
+
+	.btn {
+		min-height: 44px;
+		justify-content: center;
+	}
+
+	.tour .skip {
+		min-height: 44px;
+		padding: 0 8px;
+	}
+
+	.crumbs button {
+		min-height: 44px;
+	}
+
+	.toast .link {
+		display: inline-flex;
+		align-items: center;
+		min-height: 44px;
+	}
+
+	.toast .x {
+		width: 44px;
+		height: 44px;
+		margin: -10px -12px -10px 0;
+		font-size: 20px;
+	}
+}
+
+@media (max-width: 900px), (max-width: 1100px) and (pointer: coarse), (max-height: 500px) and (pointer: coarse) {
+	.portal.with-records {
+		grid-template-columns: var(--side-w) minmax(0, 1fr);
+	}
+
+	/* The record panel takes main's place; contents, not none, so the toast inside main still shows. */
+	.portal.with-records main {
+		display: contents;
+	}
+
+	.portal.with-records main > :not(.toast) {
+		display: none;
+	}
+
+	.portal.with-records main .toast {
+		position: fixed;
+	}
+
+	.portal.with-records main.app-chat .toast {
+		left: auto;
+		right: 22px;
+		width: 340px;
+		max-width: calc(100% - 44px);
+	}
+
+	.records {
+		height: auto;
+		min-height: 0;
+	}
+
+	.records .rh {
+		--rclose: 44px;
+		--rclose-inset: 8px;
+		position: relative;
+		padding-right: calc(var(--rclose) + 2 * var(--rclose-inset));
+	}
+
+	.rclose {
+		display: grid;
+		place-items: center;
+		position: absolute;
+		top: var(--rclose-inset);
+		right: var(--rclose-inset);
+		width: var(--rclose);
+		height: var(--rclose);
+		border: 0;
+		border-radius: 10px;
+		background: none;
+		color: #c9cdd5;
+		font-size: 24px;
+		line-height: 1;
+	}
+
+	.rclose:hover {
+		background: #23262c;
+		color: #fff;
+	}
+}
+
+@media (max-width: 900px), (max-height: 500px) and (pointer: coarse) {
+	.portal,
+	.portal.with-records {
+		grid-template-columns: minmax(0, 1fr);
+		grid-template-rows: auto minmax(0, 1fr);
+		height: 100dvh;
+	}
+
+	.boot {
+		height: 100dvh;
+	}
+
+	main {
+		height: auto;
+		min-height: 0;
+	}
+
+	.mobilebar {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		height: var(--bar-h);
+		padding: 0 16px 0 4px;
+		background: var(--side);
+		color: #fff;
+	}
+
+	.mobilebar .menu {
+		display: grid;
+		place-items: center;
+		width: 44px;
+		height: 44px;
+		border: 0;
+		border-radius: 10px;
+		background: none;
+		color: var(--side-ink);
+	}
+
+	.mobilebar .menu svg {
+		width: 22px;
+		height: 22px;
+		stroke: currentColor;
+		fill: none;
+		stroke-width: 1.8;
+		stroke-linecap: round;
+	}
+
+	.mobilebar .mark {
+		width: 24px;
+		height: 24px;
+		border-radius: 7px;
+	}
+
+	.mobilebar .mark::after {
+		width: 10px;
+		height: 10px;
+		border-radius: 3px;
+	}
+
+	.mobilebar b {
+		font-size: 15px;
+		font-weight: 600;
+	}
+
+	.side {
+		position: fixed;
+		top: 0;
+		bottom: 0;
+		left: 0;
+		z-index: 50;
+		width: min(300px, 86vw);
+		height: auto;
+		overflow-y: auto;
+		overscroll-behavior: contain;
+		transform: translateX(-100%);
+		visibility: hidden;
+		transition:
+			transform 0.25s ease,
+			visibility 0s linear 0.25s;
+	}
+
+	.drawer-open .side {
+		transform: none;
+		visibility: visible;
+		transition: transform 0.25s ease;
+		box-shadow: 24px 0 48px -24px rgba(0, 0, 0, 0.7);
+	}
+
+	.side nav {
+		flex: none;
+		overflow: visible;
+	}
+
+	.drawer-open .scrim {
+		display: block;
+		position: fixed;
+		inset: 0;
+		z-index: 45;
+		border: 0;
+		background: rgba(10, 12, 16, 0.55);
+		cursor: default;
+	}
+
+	.top {
+		padding: 10px 16px;
+		gap: 10px;
+	}
+
+	.tour {
+		padding: 10px 16px;
+	}
+
+	.hint {
+		padding: 10px 16px;
+	}
+
+	.app-banner {
+		padding: 14px 16px 0;
+	}
+}
+
+@media (max-width: 600px), (max-height: 500px) and (pointer: coarse) {
+	main {
+		overflow-x: hidden;
+		overflow-y: auto;
+	}
+
+	.top {
+		flex-wrap: wrap;
+	}
+
+	.tour {
+		grid-template-columns: minmax(0, 1fr) auto;
+		gap: 6px 12px;
+	}
+
+	.tour .k b {
+		display: inline;
+		margin-left: 6px;
+	}
+
+	.tsteps {
+		grid-column: 1 / -1;
+		grid-row: 2;
+		flex-wrap: nowrap;
+		gap: 4px;
+		min-width: 0;
+	}
+
+	.tline {
+		display: none;
+	}
+
+	.ts:not(.now) {
+		padding: 4px;
+	}
+
+	.ts.now {
+		min-width: 0;
+	}
+
+	.ts.now .ts-label {
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.tour .skip {
+		grid-column: 2;
+		grid-row: 1;
+		margin: -10px -8px -10px 0;
+	}
+
+	.hint {
+		font-size: 13px;
+		align-items: flex-start;
+	}
+
+	.restored {
+		grid-template-columns: 1fr;
+		gap: 12px;
+		padding: 14px 16px;
+	}
+
+	.restored .badge {
+		display: none;
+	}
+
+	.restored .no,
+	.restored > .btn {
+		grid-column: 1;
+		grid-row: auto;
+	}
+
+	.restored > .btn {
+		justify-self: start;
+	}
+
+	/* 48px clears the tour strip's first row, where Skip tour is. */
+	main .toast,
+	main.app-aquarium .toast,
+	main.app-chat .toast,
+	.portal.with-records main.app-chat .toast {
+		position: fixed;
+		top: calc(var(--bar-h) + 48px);
+		right: 8px;
+		bottom: auto;
+		left: 8px;
+		width: auto;
+		max-width: none;
+		grid-template-columns: minmax(0, 1fr) auto;
+		align-items: center;
+		gap: 8px;
+		padding: 0 4px 0 14px;
+	}
+
+	/* Below the record panel's close button, which sits where the tour strip's Skip would. */
+	.portal.with-records main .toast,
+	.portal.with-records main.app-chat .toast {
+		top: calc(var(--bar-h) + 60px);
+	}
+
+	.toast .ico,
+	.toast small {
+		display: none;
+	}
+
+	.toast > div {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		min-width: 0;
+	}
+
+	.toast b {
+		min-width: 0;
+		overflow: hidden;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+	}
+
+	.toast > div:has(.btn.voucher) {
+		flex-wrap: wrap;
+		row-gap: 0;
+		padding-top: 10px;
+	}
+
+	.toast > div:has(.btn.voucher) b {
+		flex-basis: 100%;
+	}
+
+	.toast .btn.voucher,
+	.toast .link {
+		flex: none;
+	}
+
+	.toast .btn.voucher {
+		margin: 0;
+	}
+
+	.toast .x {
+		margin: 0;
 	}
 }

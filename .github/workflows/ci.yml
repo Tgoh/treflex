@@ -17,8 +17,12 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           cache: npm
+      # The lockfile is written by npm 11; Node 22 ships npm 10, which reads it as out of sync.
+      - run: npm install -g npm@11
       - run: npm ci
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test
+      - run: npm run test:react18
       - run: npm run test:pack
+      - run: npm run docs:build

@@ -1,9 +1,11 @@
 import { createRequire } from "node:module";
+import { noDiscardedGenerator } from "./noDiscardedGenerator";
 import { noEditAfterWrite } from "./noEditAfterWrite";
 import { noGlobalOpen } from "./noGlobalOpen";
 import { noHiddenOpen } from "./noHiddenOpen";
 import { noYieldInFinally } from "./noYieldInFinally";
 
+export { type INoDiscardedGeneratorMessageId, noDiscardedGenerator } from "./noDiscardedGenerator";
 export { type INoEditAfterWriteMessageId, noEditAfterWrite } from "./noEditAfterWrite";
 export { type INoGlobalOpenMessageId, noGlobalOpen } from "./noGlobalOpen";
 export { type INoHiddenOpenMessageId, noHiddenOpen } from "./noHiddenOpen";
@@ -14,6 +16,7 @@ export { type INoYieldInFinallyMessageId, noYieldInFinally } from "./noYieldInFi
 const { version } = createRequire(import.meta.url)("../package.json");
 
 const rules = {
+	"no-discarded-generator": noDiscardedGenerator,
 	"no-edit-after-write": noEditAfterWrite,
 	"no-global-open": noGlobalOpen,
 	"no-hidden-open": noHiddenOpen,
@@ -52,6 +55,7 @@ export const plugin: ITreflexPlugin = {
 			],
 			plugins: {} as ITreflexPlugin["configs"]["recommended"]["plugins"],
 			rules: {
+				"treflex/no-discarded-generator": "error",
 				"treflex/no-edit-after-write": "error",
 				"treflex/no-global-open": "error",
 				"treflex/no-hidden-open": "error",

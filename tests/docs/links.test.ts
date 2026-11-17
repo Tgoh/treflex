@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { posix, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { slug } from "../../docs/.vitepress/slug";
 
 const ROOT = resolve(import.meta.dirname, "../..").replace(/\\/g, "/");
 
@@ -28,14 +29,6 @@ const markdown = files.filter((f) => f.endsWith(".md"));
 const sources = files.filter((f) => /\.(ts|tsx|mts|cts|js|mjs|cjs|grit|json)$/.test(f));
 
 const lines = (file: string): string[] => readFileSync(`${ROOT}/${file}`, "utf8").split(/\r?\n/);
-
-const slug = (heading: string): string =>
-	heading
-		.trim()
-		.toLowerCase()
-		.replace(/`([^`]*)`|<[^>]+>/g, (_, code: string | undefined) => code ?? "")
-		.replace(/[^\p{L}\p{N}\s_-]/gu, "")
-		.replace(/\s/g, "-");
 
 const anchorCache = new Map<string, Set<string>>();
 function anchors(file: string): Set<string> {
@@ -145,7 +138,9 @@ describe("docs links", () => {
 		expect(problems).toEqual([]);
 	});
 
-	it("resolves every docs path and anchor cited from source", () => {
+	it("resolves every docs path and anchor cited from source", {
+		timeout: 30_000
+	}, () => {
 		const problems: string[] = [];
 		let cited = 0;
 		for (const file of sources) {

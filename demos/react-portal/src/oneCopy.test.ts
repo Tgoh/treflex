@@ -1,17 +1,13 @@
 // @vitest-environment node
-import type { RollupOutput } from "rollup";
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, realpathSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { build, createServer } from "vite";
 import { describe, expect, it } from "vitest";
+import { devResolutions, escaped, fixtureWithCopies, packageFiles, productionModules, slashed } from "./oneCopy";
 
 const app = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repo = resolve(app, "../..");
 const configFile = join(app, "vite.config.mts");
-
-const slashed = (path: string): string => path.replaceAll("\\", "/");
 
 const importers = {
 	"a shared feature file": join(repo, "demos/portal/src/portal/session.ts"),
@@ -41,101 +37,42 @@ describe("one copy of treflex", () => {
 	});
 
 	it("is what the dev server resolves, even from a folder with a second copy in its own node_modules", async () => {
-		const fixture = mkdtempSync(join(tmpdir(), "treflex-one-copy-"));
-		const fakePackage = (name: string, entries: Record<string, string>): void => {
-			const dir = join(fixture, "node_modules", name);
-			const exports: Record<string, Record<string, string>> = {};
-			for (const [entry, file] of Object.entries(entries)) {
-				mkdirSync(dirname(join(dir, file)), {
-					recursive: true
-				});
-				writeFileSync(join(dir, file), "export {};\n");
-				exports[entry] = {
-					"treflex-source": `./${file}`,
-					import: `./${file}`
-				};
-			}
-			writeFileSync(
-				join(dir, "package.json"),
-				JSON.stringify({
-					name,
-					type: "module",
-					exports
-				})
-			);
-		};
-		fakePackage("treflex", {
-			".": "src/index.ts",
-			"./snapshot": "src/Snapshot/index.ts",
-			"./internal": "src/internal.ts"
-		});
-		fakePackage("treflex-react", {
-			".": "src/index.ts"
-		});
-		mkdirSync(join(fixture, "src"));
-		writeFileSync(join(fixture, "src/feature.ts"), 'import "treflex";\n');
-		const fromFixture = join(fixture, "src/feature.ts");
-
-		const server = await createServer({
-			configFile,
-			root: app,
-			logLevel: "silent",
-			appType: "custom",
-			optimizeDeps: {
-				noDiscovery: true
+		const fixture = fixtureWithCopies({
+			treflex: {
+				".": "src/index.ts",
+				"./snapshot": "src/Snapshot/index.ts",
+				"./internal": "src/internal.ts"
 			},
-			server: {
-				middlewareMode: true,
-				hmr: false,
-				ws: false
+			"treflex-react": {
+				".": "src/index.ts"
 			}
 		});
 		try {
-			for (const specifier of [
-				"treflex",
-				"treflex/snapshot",
-				"treflex/internal",
-				"treflex-react"
-			]) {
-				const ids = new Set<string>();
-				for (const importer of [
+			const resolved = await devResolutions(
+				configFile,
+				app,
+				[
+					"treflex",
+					"treflex/snapshot",
+					"treflex/internal",
+					"treflex-react"
+				],
+				[
 					...Object.values(importers),
-					fromFixture
-				]) {
-					const resolved = await server.pluginContainer.resolveId(specifier, importer);
-					ids.add(slashed(resolved?.id ?? "unresolved"));
-				}
-				expect([
-					...ids
-				]).toHaveLength(1);
-				expect(
-					[
-						...ids
-					][0]
-				).toMatch(new RegExp(`^${slashed(repo).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/packages/(core|react)/src/`));
+					fixture.importer
+				]
+			);
+			for (const ids of Object.values(resolved)) {
+				expect(ids).toHaveLength(1);
+				expect(ids[0]).toMatch(new RegExp(`^${escaped(slashed(repo))}/packages/(core|react)/src/`));
 			}
 		} finally {
-			await server.close();
-			rmSync(fixture, {
-				recursive: true,
-				force: true
-			});
+			fixture.remove();
 		}
 	});
 
-	it("is the only copy in the production bundle, with one solid-js and one React", async () => {
-		const output = (await build({
-			configFile,
-			root: app,
-			logLevel: "silent",
-			build: {
-				write: false
-			}
-		})) as RollupOutput;
-		const modules = output.output
-			.flatMap((chunk) => (chunk.type === "chunk" ? Object.keys(chunk.modules) : []))
-			.map((id) => slashed(id).replace(/^\0/, ""));
-		const roots = (pattern: RegExp) => new Set(modules.map((id) => pattern.exec(id)?.[1]).filter((root) => root !== undefined));
+	it("is the only copy in the production bundle, with one solid-js and one React, both their production builds", async () => {
+		const modules = await productionModules(configFile, app);
 
 		// A second copy would be the same file under another path, so it would show as a second module with the same tail.
 		expect(modules.filter((id) => id.endsWith("/src/Runtime/createRuntime.ts"))).toEqual([
@@ -148,20 +85,30 @@ describe("one copy of treflex", () => {
 			slashed(join(repo, "packages/react/src/createFrames.ts"))
 		]);
 		expect(modules.filter((id) => /\/packages\/[^/]+\/dist\/|\/node_modules\/treflex/.test(id))).toEqual([]);
-		expect(roots(/^(.*\/node_modules\/solid-js)\//)).toEqual(
-			new Set([
-				slashed(join(repo, "node_modules/solid-js"))
-			])
-		);
-		expect(roots(/^(.*\/node_modules\/react)\//)).toEqual(
-			new Set([
-				slashed(join(repo, "node_modules/react"))
-			])
-		);
-		expect(roots(/^(.*\/node_modules\/react-dom)\//)).toEqual(
-			new Set([
-				slashed(join(repo, "node_modules/react-dom"))
-			])
-		);
+
+		const nodeModules = slashed(join(repo, "node_modules"));
+		expect(packageFiles(modules, "solid-js")).toEqual({
+			[`${nodeModules}/solid-js`]: [
+				"dist/solid.js",
+				"store/dist/store.js"
+			]
+		});
+		expect(Object.keys(packageFiles(modules, "react"))).toEqual([
+			`${nodeModules}/react`
+		]);
+		expect(packageFiles(modules, "react")[`${nodeModules}/react`].filter((file) => file.startsWith("cjs/"))).toEqual([
+			"cjs/react-jsx-runtime.production.js",
+			"cjs/react.production.js"
+		]);
+		expect(Object.keys(packageFiles(modules, "react-dom"))).toEqual([
+			`${nodeModules}/react-dom`
+		]);
+		expect(packageFiles(modules, "react-dom")[`${nodeModules}/react-dom`].filter((file) => file.startsWith("cjs/"))).toEqual([
+			"cjs/react-dom-client.production.js",
+			"cjs/react-dom.production.js"
+		]);
+		expect(Object.keys(packageFiles(modules, "scheduler"))).toEqual([
+			`${nodeModules}/scheduler`
+		]);
 	}, 120_000);
 });

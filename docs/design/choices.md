@@ -32,6 +32,12 @@ treflex uses Solid for reading. Solid's reactivity is read-granular and independ
 
 ## Lineage
 
+**Solid's signals:** reads are tracked one at a time, so a selector's memo re-runs for exactly what it read, independently of rendering. [Why Solid](#why-solid) says how treflex uses them.
+
 **The actor model** (Erlang, Akka): an entity is an actor, the tree is the supervision hierarchy, a receiver is an actor's behaviour, `publishToNearest` tells the nearest supervisor, removal ends the children, and `Action/Error` is escalation.
 
 **Algebraic effects** (Koka, OCaml 5, Effect-TS): a generator yields a description of an effect, answered outside the code that yields it. treflex takes the descriptions and the runtime-owned continuation, and leaves out scoped handlers: an effect goes from its yield to its implementation.
+
+**redux-saga:** effects as data that a runtime answers, a test stubs, and `takeLeading`/`takeLatest`, which became `leading` and `latest`. treflex's `yield*` types each answer, and work runs on an entity that holds it, rather than in sagas listening globally.
+
+**MobX-State-Tree:** a tree of identified nodes, actions that change only their own subtree, async steps as generators, and snapshots. treflex keeps the tree as plain data with no model classes, makes an action hold its entity across its waits, and stops a removed node's work.

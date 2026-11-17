@@ -7,6 +7,7 @@ export default defineConfig({
 			"packages/solid",
 			"packages/react",
 			"packages/eslint",
+			"packages/create-treflex",
 			{
 				test: {
 					name: "repo",

@@ -8,7 +8,7 @@ import type { ISessionStore } from "../../portal/src/portal/session";
 import type { IMountedPortal } from "./mount";
 import { act } from "react";
 import { entity, publish } from "treflex";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { addFish } from "../../portal/src/aquarium/Aquarium";
 import { SWIM_MS } from "../../portal/src/aquarium/Fish";
 import { LETTER_FADE_MS } from "../../portal/src/chat/Message";
@@ -17,6 +17,7 @@ import { openApp, ROOT_ID } from "../../portal/src/portal/Portal";
 import { CARD_STAGGER_MS, CARD_TICK_MS, SPARK_COUNT, TICK_MS, TOTAL_TICK_DELAY_MS } from "../../portal/src/trips/flourish";
 import { startTrip } from "../../portal/src/trips/Planner";
 import { mountPortal } from "./mount";
+import { resetMedia, setMedia } from "./testMedia";
 
 function memoryStore(): ISessionStore & {
 	value: string | null;
@@ -239,12 +240,78 @@ function playedSaved(
 	return typeof Snapshot === "string" && Snapshot.includes('"Played":true');
 }
 
-describe("the voucher's flourish", () => {
+/**
+ * Records each flourish that starts under `element`: "inserted" for a .cards or .total that arrived already playing,
+ * "added" for one given vdrop after it arrived.
+ */
+function watchFlourish(element: HTMLElement): {
+	starts: string[];
+	stop(): void;
+} {
+	const starts: string[] = [];
+	const playing = (cls: string | null) => ` ${cls ?? ""} `.includes(" vdrop ");
+	const observer = new MutationObserver((records) => {
+		const values = new Map<Element, (string | null)[]>();
+		for (const record of records) {
+			if (record.type !== "attributes") continue;
+			const target = record.target as Element;
+			values.set(target, [
+				...(values.get(target) ?? []),
+				record.oldValue
+			]);
+		}
+		for (const record of records) {
+			for (const node of record.addedNodes) {
+				if (!(node instanceof Element)) continue;
+				for (const el of [
+					node,
+					...node.querySelectorAll(".cards, .total")
+				]) {
+					if (el.matches(".cards, .total") && playing(values.get(el)?.[0] ?? el.getAttribute("class"))) starts.push("inserted");
+				}
+			}
+		}
+		for (const [target, old] of values) {
+			if (!target.matches(".cards, .total")) continue;
+			const seen = [
+				...old,
+				target.getAttribute("class")
+			];
+			for (let i = 1; i < seen.length; i++) if (!playing(seen[i - 1]) && playing(seen[i])) starts.push("added");
+		}
+	});
+	observer.observe(element, {
+		subtree: true,
+		childList: true,
+		attributes: true,
+		attributeFilter: [
+			"class"
+		],
+		attributeOldValue: true
+	});
+	return {
+		starts,
+		stop: () => observer.disconnect()
+	};
+}
+
+describe.each([
+	"no motion preference",
+	"reduced motion"
+])("the voucher's flourish, with %s", (preference) => {
+	beforeEach(() => setMedia((query) => preference === "reduced motion" && query.includes("prefers-reduced-motion: reduce")));
+	afterEach(() => resetMedia());
+
 	it("plays once on the start screen: each card's pill, tickers that count down and stop, and the timeline's own end clears it", async () => {
 		const saved = memoryStore();
 		const { element, portal } = await mount(saved);
 		const { runtime } = portal;
+		const watch = watchFlourish(element);
 		await act(() => runtime.dispatch(giveVoucher, ROOT_ID));
+		expect(watch.starts).toEqual([
+			"added"
+		]);
+		expect(runtime.state.Trips.Voucher?.Played).toBe(true);
 		expect(element.querySelector(".cards.vdrop")).not.toBeNull();
 		expect(element.querySelectorAll(".card .vpill")).toHaveLength(3);
 		expect(element.querySelectorAll(".card .meta s")).toHaveLength(3);
@@ -261,11 +328,12 @@ describe("the voucher's flourish", () => {
 		expect(element.querySelector(".cards.vdrop")).not.toBeNull();
 		await animationEnd(cards);
 		expect(element.querySelector(".cards.vdrop")).toBeNull();
-		expect(runtime.state.Trips.Voucher?.Played).toBe(true);
 		expect(playedSaved(portal, saved)).toBe(true);
+		expect(watch.starts).toHaveLength(1);
+		watch.stop();
 	});
 
-	it("plays once on a trip: the box lifts, the total ticks down, the pill sparkles, and the box's own end clears it", async () => {
+	it("plays once on a trip: the total ticks down, the pill appears, and the box's own end clears it", async () => {
 		const saved = memoryStore();
 		const { element, portal } = await mount(saved);
 		const { runtime } = portal;
@@ -274,7 +342,11 @@ describe("the voucher's flourish", () => {
 			await act(() => pause(100));
 		}
 		expect(element.querySelector(".total b")?.textContent).not.toBe("A$0");
+		const watch = watchFlourish(element);
 		await act(() => runtime.dispatch(giveVoucher, ROOT_ID));
+		expect(watch.starts).toEqual([
+			"added"
+		]);
 		expect(element.querySelector(".hero.burst")).not.toBeNull();
 		expect(element.querySelector(".total.vdrop")).not.toBeNull();
 		expect(element.querySelectorAll(".total .vpill .sparks i")).toHaveLength(SPARK_COUNT);
@@ -292,5 +364,62 @@ describe("the voucher's flourish", () => {
 		expect(element.querySelector(".total .tick")).toBeNull();
 		expect(runtime.state.Trips.Voucher?.Played).toBe(true);
 		expect(playedSaved(portal, saved)).toBe(true);
+		expect(watch.starts).toHaveLength(1);
+		watch.stop();
+	});
+
+	it("plays the first time the planner is shown after the voucher was applied elsewhere, from its first frame", async () => {
+		const { element, portal } = await mount();
+		const { runtime } = portal;
+		await act(() => runtime.dispatch(openApp, ROOT_ID, "chat"));
+		await act(() => runtime.dispatch(giveVoucher, ROOT_ID));
+		expect(runtime.state.Trips.Voucher?.Played).toBe(false);
+
+		const watch = watchFlourish(element);
+		await act(() => runtime.dispatch(openApp, ROOT_ID, "trips"));
+		expect(watch.starts).toEqual([
+			"inserted"
+		]);
+		expect(element.querySelector(".cards.vdrop")).not.toBeNull();
+		expect(runtime.state.Trips.Voucher?.Played).toBe(true);
+		await act(() => pause(CARD_TICK_MS + TICK_MS / 2));
+		expect(element.querySelectorAll(".card .tick").length).toBeGreaterThan(0);
+		watch.stop();
+	});
+
+	it("doesn't play again when the planner's view remounts, mid-flourish or after it", async () => {
+		const { element, portal } = await mount();
+		const { runtime } = portal;
+		const watch = watchFlourish(element);
+		await act(() => runtime.dispatch(giveVoucher, ROOT_ID));
+		expect(element.querySelector(".cards.vdrop")).not.toBeNull();
+
+		await act(() => runtime.dispatch(openApp, ROOT_ID, "chat"));
+		await act(() => runtime.dispatch(openApp, ROOT_ID, "trips"));
+		expect(element.querySelector(".cards.vdrop")).toBeNull();
+		expect(element.querySelectorAll(".card .vpill")).toHaveLength(3);
+
+		await act(() => runtime.dispatch(startTrip, runtime.state.Trips.$Id, "lisbon"));
+		expect(element.querySelector(".total")).not.toBeNull();
+		expect(element.querySelector(".total.vdrop")).toBeNull();
+		await act(() => pause(TOTAL_TICK_DELAY_MS + TICK_MS));
+		expect(element.querySelector(".total .tick")).toBeNull();
+		expect(watch.starts).toHaveLength(1);
+		watch.stop();
+	});
+
+	it("doesn't play again after a reload, even one made mid-flourish", async () => {
+		const saved = memoryStore();
+		const first = await mount(saved);
+		await act(() => first.portal.runtime.dispatch(giveVoucher, ROOT_ID));
+		expect(first.element.querySelector(".cards.vdrop")).not.toBeNull();
+		expect(playedSaved(first.portal, saved)).toBe(true);
+
+		const { element } = await mount(saved);
+		expect(element.querySelector(".cards")).not.toBeNull();
+		expect(element.querySelector(".cards.vdrop")).toBeNull();
+		expect(element.querySelectorAll(".card .vpill")).toHaveLength(3);
+		await act(() => pause(CARD_TICK_MS + TICK_MS / 2));
+		expect(element.querySelectorAll(".card .tick")).toHaveLength(0);
 	});
 });

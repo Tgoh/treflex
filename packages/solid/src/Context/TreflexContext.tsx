@@ -1,9 +1,23 @@
 import type { JSX } from "solid-js";
 import type { IAction, IDispatchTarget, ILocation, IRuntime } from "treflex";
 import type { IRuntimeInternal } from "treflex/internal";
-import { catchError, createContext, useContext } from "solid-js";
+import { $TRACK, catchError, createContext, useContext } from "solid-js";
+import { solidTrack } from "treflex/internal";
 
 export type ITreflexContextValue = IRuntimeInternal<any>;
+
+// Each copy of solid-js mints its own `$TRACK`. The range is the solid-js peer and dependency in
+// packages/solid/package.json and packages/core/package.json.
+function assertOneSolid(): void {
+	if (solidTrack !== $TRACK) {
+		throw new Error(
+			"[treflex] Two copies of solid-js are loaded: treflex's runtime runs on one and this app's Solid components on " +
+				"the other, so views would not update on the runtime's writes. treflex needs solid-js ^1.9.7. Dedupe " +
+				"solid-js (npm dedupe, pnpm dedupe, yarn dedupe), and if two copies remain, force one version that ^1.9.7 " +
+				"covers: overrides in package.json for npm, pnpm.overrides for pnpm, resolutions for yarn."
+		);
+	}
+}
 
 const TreflexContext = createContext<ITreflexContextValue>();
 
@@ -24,9 +38,11 @@ function raiseViewCrash(error: unknown): void {
 
 /**
  * Puts the runtime in context for every feature, hook and component below. A view's throw below it,
- * mounting included, is raised uncaught, and never fails an action.
+ * mounting included, is raised uncaught, and never fails an action. Throws when treflex and the app
+ * loaded different copies of solid-js.
  */
 export function TreflexProvider(props: { value: IRuntime<any>; children?: JSX.Element }): JSX.Element {
+	assertOneSolid();
 	return (
 		<TreflexContext.Provider value={props.value as ITreflexContextValue}>
 			{catchError(() => props.children, raiseViewCrash)}

@@ -10,11 +10,9 @@ npm run dev
 ```
 
 It is a package only so that it runs and gets typechecked. The
-[guide](../../docs/guide/01-entities.md) builds a larger app step by step. Two
-things here it doesn't use: `generateGuid` for a plain row's id
-([effects](../../docs/reference/effects.md#non-determinism)), and
-`import.meta.url` as the feature's id
-([views](../../docs/reference/views.md#hot-reload-and-the-id)).
+[guide](../../docs/guide/01-entities.md) builds a larger app step by step. One
+thing here it doesn't use: `generateGuid` for a plain row's id
+([effects](../../docs/reference/effects.md#non-determinism)).
 
 At this size the framework is all cost and no benefit. The `$Id`, the generator
 syntax and the entity feature are all visible, and none of the capabilities

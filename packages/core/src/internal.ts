@@ -4,5 +4,6 @@ export type { IWriteGateway } from "./Runtime/createWriteGateway";
 export type { IRuntimeInternal } from "./Runtime/internals";
 export { rawOf, view } from "./Runtime/viewProxy";
 export { watch } from "./Runtime/watch";
+export { solidTrack } from "./Solid/host";
 export { callbackThrew } from "./Types/IRuntimeEvent";
 export { DEV } from "./Utility/devMode";

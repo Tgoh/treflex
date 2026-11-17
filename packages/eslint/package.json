@@ -1,6 +1,6 @@
 {
 	"name": "treflex-eslint",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"description": "ESLint rules for treflex applications",
 	"license": "MIT",
 	"author": "Tam Goh",
@@ -33,6 +33,11 @@
 	},
 	"dependencies": {
 		"@typescript-eslint/utils": "^8.58.0"
+	},
+	"devDependencies": {
+		"@typescript-eslint/parser": "^8.69.0",
+		"@typescript-eslint/rule-tester": "^8.69.0",
+		"typescript": "~6.0.2"
 	},
 	"peerDependencies": {
 		"eslint": ">=9",

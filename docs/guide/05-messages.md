@@ -103,7 +103,7 @@ export function* star(draft: IArticle): IActionGenerator {
 }
 ```
 
-The article's feature gains `star`, and `ArticleView` a Star button that calls `article.star()`. The reader's view lists the starred articles from `reader.state.Starred.Items`.
+The article's feature gains `star`, and `ArticleView` a Star button that calls `article.star()`. The reader's view lists the starred articles from `reader.state.Starred.Items`. In React, `reader.state.Starred` is a ref, so the list reads `Items` through the starred entity's own provider, `useEntity`, or a selector ([entity views](../reference/views.md#entity-views)).
 
 **When a receiver runs.** Each receiver case is a new action on its own entity. It queues behind that entity's hold like any work, and starts only after the publisher has given up its turn, so the code after `yield* publish(...)` never sees what a receiver wrote. A test that checks a receiver's work waits with [`settled()`](../reference/testing.md#waiting-until-nothing-can-run).
 

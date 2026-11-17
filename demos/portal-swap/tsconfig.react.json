@@ -1,0 +1,14 @@
+{
+	"extends": "../react-portal/tsconfig.json",
+	"compilerOptions": {
+		"declaration": false
+	},
+	"include": [
+		"./src/*.ts",
+		"./src/react",
+		"./robust/*.ts",
+		"./robust/react",
+		"../react-portal/src",
+		"../portal/src/env.d.ts"
+	]
+}

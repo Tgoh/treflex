@@ -13,7 +13,7 @@ import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { transformAsync } from "@babel/core";
 import solidPreset from "babel-preset-solid";
-import ts from "typescript";
+import ts from "typescript6";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PACKAGES = join(ROOT, "packages");
@@ -215,15 +215,17 @@ function checkDevModeRead(pkgDir) {
 
 async function build(dir) {
 	const pkgDir = join(PACKAGES, dir);
-	rmSync(join(pkgDir, "dist"), {
-		recursive: true,
-		force: true
-	});
-	compile(pkgDir);
-	await compileSolidJsx(join(pkgDir, "dist"));
-	addExtensions(join(pkgDir, "dist"));
-	checkExports(dir, pkgDir);
-	checkDevModeRead(pkgDir);
+	if (manifests.get(dir).exports) {
+		rmSync(join(pkgDir, "dist"), {
+			recursive: true,
+			force: true
+		});
+		compile(pkgDir);
+		await compileSolidJsx(join(pkgDir, "dist"));
+		addExtensions(join(pkgDir, "dist"));
+		checkExports(dir, pkgDir);
+		checkDevModeRead(pkgDir);
+	}
 	copyFileSync(join(ROOT, "LICENSE"), join(pkgDir, "LICENSE"));
 	console.log(`built ${manifests.get(dir).name}`);
 }
@@ -231,8 +233,6 @@ async function build(dir) {
 // Outside the package folder, or npm packs the saved copy too.
 const savedReadme = (dir) => join(ROOT, "node_modules/.cache/treflex-readme", dir, "README.md");
 
-// The README in the tarball is the one npm shows, where a relative link leads
-// nowhere, so --pack points each link at the repository the manifest names.
 function writeNpmReadme(dir) {
 	const pkgDir = join(PACKAGES, dir);
 	restoreReadme(dir);

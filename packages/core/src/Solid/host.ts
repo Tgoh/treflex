@@ -143,3 +143,5 @@ export const host: IReactiveHost = {
 	onCleanup,
 	TRACK: $TRACK
 };
+
+export const solidTrack: symbol = $TRACK;

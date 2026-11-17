@@ -1,17 +1,27 @@
+import type { MouseEvent } from "react";
 import type { IEntityView } from "treflex-react";
 import type { IAppInfo } from "../../../portal/src/portal/apps";
 import type { IAppId, IPortal } from "../../../portal/src/portal/Portal";
 import type { IPortalHost } from "../../../portal/src/shell/host";
 import type { IAppViews } from "./apps";
 import type { IRestoreProps } from "./RestoreBanner";
-import { memo, useCallback, useMemo } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+	closeRecords,
+	closesDrawer,
+	closesRecords,
+	DRAWER_ID,
+	focusRecords,
+	syncDrawer,
+	watchDrawer
+} from "../../../portal/src/shell/overlays";
 import { Patterns } from "../trips/Art";
 import { APP_VIEWS } from "./apps";
 import { ViewFailed } from "./BootFailed";
 import { Portal } from "./contexts";
 import { cx } from "./dom";
 import { Guarded } from "./Guarded";
-import { AppIcon } from "./icons";
+import { AppIcon, MenuIcon } from "./icons";
 import { RecordPanel } from "./RecordPanel";
 import { SessionCard } from "./SessionCard";
 import { Toast } from "./Toast";
@@ -99,15 +109,69 @@ export const PortalView = Portal.provider<{
 	);
 	const tourStep = portal.tourStep();
 	const Recover = active.Recover;
+	const [drawerOpen, setDrawerOpen] = useState(false);
+	const root = useRef<HTMLDivElement>(null);
+	const recordsOpen = state.RecordsOpen;
+	const synced = useRef({
+		drawer: false,
+		records: recordsOpen
+	});
+	useEffect(() => watchDrawer(() => setDrawerOpen(false)), []);
+	useEffect(() => {
+		const was = synced.current;
+		synced.current = {
+			drawer: drawerOpen,
+			records: recordsOpen
+		};
+		if (!root.current) return;
+		if (drawerOpen !== was.drawer) syncDrawer(root.current, drawerOpen);
+		if (recordsOpen && !was.records) focusRecords(root.current);
+	}, [
+		drawerOpen,
+		recordsOpen
+	]);
+	const closePanel = useCallback(() => {
+		if (root.current) closeRecords(root.current, onToggleRecords);
+	}, [
+		onToggleRecords
+	]);
+	const onPick = (event: MouseEvent<HTMLElement>) => {
+		if (recordsOpen && closesRecords(event.target)) closePanel();
+	};
 
 	return (
 		<div
+			ref={root}
 			className={cx("portal", {
-				"with-records": state.RecordsOpen
+				"with-records": state.RecordsOpen,
+				"drawer-open": drawerOpen
 			})}
 		>
 			<Patterns />
-			<aside className="side">
+			<header className="mobilebar">
+				<button
+					type="button"
+					className="menu"
+					aria-label="Apps and session"
+					aria-controls={DRAWER_ID}
+					aria-expanded={drawerOpen}
+					onClick={() => setDrawerOpen(true)}
+				>
+					<MenuIcon />
+				</button>
+				<div className="mark" />
+				<b>{active.Name}</b>
+			</header>
+			<button type="button" className="scrim" aria-label="Close the menu" tabIndex={-1} onClick={() => setDrawerOpen(false)} />
+			{/* biome-ignore lint/a11y/useKeyWithClickEvents: it acts only on clicks from the buttons and links inside, which keys fire too */}
+			<aside
+				id={DRAWER_ID}
+				className="side"
+				onClick={(event) => {
+					if (closesDrawer(event.target)) setDrawerOpen(false);
+					onPick(event);
+				}}
+			>
 				<div className="brand">
 					<div className="mark" />
 					<div>
@@ -123,7 +187,8 @@ export const PortalView = Portal.provider<{
 				</nav>
 				<SessionCard host={props.host} recordsOpen={state.RecordsOpen} onToggleRecords={onToggleRecords} />
 			</aside>
-			<main className={`app-${state.ActiveApp}`}>
+			{/* biome-ignore lint/a11y/useKeyWithClickEvents: it acts only on clicks from the buttons and links inside, which keys fire too */}
+			<main className={`app-${state.ActiveApp}`} onClick={onPick}>
 				<TourStrip state={state.Tour} />
 				<Guarded
 					key={active.Id}
@@ -141,7 +206,7 @@ export const PortalView = Portal.provider<{
 				</Guarded>
 				<Toast />
 			</main>
-			{state.RecordsOpen ? <RecordPanel monitor={props.host.monitor} /> : null}
+			{state.RecordsOpen ? <RecordPanel monitor={props.host.monitor} onClose={closePanel} /> : null}
 		</div>
 	);
 });

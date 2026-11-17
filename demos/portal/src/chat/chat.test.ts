@@ -16,7 +16,7 @@ import { ChatReceiver, init, openConversation, rows, summary } from "./Chat";
 import { ConversationReceiver, queueReply, send, typing } from "./Conversation";
 import { retry, sendStatus } from "./Message";
 
-const LINE = "cue:1";
+const LINE = "cue:2";
 const TEXT = replyText(LINE);
 const LETTERS = replyLetters(LINE);
 
@@ -292,7 +292,7 @@ describe("a teammate's reply", () => {
 	it("waits behind the one streaming, and both finish in order across a restore", async () => {
 		const gate = chatGate();
 		const before = await chat(gate.wait);
-		await cue(before, "launch", "priya", "cue:1");
+		await cue(before, "launch", "priya", "cue:2");
 		await cue(before, "launch", "marcus", "cue:7");
 		await gate.release("typing");
 		await gate.release("letter", 2);
@@ -307,7 +307,7 @@ describe("a teammate's reply", () => {
 		expect(messages).toHaveLength(count + 1);
 		expect(messages.at(-2)).toMatchObject({
 			From: "priya",
-			Text: replyText("cue:1")
+			Text: replyText("cue:2")
 		});
 		expect(messages.at(-1)).toMatchObject({
 			From: "marcus",
@@ -423,14 +423,14 @@ describe("the scripted teammate posts", () => {
 			"cue:5"
 		]);
 		expect(cued("launch")).toEqual([
-			"cue:1",
+			"cue:2",
 			"cue:7"
 		]);
 		expect(cued("dm-jonah")).toEqual([
-			"cue:2"
+			"cue:3"
 		]);
 		expect(cued("dm-marcus")).toEqual([
-			"cue:3"
+			"cue:1"
 		]);
 		expect(cued("support")).toEqual([
 			"cue:4"
@@ -488,7 +488,7 @@ describe("the finished-while-away toast for the chat", () => {
 	it("names a teammate's direct message as one to you, the way its toast does", async () => {
 		const gate = chatGate();
 		const before = await chat(gate.wait);
-		await cue(before, "dm-jonah", "jonah", "cue:2");
+		await cue(before, "dm-jonah", "jonah", "cue:3");
 		await gate.release("typing");
 		await gate.release("letter", 2);
 		const after = chatGate();

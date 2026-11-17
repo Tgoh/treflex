@@ -30,6 +30,45 @@ export function* reply(_draft: IFeed, askId: IAskId<boolean>, sure: boolean): IA
 
 `pendingAsks(owner)` lists the open asks at or below an entity. It is a read, so a view reads it through a selector. The sample keeps the feature and the components together; in the app, the feature goes in its `.ts` file, as on page 3:
 
+<!-- tabs -->
+
+**React**
+
+```tsx
+import { createEntityFeature, useDispatch } from "treflex-react";
+
+function* asks(draft: IReader): ISelectorGenerator<readonly IAskEntry[]> {
+    return yield* pendingAsks(draft);
+}
+
+export const Reader = createEntityFeature<IReader>("Reader")(
+    { setNewUrl, addFeed, selectFeed, refreshAll, dismissNotice, unsubscribe },
+    { selected, asks }
+);
+
+function UnsubscribeDialog(props: { entry: IAskEntry }) {
+    const dispatch = useDispatch();
+    const choose = (sure: boolean) => dispatch(reply, props.entry.OwnerId, props.entry.Id as IAskId<boolean>, sure);
+    return (
+        <dialog open>
+            Unsubscribe from {(props.entry.Request as { Title: string }).Title}?
+            <button onClick={() => choose(true)}>Unsubscribe</button>
+            <button onClick={() => choose(false)}>Keep</button>
+        </dialog>
+    );
+}
+
+export const Dialogs = Reader.provider(() => {
+    const reader = Reader.use();
+    return reader
+        .asks()
+        .filter((entry) => (entry.Request as { Path: string }).Path === "Feed/Unsubscribe")
+        .map((entry) => <UnsubscribeDialog key={entry.Id} entry={entry} />);
+});
+```
+
+**Solid**
+
 ```tsx
 import { createEntityFeature, useDispatch } from "treflex-solid";
 import { For, Show } from "solid-js";
@@ -68,6 +107,8 @@ export const Dialogs = Reader.provider(() => {
     );
 });
 ```
+
+<!-- /tabs -->
 
 The reader's view mounts `<Dialogs state={reader.state} />`, and a feed's Unsubscribe button calls `reader.unsubscribe(feed.$Id)`. Each entry is `{ Id, OwnerId, Request }`, and the dialog answers by dispatching on `entry.OwnerId`. `useDispatch()` dispatches on any entity, for a component that has no feature for it.
 

@@ -1,0 +1,20 @@
+{
+	"extends": "../../tsconfig.base.json",
+	"compilerOptions": {
+		"noEmit": true,
+		"incremental": false,
+		"lib": [
+			"ES2022",
+			"DOM",
+			"DOM.Iterable"
+		],
+		"types": [
+			"node"
+		]
+	},
+	"include": [
+		"./*.ts",
+		"./*.mts",
+		"./theme/**/*.ts"
+	]
+}

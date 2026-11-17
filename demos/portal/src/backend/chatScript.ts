@@ -99,6 +99,12 @@ const CUE_SCRIPT: readonly Omit<IScriptedCue, "Line">[] = [
 		Text: "Pushed the new onboarding screens to the design file. The empty states finally have illustrations, and the first-run checklist is down from seven steps to four."
 	},
 	{
+		Conversation: "dm-marcus",
+		From: "marcus",
+		Text: "Found the offsite travel voucher: 10% off trips. Use it before Friday.",
+		Voucher: 10
+	},
+	{
 		Conversation: "launch",
 		From: "priya",
 		Text: "Pricing looks right to me. The one thing I'd change is the table in section 3: the annual plan still says $96, but finance moved it to $90 last week."
@@ -107,12 +113,6 @@ const CUE_SCRIPT: readonly Omit<IScriptedCue, "Line">[] = [
 		Conversation: "dm-jonah",
 		From: "jonah",
 		Text: "Quick one: are you around on Thursday morning? I'd like a second pair of eyes on the support queue for the first hour after the release goes out."
-	},
-	{
-		Conversation: "dm-marcus",
-		From: "marcus",
-		Text: "Found the offsite travel voucher: 10% off trips. Use it before Friday.",
-		Voucher: 10
 	},
 	{
 		Conversation: "support",

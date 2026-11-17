@@ -1,0 +1,30 @@
+{
+	"name": "create-treflex",
+	"version": "0.1.1",
+	"description": "Scaffolds a treflex app in React or Solid: npm create treflex@latest",
+	"license": "MIT",
+	"author": "Tam Goh",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/Tgoh/treflex.git",
+		"directory": "packages/create-treflex"
+	},
+	"type": "module",
+	"engines": {
+		"node": ">=22"
+	},
+	"bin": {
+		"create-treflex": "index.js"
+	},
+	"scripts": {
+		"build": "node ../../scripts/build.mjs",
+		"prepack": "node ../../scripts/build.mjs --pack",
+		"postpack": "node ../../scripts/build.mjs --unpack"
+	},
+	"files": [
+		"index.js",
+		"templates",
+		"README.md",
+		"LICENSE"
+	]
+}

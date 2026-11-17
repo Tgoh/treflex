@@ -3,9 +3,21 @@
 // npm run release:pack
 
 import { spawnSync } from "node:child_process";
-import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+	copyFileSync,
+	cpSync,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	realpathSync,
+	rmSync,
+	writeFileSync
+} from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gunzipSync } from "node:zlib";
 
@@ -13,17 +25,86 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const FIXTURE = join(ROOT, "scripts/test-pack");
 const KEEP = process.argv.includes("--keep");
 const RELEASE = process.argv.includes("--release") ? join(ROOT, "release") : undefined;
+// A published solid-js outside the ^1.9.7 that treflex and treflex-solid require.
+const MISMATCHED_SOLID = "1.8.23";
+// vite-plugin-solid 2.11.15 and later dedupe solid-js in builds, which bundles one copy from two on disk.
+const UNDEDUPED_VITE_PLUGIN_SOLID = "2.11.14";
+// The newest JSX compiler of the 1.8 line, so a later compiler can't break the build against solid-js 1.8.
+const MISMATCHED_SOLID_COMPILER = "1.8.22";
+// The start of the error TreflexProvider throws, in packages/solid/src/Context/TreflexContext.tsx.
+const TWO_SOLIDS = "[treflex] Two copies of solid-js are loaded";
+const SHIPS = {
+	core: [
+		"dist/",
+		"biome/"
+	],
+	"create-treflex": [
+		"index.js",
+		"templates/"
+	]
+};
+// The binding each template of packages/create-treflex/index.js writes.
+const TEMPLATES = {
+	react: "treflex-react",
+	solid: "treflex-solid"
+};
+const PLANTED = "export function* planted() {\n\tyield Promise.resolve();\n\treturn Math.random();\n}\n";
+// The start of each message in packages/core/biome/require-yield-star.grit and no-nondeterminism.grit.
+const PLUGIN_MESSAGES = [
+	"Bare `yield` of a call",
+	"Non-determinism is confined"
+];
+// Drops the effect each template declares in src/counter/effects.ts.
+const PLANTED_DROP =
+	'import type { IActionGenerator } from "treflex";\nimport { delay } from "./counter/effects";\n\nexport function* plantedDrop(): IActionGenerator {\n\tdelay({ Ms: 1 });\n}\n';
+const DISCARD_RULE = "treflex/no-discarded-generator";
+// The workspace has no typescript-eslint, only its parser, which moves in step with it.
+const TEMPLATE_PINS = {
+	typescript: "typescript6",
+	"typescript-eslint": "@typescript-eslint/parser"
+};
 
 const readJson = (path) => JSON.parse(readFileSync(path, "utf8"));
 const rootManifest = readJson(join(ROOT, "package.json"));
 const reactManifest = readJson(join(ROOT, "packages/react/package.json"));
 const reactDemoManifest = readJson(join(ROOT, "demos/react-todo/package.json"));
+const eslintManifest = readJson(join(ROOT, "packages/eslint/package.json"));
+const react18Pins = readJson(join(ROOT, "scripts/react18/package.json")).dependencies;
+
+// docs/requirements.md's TypeScript section names this floor.
+const TYPESCRIPT_FLOOR = "5.4.5";
+
+const COMPILERS = [
+	{
+		alias: "typescript",
+		range: eslintManifest.devDependencies.typescript,
+		flags: []
+	},
+	{
+		alias: "typescript7",
+		range: rootManifest.devDependencies.typescript,
+		flags: []
+	},
+	{
+		alias: "typescript5.4",
+		range: TYPESCRIPT_FLOOR,
+		flags: [
+			"--moduleResolution",
+			"bundler"
+		],
+		// solid-js's own types name ContentVisibilityAutoStateChangeEvent, which TypeScript 5.4's DOM lib lacks.
+		skipLibCheck: [
+			"solid"
+		]
+	}
+];
 
 const versionOf = (name) => {
 	for (const manifest of [
 		rootManifest,
 		reactManifest,
-		reactDemoManifest
+		reactDemoManifest,
+		eslintManifest
 	]) {
 		const version = manifest.devDependencies?.[name] ?? manifest.dependencies?.[name];
 		if (version) {
@@ -103,6 +184,67 @@ const node = (label, script, args, options) =>
 		options
 	);
 
+function checkLockstep() {
+	const manifests = readdirSync(join(ROOT, "packages"))
+		.map((dir) => join(ROOT, "packages", dir, "package.json"))
+		.filter((path) => existsSync(path))
+		.map(readJson);
+	const { version } = manifests.find((manifest) => manifest.name === "treflex");
+	for (const { name, version: own, peerDependencies } of manifests) {
+		if (own !== version) {
+			throw new StepFailed(`${name} is at ${own} and treflex at ${version}: every package moves in lockstep`);
+		}
+		if (peerDependencies?.treflex !== undefined && peerDependencies.treflex !== version) {
+			throw new StepFailed(`${name} peers on treflex ${peerDependencies.treflex}, not ${version}`);
+		}
+	}
+	console.log(`every package is at ${version}`);
+	return version;
+}
+
+// Untracked files count, because the export's gates run on a fresh `git init` with nothing staged.
+function checkTemplateFiles(filename, paths) {
+	const prefix = "packages/create-treflex/";
+	const listed = run(
+		"git ls-files packages/create-treflex/templates",
+		"git",
+		[
+			"ls-files",
+			"--cached",
+			"--others",
+			"--exclude-standard",
+			`${prefix}templates`
+		],
+		{
+			echo: false
+		}
+	)
+		.stdout.split(/\r?\n/)
+		.filter(Boolean)
+		.map((path) => path.slice(prefix.length));
+	const shipped = paths.filter((path) => path.startsWith("templates/"));
+	const missing = listed.filter((path) => !shipped.includes(path));
+	const extra = shipped.filter((path) => !listed.includes(path));
+	if (missing.length > 0 || extra.length > 0) {
+		throw new StepFailed(
+			`${filename}'s templates differ from git's: ${[
+				...missing.map((path) => `missing ${path}`),
+				...extra.map((path) => `extra ${path}`)
+			].join(", ")}`
+		);
+	}
+	for (const template of Object.keys(TEMPLATES)) {
+		for (const dotfile of [
+			"_gitignore",
+			"_gitattributes"
+		]) {
+			if (!shipped.includes(`templates/${template}/${dotfile}`)) {
+				throw new StepFailed(`${filename} is missing templates/${template}/${dotfile}`);
+			}
+		}
+	}
+}
+
 function pack(scratch) {
 	const tarballs = join(scratch, "tarballs");
 	mkdirSync(tarballs);
@@ -145,15 +287,12 @@ function pack(scratch) {
 			}
 		}
 		const allowed = [
-			"dist/",
 			"LICENSE",
 			"README.md",
 			"package.json",
-			...(dir === "core"
-				? [
-						"biome/"
-					]
-				: [])
+			...(SHIPS[dir] ?? [
+				"dist/"
+			])
 		];
 		const stray = [
 			...new Set(paths.map((p) => (p.includes("/") ? `${p.split("/")[0]}/` : p)))
@@ -161,9 +300,22 @@ function pack(scratch) {
 		if (stray.length > 0) {
 			throw new StepFailed(`${filename} ships ${stray.join(", ")}`);
 		}
+		const { bin } = JSON.parse(tarEntry(join(tarballs, filename), "package/package.json"));
+		for (const target of typeof bin === "string"
+			? [
+					bin
+				]
+			: Object.values(bin ?? {})) {
+			if (!paths.includes(target.replace(/^\.\//, ""))) {
+				throw new StepFailed(`${filename}'s bin names ${target}, which it doesn't ship`);
+			}
+		}
+		if (name === "create-treflex") {
+			checkTemplateFiles(filename, paths);
+		}
 		checkPackedReadme(join(tarballs, filename));
 		console.log(`${filename}: ${files.length} files`);
-		packed[name] = `file:tarballs/${filename}`;
+		packed[name] = `file:../tarballs/${filename}`;
 	}
 	return packed;
 }
@@ -176,34 +328,37 @@ function keepTarballs(scratch) {
 	}
 }
 
-function install(scratch, packed) {
-	cpSync(FIXTURE, scratch, {
-		recursive: true
-	});
-	const dependencies = {
-		...packed
-	};
-	for (const name of [
-		"@types/react",
-		"@types/react-dom",
-		"@vitejs/plugin-react",
-		"eslint",
-		"jsdom",
-		"react",
-		"react-dom",
-		"solid-js",
-		"typescript",
-		"vite",
-		"vite-plugin-solid"
+function scaffold(scratch, name, { packed, tarballs, workspace, pinned = {}, compilers = false, fixtures }) {
+	const dir = join(scratch, name);
+	mkdirSync(dir);
+	for (const entry of [
+		"run-built.mjs",
+		"shared",
+		...fixtures
 	]) {
-		dependencies[name] = versionOf(name);
+		cpSync(join(FIXTURE, entry), join(dir, entry), {
+			recursive: true
+		});
 	}
-	dependencies["typescript-eslint"] = versionOf("@typescript-eslint/parser");
+	const dependencies = {
+		...pinned
+	};
+	for (const tarball of tarballs) {
+		dependencies[tarball] = packed[tarball];
+	}
+	for (const dep of workspace) {
+		dependencies[dep] = dep === "typescript-eslint" ? versionOf("@typescript-eslint/parser") : versionOf(dep);
+	}
+	if (compilers) {
+		for (const { alias, range } of COMPILERS) {
+			dependencies[alias] = alias === "typescript" ? range : `npm:typescript@${range}`;
+		}
+	}
 	writeFileSync(
-		join(scratch, "package.json"),
+		join(dir, "package.json"),
 		`${JSON.stringify(
 			{
-				name: "treflex-pack-test",
+				name: `treflex-pack-${name}`,
 				private: true,
 				type: "module",
 				dependencies
@@ -212,20 +367,58 @@ function install(scratch, packed) {
 			"\t"
 		)}\n`
 	);
+	return dir;
+}
+
+const npmInstall = (dir, label, flags = [], options = {}) =>
 	run(
-		"npm install",
+		`${label}: npm install ${flags.join(" ")}`.trimEnd(),
 		"npm",
 		[
 			"install",
 			"--no-audit",
 			"--no-fund",
-			"--loglevel=error"
+			"--loglevel=error",
+			...flags
 		],
 		{
-			cwd: scratch
+			cwd: dir,
+			...options
 		}
 	);
+
+function solidCopies(dir) {
+	const found = [];
+	const visit = (pkg) => {
+		if (pkg.endsWith(`${sep}solid-js`) && existsSync(join(pkg, "package.json"))) {
+			found.push(pkg);
+		}
+		walk(join(pkg, "node_modules"));
+	};
+	const walk = (modules) => {
+		if (!existsSync(modules)) {
+			return;
+		}
+		for (const entry of readdirSync(modules, {
+			withFileTypes: true
+		})) {
+			if (!entry.isDirectory() || entry.name.startsWith(".")) {
+				continue;
+			}
+			if (entry.name.startsWith("@")) {
+				for (const scoped of readdirSync(join(modules, entry.name))) {
+					visit(join(modules, entry.name, scoped));
+				}
+			} else {
+				visit(join(modules, entry.name));
+			}
+		}
+	};
+	walk(join(dir, "node_modules"));
+	return found;
 }
+
+const resolveSolidFrom = (manifest) => realpathSync(createRequire(manifest).resolve("solid-js/package.json"));
 
 function tarEntry(tarball, wanted) {
 	const tar = gunzipSync(readFileSync(tarball));
@@ -259,25 +452,11 @@ function checkPackedReadme(tarball) {
 	}
 }
 
-function parseResult(label, stdout) {
-	const line = stdout.trim().split(/\r?\n/).pop();
-	const result = JSON.parse(line);
-	if (!result.ok) {
-		throw new StepFailed(`${label}: ${result.error}`);
-	}
-	return result;
-}
-
-function app(scratch, name) {
-	const dir = join(scratch, name);
-	const bin = (pkg, path) => join(scratch, "node_modules", pkg, path);
-	node(`${name}: tsc`, bin("typescript", "bin/tsc"), [
-		"-p",
-		dir
-	]);
+function buildAndRun(appDir, name, label = name) {
+	const dir = join(appDir, name);
 	node(
-		`${name}: vite build`,
-		bin("vite", "bin/vite.js"),
+		`${label}: vite build`,
+		join(appDir, "node_modules/vite/bin/vite.js"),
 		[
 			"build",
 			"--logLevel",
@@ -287,26 +466,79 @@ function app(scratch, name) {
 			cwd: dir
 		}
 	);
-	const result = parseResult(
-		name,
-		node(`${name}: run the build`, join(scratch, "run-built.mjs"), [
-			dir
-		]).stdout
-	);
-	if (result.dev !== false) {
-		throw new StepFailed(`${name}: DEV reads ${result.dev} in a production build`);
+	const { stdout } = node(`${label}: run the build`, join(appDir, "run-built.mjs"), [
+		dir
+	]);
+	return JSON.parse(stdout.trim().split(/\r?\n/).pop());
+}
+
+const tsc = (appDir, alias) => join(appDir, "node_modules", alias, "bin/tsc");
+
+function compilerVersions(appDir, label) {
+	const versions = new Map();
+	for (const { alias, range } of COMPILERS) {
+		const reported = node(`${label}: ${alias}: tsc -v`, tsc(appDir, alias), [
+			"-v"
+		]).stdout.trim();
+		const expected = `Version ${/^\d/.test(range) ? range : `${/\d+/.exec(range)[0]}.`}`;
+		if (!reported.startsWith(expected)) {
+			throw new StepFailed(`${label}: ${alias}'s tsc reports "${reported}", expected ${expected}`);
+		}
+		versions.set(alias, reported.slice("Version ".length));
+	}
+	return versions;
+}
+
+function typecheck(appDir, name, versions, label) {
+	for (const { alias, flags, skipLibCheck = [] } of COMPILERS) {
+		const libCheck = skipLibCheck.includes(name)
+			? [
+					"--skipLibCheck"
+				]
+			: [];
+		for (const [config, args] of [
+			[
+				name,
+				[
+					...flags,
+					...libCheck
+				]
+			],
+			[
+				`${name}/tsconfig.nodenext.json`,
+				libCheck
+			]
+		]) {
+			node(`${label}: tsc ${versions.get(alias)} -p ${config} ${args.join(" ")}`.trimEnd(), tsc(appDir, alias), [
+				"-p",
+				join(appDir, config),
+				...args
+			]);
+		}
 	}
 }
 
-function nodenext(scratch, name) {
-	node(`${name}: tsc under NodeNext resolution`, join(scratch, "node_modules/typescript/bin/tsc"), [
-		"-p",
-		join(scratch, name, "tsconfig.nodenext.json")
-	]);
+function app(appDir, name, versions, label = name) {
+	typecheck(appDir, name, versions, label);
+	const result = buildAndRun(appDir, name, label);
+	if (!result.ok) {
+		throw new StepFailed(`${label}: ${result.error}`);
+	}
+	if (result.dev !== false) {
+		throw new StepFailed(`${label}: DEV reads ${result.dev} in a production build`);
+	}
+	return result;
 }
 
-function coreInNode(scratch) {
-	const dir = join(scratch, "core");
+function checkReact(label, result, expected) {
+	if (result.react !== expected) {
+		throw new StepFailed(`${label}: the bundle ran react ${result.react}, expected ${expected}`);
+	}
+	console.log(`${label}: ran react ${result.react}`);
+}
+
+function coreInNode(appDir) {
+	const dir = join(appDir, "core");
 	for (const [nodeEnv, expected] of [
 		[
 			undefined,
@@ -331,11 +563,11 @@ function coreInNode(scratch) {
 	}
 }
 
-function eslint(scratch) {
-	const dir = join(scratch, "eslint");
+function eslint(appDir) {
+	const dir = join(appDir, "eslint");
 	const result = node(
 		"eslint: lint src with the recommended config",
-		join(scratch, "node_modules/eslint/bin/eslint.js"),
+		join(appDir, "node_modules/eslint/bin/eslint.js"),
 		[
 			"--format",
 			"json",
@@ -355,6 +587,7 @@ function eslint(scratch) {
 		.flatMap((file) => file.messages.map((m) => m.ruleId ?? m.message))
 		.sort();
 	const expected = [
+		"treflex/no-discarded-generator",
 		"treflex/no-edit-after-write",
 		"treflex/no-yield-in-finally"
 	];
@@ -362,6 +595,340 @@ function eslint(scratch) {
 	if (JSON.stringify(reported) !== JSON.stringify(expected)) {
 		throw new StepFailed(`eslint reported ${JSON.stringify(reported)}, expected ${JSON.stringify(expected)}`);
 	}
+}
+
+function noSolidApp(scratch, packed) {
+	const dir = scaffold(scratch, "no-solid", {
+		packed,
+		tarballs: [
+			"treflex",
+			"treflex-react"
+		],
+		workspace: [
+			"@types/react",
+			"@types/react-dom",
+			"@vitejs/plugin-react",
+			"jsdom",
+			"react",
+			"react-dom",
+			"vite"
+		],
+		compilers: true,
+		fixtures: [
+			"core",
+			"react"
+		]
+	});
+	npmInstall(dir, "no-solid");
+	const versions = compilerVersions(dir, "no-solid");
+	const nodes = JSON.parse(
+		run(
+			"no-solid: npm explain solid-js",
+			"npm",
+			[
+				"explain",
+				"solid-js",
+				"--json"
+			],
+			{
+				cwd: dir,
+				echo: false
+			}
+		).stdout
+	);
+	const dependents = nodes.flatMap((n) => n.dependents.map((d) => `${d.from?.name ?? "the app"} (${d.type})`));
+	console.log(`solid-js ${nodes.map((n) => n.version).join(", ")}, required by ${dependents.join(", ")}`);
+	if (nodes.length === 0 || dependents.some((d) => d !== "treflex (prod)")) {
+		throw new StepFailed("no-solid: solid-js should reach the app only through treflex's dependency");
+	}
+	app(dir, "core", versions);
+	checkReact("react", app(dir, "react", versions), versionOf("react"));
+	coreInNode(dir);
+}
+
+function react18App(scratch, packed) {
+	const dir = scaffold(scratch, "react18", {
+		packed,
+		tarballs: [
+			"treflex",
+			"treflex-react"
+		],
+		workspace: [
+			"@vitejs/plugin-react",
+			"jsdom",
+			"vite"
+		],
+		pinned: Object.fromEntries(
+			[
+				"@types/react",
+				"@types/react-dom",
+				"react",
+				"react-dom"
+			].map((name) => [
+				name,
+				react18Pins[name]
+			])
+		),
+		compilers: true,
+		fixtures: [
+			"react"
+		]
+	});
+	npmInstall(dir, "react18", [
+		"--legacy-peer-deps=false",
+		"--force=false"
+	]);
+	const versions = compilerVersions(dir, "react18");
+	checkReact("react18/react", app(dir, "react", versions, "react18/react"), react18Pins.react);
+}
+
+function solidApp(scratch, packed) {
+	const dir = scaffold(scratch, "solid", {
+		packed,
+		tarballs: [
+			"treflex",
+			"treflex-solid",
+			"treflex-eslint"
+		],
+		workspace: [
+			"eslint",
+			"jsdom",
+			"solid-js",
+			"typescript-eslint",
+			"vite",
+			"vite-plugin-solid"
+		],
+		compilers: true,
+		fixtures: [
+			"solid",
+			"eslint"
+		]
+	});
+	npmInstall(dir, "solid");
+	const versions = compilerVersions(dir, "solid");
+	const copies = solidCopies(dir);
+	if (copies.length !== 1) {
+		throw new StepFailed(`solid: ${copies.length} copies of solid-js on disk: ${copies.join(", ")}`);
+	}
+	const fromTreflex = resolveSolidFrom(join(dir, "node_modules/treflex/package.json"));
+	const fromApp = resolveSolidFrom(join(dir, "package.json"));
+	if (fromTreflex !== fromApp) {
+		throw new StepFailed(`solid: treflex resolves solid-js to ${fromTreflex}, the app to ${fromApp}`);
+	}
+	console.log(`one solid-js on disk, resolved from treflex and the app alike: ${fromApp}`);
+	const result = app(dir, "solid", versions);
+	if (result.oneSolid !== true) {
+		throw new StepFailed(`solid: the bundle's solid-js is not treflex's (oneSolid reads ${result.oneSolid})`);
+	}
+	eslint(dir);
+}
+
+function mismatchApp(scratch, packed) {
+	const dir = scaffold(scratch, "mismatch", {
+		packed,
+		tarballs: [
+			"treflex",
+			"treflex-solid"
+		],
+		workspace: [
+			"jsdom",
+			"vite"
+		],
+		pinned: {
+			"solid-js": MISMATCHED_SOLID,
+			"babel-preset-solid": MISMATCHED_SOLID_COMPILER,
+			"vite-plugin-solid": UNDEDUPED_VITE_PLUGIN_SOLID
+		},
+		fixtures: [
+			"solid"
+		]
+	});
+	const refused = npmInstall(
+		dir,
+		"mismatch",
+		[
+			"--legacy-peer-deps=false",
+			"--force=false"
+		],
+		{
+			allowFailure: true,
+			echo: false
+		}
+	);
+	const refusal = `${refused.stdout}${refused.stderr}`.trim();
+	console.log(refusal);
+	if (refused.status === 0 || !refusal.includes("ERESOLVE") || !refusal.includes("solid-js")) {
+		throw new StepFailed(`mismatch: npm install exited ${refused.status} without an ERESOLVE over solid-js`);
+	}
+	npmInstall(dir, "mismatch", [
+		"--legacy-peer-deps"
+	]);
+	const copies = solidCopies(dir);
+	console.log(copies.join("\n"));
+	if (copies.length !== 2) {
+		throw new StepFailed(`mismatch: expected two copies of solid-js on disk, found ${copies.length}`);
+	}
+	const result = buildAndRun(dir, "solid", "mismatch/solid");
+	if (result.ok) {
+		throw new StepFailed("mismatch: the Solid fixture ran on two copies of solid-js without the two-copies error");
+	}
+	if (!String(result.error).includes(TWO_SOLIDS)) {
+		throw new StepFailed(`mismatch: the Solid fixture failed with something other than the two-copies error: ${result.error}`);
+	}
+	console.log(String(result.error).split("\n")[0]);
+}
+
+const range = (spec) => spec.replace(/^npm:(@[^/]+\/)?[^@]+@/, "").replace(/^[\^~=]+/, "");
+
+function templateApp(scratch, packed, version, template) {
+	const label = `${template} template`;
+	const name = `${template}-app`;
+	const dir = join(scratch, name);
+	const binding = TEMPLATES[template];
+	// A `file:` spec: npm exec runs a bare absolute path as the command itself, and resolves a
+	// relative one against its local prefix, an ancestor holding package.json, not the cwd.
+	const tarball = `file:${join(scratch, "tarballs", packed["create-treflex"].slice("file:../tarballs/".length)).split(sep).join("/")}`;
+	run(
+		`${label}: npm exec <the create-treflex tarball>`,
+		"npm",
+		[
+			"exec",
+			"--yes",
+			"--",
+			tarball,
+			name,
+			"--template",
+			template
+		],
+		{
+			cwd: scratch
+		}
+	);
+	for (const dotfile of [
+		"gitignore",
+		"gitattributes"
+	]) {
+		if (!existsSync(join(dir, `.${dotfile}`)) || existsSync(join(dir, `_${dotfile}`))) {
+			throw new StepFailed(`${label}: the scaffold has no .${dotfile}, or kept _${dotfile}`);
+		}
+	}
+	const manifestPath = join(dir, "package.json");
+	const manifest = readJson(manifestPath);
+	const expected = {
+		name,
+		treflex: `^${version}`,
+		[binding]: `^${version}`,
+		"treflex-eslint": `^${version}`
+	};
+	const written = {
+		name: manifest.name,
+		treflex: manifest.dependencies.treflex,
+		[binding]: manifest.dependencies[binding],
+		"treflex-eslint": manifest.devDependencies["treflex-eslint"]
+	};
+	if (JSON.stringify(written) !== JSON.stringify(expected)) {
+		throw new StepFailed(`${label}: the scaffold wrote ${JSON.stringify(written)}, expected ${JSON.stringify(expected)}`);
+	}
+	for (const [dep, spec] of Object.entries({
+		...manifest.dependencies,
+		...manifest.devDependencies
+	})) {
+		if (Object.hasOwn(expected, dep)) {
+			continue;
+		}
+		const pinned = versionOf(TEMPLATE_PINS[dep] ?? dep);
+		if (range(spec) !== range(pinned)) {
+			throw new StepFailed(`${label}: names ${dep} ${spec}, where the workspace has ${pinned}`);
+		}
+	}
+	manifest.dependencies.treflex = packed.treflex;
+	manifest.dependencies[binding] = packed[binding];
+	manifest.devDependencies["treflex-eslint"] = packed["treflex-eslint"];
+	writeFileSync(manifestPath, `${JSON.stringify(manifest, null, "\t")}\n`);
+	npmInstall(dir, label);
+	const npmRun = (script) =>
+		run(
+			`${label}: npm run ${script}`,
+			"npm",
+			[
+				"run",
+				script
+			],
+			{
+				cwd: dir
+			}
+		);
+	const biome = join(dir, "node_modules/@biomejs/biome/bin/biome");
+	const eslintBin = join(dir, "node_modules/eslint/bin/eslint.js");
+	node(
+		`${label}: biome check --error-on-warnings`,
+		biome,
+		[
+			"check",
+			"--error-on-warnings"
+		],
+		{
+			cwd: dir
+		}
+	);
+	node(
+		`${label}: eslint --max-warnings 0`,
+		eslintBin,
+		[
+			"--max-warnings",
+			"0",
+			"."
+		],
+		{
+			cwd: dir
+		}
+	);
+	const planted = join(dir, "src/planted.ts");
+	writeFileSync(planted, PLANTED);
+	const lint = node(
+		`${label}: biome lint on a file breaking both plugins`,
+		biome,
+		[
+			"lint",
+			"src/planted.ts"
+		],
+		{
+			cwd: dir,
+			allowFailure: true,
+			echo: false
+		}
+	);
+	rmSync(planted);
+	const reported = `${lint.stdout}${lint.stderr}`;
+	const missing = PLUGIN_MESSAGES.filter((message) => !reported.includes(message));
+	if (lint.status === 0 || missing.length > 0) {
+		console.error(reported);
+		throw new StepFailed(`${label}: biome lint exited ${lint.status} without reporting ${missing.join(" and ") || "an error"}`);
+	}
+	console.log(`both plugins reported: ${PLUGIN_MESSAGES.join(", ")}`);
+	const plantedDrop = join(dir, "src/plantedDrop.ts");
+	writeFileSync(plantedDrop, PLANTED_DROP);
+	const dropped = node(
+		`${label}: eslint on a file dropping the app's own effect`,
+		eslintBin,
+		[
+			"src/plantedDrop.ts"
+		],
+		{
+			cwd: dir,
+			allowFailure: true,
+			echo: false
+		}
+	);
+	rmSync(plantedDrop);
+	const droppedReport = `${dropped.stdout}${dropped.stderr}`;
+	if (dropped.status !== 1 || !droppedReport.includes(DISCARD_RULE)) {
+		console.error(droppedReport);
+		throw new StepFailed(`${label}: eslint exited ${dropped.status} without reporting ${DISCARD_RULE}`);
+	}
+	console.log(`eslint reported ${DISCARD_RULE}`);
+	npmRun("check");
+	npmRun("build");
 }
 
 if (RELEASE) {
@@ -373,17 +940,15 @@ if (RELEASE) {
 const scratch = mkdtempSync(join(tmpdir(), "treflex-pack-"));
 let failed = false;
 try {
-	install(scratch, pack(scratch));
-	for (const name of [
-		"core",
-		"solid",
-		"react"
-	]) {
-		app(scratch, name);
-		nodenext(scratch, name);
+	const version = checkLockstep();
+	const packed = pack(scratch);
+	noSolidApp(scratch, packed);
+	react18App(scratch, packed);
+	solidApp(scratch, packed);
+	mismatchApp(scratch, packed);
+	for (const template of Object.keys(TEMPLATES)) {
+		templateApp(scratch, packed, version, template);
 	}
-	coreInNode(scratch);
-	eslint(scratch);
 	console.log("\ntest:pack passed");
 	if (RELEASE) {
 		keepTarballs(scratch);
@@ -396,7 +961,7 @@ try {
 	}
 } finally {
 	if (KEEP || failed) {
-		console.log(`the app is at ${scratch}`);
+		console.log(`the apps are at ${scratch}`);
 	} else {
 		rmSync(scratch, {
 			recursive: true,

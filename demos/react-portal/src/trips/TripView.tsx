@@ -9,7 +9,7 @@ import { RestoreBanner } from "../shell/RestoreBanner";
 import { Planner, Trip } from "./contexts";
 import { FlightQuestion } from "./FlightQuestion";
 import { LegCard } from "./LegCard";
-import { Ticker } from "./Ticker";
+import { Ticker, useFlourish } from "./Ticker";
 
 const SPARKS = Array.from(
 	{
@@ -39,7 +39,7 @@ export const TripView = Trip.provider<{
 	const busy = trip.tripFacts().Running > 0;
 	const voucher = planner.voucher();
 	const total = priced(trip.soFar(), voucher);
-	const flourish = voucher?.Flourish ?? false;
+	const [flourish, endFlourish] = useFlourish(voucher, planner.flourishPlayed);
 	const options = trip.flightOptions();
 	const typing = trip.typing();
 	const tip = trip.tip();
@@ -93,7 +93,7 @@ export const TripView = Trip.provider<{
 							vdrop: flourish
 						})}
 						onAnimationEnd={(event) => {
-							if (endsFlourish(event)) void planner.flourishPlayed();
+							if (endsFlourish(event)) endFlourish();
 						}}
 					>
 						<small>So far</small>

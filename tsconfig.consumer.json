@@ -8,6 +8,11 @@
 		"jsxImportSource": "solid-js",
 		"noEmit": true,
 		"noUncheckedIndexedAccess": true,
+		"paths": {
+			"typescript": [
+				"./packages/eslint/node_modules/typescript"
+			]
+		},
 		"types": []
 	},
 	"include": [

@@ -6,11 +6,14 @@ import { Planner } from "./contexts";
 import { DESTINATION_KEYS, DESTINATIONS } from "./destinations";
 import { CARD_STAGGER_MS, CARD_TICK_MS, endsFlourish } from "./flourish";
 import { priced } from "./Planner";
-import { Ticker } from "./Ticker";
+import { createFlourish, Ticker } from "./Ticker";
 
 export function StartScreen(props: { highlight: boolean; restore: IRestoreProps }) {
 	const planner = Planner.use();
-	const flourish = () => planner.voucher()?.Flourish ?? false;
+	const [flourish, endFlourish] = createFlourish(
+		() => planner.voucher(),
+		() => void planner.flourishPlayed()
+	);
 	return (
 		<section class="start">
 			<div>
@@ -28,7 +31,7 @@ export function StartScreen(props: { highlight: boolean; restore: IRestoreProps 
 					vdrop: flourish()
 				}}
 				onAnimationEnd={(event) => {
-					if (endsFlourish(event)) void planner.flourishPlayed();
+					if (endsFlourish(event)) endFlourish();
 				}}
 			>
 				<For each={DESTINATION_KEYS}>

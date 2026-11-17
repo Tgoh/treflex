@@ -76,7 +76,7 @@ export function* refresh(draft: IFeed): IActionGenerator {
 ```
 
 - **A row whose key matches an item keeps its node and its `$Id`,** so its `Read` mark, and any work running on it, survive the refresh.
-- **An item with no match gets a new row from `add`;** a row no item matched is removed.
+- **An item with no match gets a new row from `add`;** a row no item matched is removed. `add` returns `entity(...)` without `yield*`: it hands back the generator, and `reconcileRows` runs it.
 - **`update` runs on every row in the result,** new or matched, so one function fills both. It writes only the fields the server owns.
 - **Writing into the articles from the feed's action is ordinary.** Authority flows down, and no action holds an article during the refresh: `markRead` ends in the step it starts in ([writing into a child entity](../reference/actions.md#writing-into-a-child-entity)).
 - The list ends in the server's order, and the whole refresh lands in one step, so a view never sees it half done.
@@ -104,6 +104,52 @@ leading(addFeed);
 ## Showing the rows
 
 Each article gets a feature of its own, and the feed mounts one provider per row. The sample keeps the features and the components together; in the app, the features go in a `.ts` file, as on page 3.
+
+<!-- tabs -->
+
+**React**
+
+```tsx
+import type { ISelectorGenerator } from "treflex";
+import { createEntityFeature, useInFlight } from "treflex-react";
+
+export const Article = createEntityFeature<IArticle>("Reader/Article")({ markRead }, {});
+
+export const ArticleView = Article.provider(() => {
+    const article = Article.use();
+    return (
+        <a href={article.state.Link} className={article.state.Read ? "read" : undefined} onClick={() => article.markRead()}>
+            {article.state.Title}
+        </a>
+    );
+});
+
+function* unread(draft: IFeed): ISelectorGenerator<number> {
+    return draft.Articles.filter((article) => !article.Read).length;
+}
+
+export const Feed = createEntityFeature<IFeed>("Reader/Feed")({ refresh }, { unread });
+
+export const FeedView = Feed.provider(() => {
+    const feed = Feed.use();
+    const refreshing = useInFlight(refresh, feed.state);
+    return (
+        <section>
+            <h2>
+                {feed.state.Title} ({feed.unread()} unread)
+            </h2>
+            <button disabled={refreshing} onClick={() => feed.refresh()}>
+                Refresh
+            </button>
+            {feed.state.Articles.map((article) => (
+                <ArticleView key={article.$Id} state={article} />
+            ))}
+        </section>
+    );
+});
+```
+
+**Solid**
 
 ```tsx
 import type { ISelectorGenerator } from "treflex";
@@ -144,13 +190,15 @@ export const FeedView = Feed.provider(() => {
 });
 ```
 
-Clicking an article runs `markRead` on that article. It doesn't wait for a refresh running on the feed, since the article is an entity of its own.
+<!-- /tabs -->
+
+Clicking an article runs `markRead` on that article. It doesn't wait for a refresh running on the feed, since the article is an entity of its own. In React, the feed's view holds each article as a ref, so the feed passes the ref to `ArticleView` and reads the article's fields only inside it.
 
 ## Two mistakes
 
 **Replacing the list.** `feed.Articles = info.Items.map(...)` throws every row away on each refresh. The `Read` marks go, and so does any work running on the old rows: removal ends it. Refresh with `reconcileRows`.
 
-**A selector that returns fresh objects for a list.** `draft.Articles.map((a) => ({ Title: a.Title }))` returns new objects on every run, and `<For>` keys on identity, so every row remounts. Return the nodes themselves, `draft.Articles.filter(...)`, or a list of `$Id`s.
+**A selector that returns fresh objects for a list.** `draft.Articles.map((a) => ({ Title: a.Title }))` returns new objects on every run, and `<For>` keys on identity, so every row remounts. In React, rows keyed by `key` keep their mounts, but each run hands every row a fresh object, which defeats `memo`. Return the nodes themselves, `draft.Articles.filter(...)`, or a list of `$Id`s.
 
 ## Where the reference takes over
 

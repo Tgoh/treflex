@@ -90,6 +90,28 @@ describe("the createTestRuntime preset", () => {
 		await expect(runtime.dispatch(act, "Root")).rejects.toThrow('No implementation registered for effect type: "generateGuid"');
 	});
 
+	it("names guids() in the refusal of an unstubbed generateGuid, and only there", async () => {
+		const runtime = createTestRuntime(
+			{
+				$Id: "Root"
+			},
+			{},
+			{
+				onError: () => {}
+			}
+		);
+		function* mint(_draft: object): IActionGenerator {
+			yield* generateGuid();
+		}
+		function* ghost(_draft: object): IActionGenerator {
+			yield {
+				Type: "ghost"
+			};
+		}
+		await expect(runtime.dispatch(mint, "Root")).rejects.toThrow('createTestRuntime(seed, { generateGuid: guids("row") })');
+		await expect(runtime.dispatch(ghost, "Root")).rejects.toThrow(/^No implementation registered for effect type: "ghost"$/);
+	});
+
 	it("lets a stub replace generateGuid, without an overwrite warning", async () => {
 		const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 		const runtime = createTestRuntime(

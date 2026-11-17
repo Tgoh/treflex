@@ -2,10 +2,11 @@ import type { FormEvent, RefObject } from "react";
 import type { ISelected } from "treflex-react";
 import type { IChatRow } from "../../../portal/src/chat/Chat";
 import type { IRestoreProps } from "../shell/RestoreBanner";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { sendable } from "../../../portal/src/chat/Conversation";
 import { conversationLabel, person } from "../../../portal/src/chat/directory";
 import { LETTER_FADE_MS, lettersAfter, voucherButton } from "../../../portal/src/chat/Message";
+import { focusChatHalf } from "../../../portal/src/shell/responsive";
 import { cx } from "../shell/dom";
 import { RestoreBanner } from "../shell/RestoreBanner";
 import { Chat, Conversation, Message } from "./contexts";
@@ -196,26 +197,53 @@ export const ChatView = Chat.provider<{
 	const rows = chat.rows();
 	const head = chat.paneHead();
 	const current = chat.current();
+	const [showPane, setShowPane] = useState(true);
+	const root = useRef<HTMLDivElement>(null);
+	const show = useCallback((pane: boolean) => {
+		setShowPane(pane);
+		if (root.current) focusChatHalf(root.current, pane);
+	}, []);
+	const open = (id: string) => {
+		show(true);
+		void chat.openConversation(id);
+	};
+	const currentId = current?.$Id;
+	const shownId = useRef(currentId);
+	useEffect(() => {
+		if (currentId !== undefined && shownId.current !== undefined && currentId !== shownId.current) show(true);
+		shownId.current = currentId;
+	}, [
+		currentId,
+		show
+	]);
 	return (
-		<div className="chat">
+		<div
+			ref={root}
+			className={cx("chat", {
+				"show-pane": showPane
+			})}
+		>
 			<div className="chans">
 				<div>
 					<div className="label">Channels</div>
 					{rows.Channels.map((row) => (
-						<Row key={row.Id} row={row} onOpen={() => chat.openConversation(row.Id)} />
+						<Row key={row.Id} row={row} onOpen={() => open(row.Id)} />
 					))}
 				</div>
 				<div>
 					<div className="label">Direct</div>
 					{rows.Direct.map((row) => (
-						<Row key={row.Id} row={row} onOpen={() => chat.openConversation(row.Id)} />
+						<Row key={row.Id} row={row} onOpen={() => open(row.Id)} />
 					))}
 				</div>
 			</div>
 			<div className="pane">
 				{head ? (
 					<div className="phead">
-						<div>
+						<button type="button" className="pback" aria-label="All conversations" onClick={() => show(false)}>
+							‹
+						</button>
+						<div className="ptitle" tabIndex={-1}>
 							<b>{head.Title}</b>
 							<small>{head.Topic}</small>
 						</div>

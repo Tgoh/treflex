@@ -6,12 +6,12 @@ import { cx, styled } from "../shell/dom";
 import { RestoreBanner } from "../shell/RestoreBanner";
 import { DestinationArt } from "./Art";
 import { Planner } from "./contexts";
-import { Ticker } from "./Ticker";
+import { Ticker, useFlourish } from "./Ticker";
 
 export function StartScreen(props: { highlight: boolean; restore: IRestoreProps }) {
 	const planner = Planner.use();
 	const voucher = planner.voucher();
-	const flourish = voucher?.Flourish ?? false;
+	const [flourish, endFlourish] = useFlourish(voucher, planner.flourishPlayed);
 	return (
 		<section className="start">
 			<div>
@@ -28,7 +28,7 @@ export function StartScreen(props: { highlight: boolean; restore: IRestoreProps 
 					vdrop: flourish
 				})}
 				onAnimationEnd={(event) => {
-					if (endsFlourish(event)) void planner.flourishPlayed();
+					if (endsFlourish(event)) endFlourish();
 				}}
 			>
 				{DESTINATION_KEYS.map((key, i) => {

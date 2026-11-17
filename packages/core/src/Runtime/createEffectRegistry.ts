@@ -18,12 +18,11 @@ export interface IRegisterImplementation {
 	<E extends IEffect>(name: string, impl: IEffectImplementation<E>): void;
 }
 
-// The one refusal an effect type with no implementation gets. Exported
-// because createTestRuntime's preset replaces `generateGuid` with a stub
-// that raises it, so an unstubbed yield of it is indistinguishable from a
-// type nobody registered.
 export function noImplementationMessage(type: string): string {
-	return `No implementation registered for effect type: "${type}"`;
+	const message = `No implementation registered for effect type: "${type}"`;
+	return type === "generateGuid"
+		? `${message}. A test runtime needs a stub for it: createTestRuntime(seed, { generateGuid: guids("row") }). See docs/reference/testing.md#what-the-test-runtime-decides.`
+		: message;
 }
 
 export interface IEffectRegistry {

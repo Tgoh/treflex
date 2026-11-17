@@ -51,6 +51,12 @@ export const RestoreIcon = () => (
 	</svg>
 );
 
+export const MenuIcon = () => (
+	<svg viewBox="0 0 24 24" aria-hidden="true">
+		<path d="M4 7h16M4 12h16M4 17h16" />
+	</svg>
+);
+
 export const CheckIcon = () => (
 	<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
 		<path d="M20 6L9 17l-5-5" />

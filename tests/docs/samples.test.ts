@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
-import ts from "typescript";
+import ts from "typescript6";
 import { describe, expect, it } from "vitest";
 
 const ROOT = resolve(import.meta.dirname, "../..").replace(/\\/g, "/");
@@ -29,6 +29,7 @@ interface ILine {
 }
 
 const pages = [
+	"quickstart.md",
 	...readdirSync(`${DOCS}/guide`).map((f) => `guide/${f}`),
 	"patterns.md",
 	...readdirSync(`${DOCS}/reference`).map((f) => `reference/${f}`),
@@ -117,16 +118,104 @@ function render(prelude: ILine[], blocks: ILine[][]): ILine[] {
 	];
 }
 
+const TABS = [
+	"React",
+	"Solid"
+];
+
+/**
+ * The page's tab groups, as the number of them and the tab of each fence inside one, by the offset of the fence's
+ * first line.
+ */
+function tabGroups(
+	md: string,
+	page: string
+): {
+	count: number;
+	tabOf: Map<number, string>;
+} {
+	const tabOf = new Map<number, string>();
+	let count = 0;
+	let group:
+		| {
+				line: number;
+				labels: string[];
+		  }
+		| undefined;
+	let label: string | undefined;
+	let fence: RegExp | undefined;
+	const lines = md.split("\n");
+	for (let i = 0, offset = 0; i < lines.length; offset += lines[i].length + 1, i++) {
+		const text = lines[i].replace(/\r$/, "");
+		if (fence) {
+			if (fence.test(text)) {
+				fence = undefined;
+			}
+			continue;
+		}
+		const open = /^ *(`{3,})/.exec(text);
+		const fail = (): Error =>
+			new Error(`docs/${page}.md:${group?.line ?? i + 1}: a tab group is ${TABS.join(" then ")}, each tab a **label** line then a fence`);
+		if (open) {
+			fence = new RegExp(`^ *${open[1]}\`*\\s*$`);
+			if (group) {
+				if (!label) {
+					throw fail();
+				}
+				group.labels.push(label);
+				tabOf.set(offset, label);
+				label = undefined;
+			}
+			continue;
+		}
+		if (text.trim() === "<!-- tabs -->") {
+			if (group) {
+				throw fail();
+			}
+			group = {
+				line: i + 1,
+				labels: []
+			};
+			count++;
+		} else if (text.trim() === "<!-- /tabs -->") {
+			if (!group || label || group.labels.join() !== TABS.join()) {
+				throw fail();
+			}
+			group = undefined;
+		} else if (group && text.trim()) {
+			const bold = /^\*\*([^*]+)\*\*$/.exec(text.trim());
+			if (!bold || label) {
+				throw fail();
+			}
+			label = bold[1];
+		}
+	}
+	if (group) {
+		throw new Error(`docs/${page}.md:${group.line}: a tab group has no <!-- /tabs -->`);
+	}
+	return {
+		count,
+		tabOf
+	};
+}
+
 function extract(page: string): Map<string, ILine[]> {
 	const md = readFileSync(`${DOCS}/${page}.md`, "utf8");
 	const configText = read(`${PRELUDES}/${page}.json`);
 	const config: IPageConfig = configText ? JSON.parse(configText) : {};
+	const groups = tabGroups(md, page);
+	if (groups.count && config.react?.length) {
+		throw new Error(
+			`tests/docs/preludes/${page}.json: a page with tab groups takes its React samples from its React tabs, so it has no "react" list`
+		);
+	}
 	const used = new Set<string>();
 	const solid: ILine[][] = [];
 	const react: ILine[][] = [];
 	let index = 0;
 	for (const m of fences(md)) {
 		index++;
+		const tab = groups.tabOf.get(m.index!);
 		const first = md.slice(0, m.index).split("\n").length + 1;
 		const indent = new RegExp(`^ {0,${m[1].length}}`);
 		let lines: ILine[] = m[3]
@@ -134,7 +223,7 @@ function extract(page: string): Map<string, ILine[]> {
 			.split(/\r?\n/)
 			.map((text, i) => ({
 				text: text.replace(indent, ""),
-				at: `block ${index} (docs/${page}.md:${first + i})`
+				at: `block ${index}${tab ? `, ${tab} tab` : ""} (docs/${page}.md:${first + i})`
 			}));
 		const source = lines.map((l) => l.text).join("\n");
 		for (const w of config.wrap ?? []) {
@@ -149,7 +238,7 @@ function extract(page: string): Map<string, ILine[]> {
 				}
 				line.text = line.text.replace(from, to);
 			}
-			const at = `block ${index} (docs/${page}.md:${first}, wrapped)`;
+			const at = `block ${index}${tab ? `, ${tab} tab` : ""} (docs/${page}.md:${first}, wrapped)`;
 			const lift = (text: string | undefined): ILine[] =>
 				text
 					? text.split("\n").map((t) => ({
@@ -163,6 +252,15 @@ function extract(page: string): Map<string, ILine[]> {
 				...lines.filter((l) => !/^import\s/.test(l.text)),
 				...lift(w.after)
 			];
+		}
+		if (groups.count) {
+			if (tab !== "React") {
+				solid.push(lines);
+			}
+			if (tab !== "Solid") {
+				react.push(lines);
+			}
+			continue;
 		}
 		const isReact = (config.react ?? []).some((r) => source.includes(r) && used.add(r));
 		(isReact ? react : solid).push(lines);
@@ -190,7 +288,8 @@ function extract(page: string): Map<string, ILine[]> {
 		files.set(`${PRELUDES}/${page}/page.tsx`, render(preludeOf(`${PRELUDES}/${page}.tsx`), solid));
 	}
 	if (react.length) {
-		const lines = render(preludeOf(`${PRELUDES}/${page}.react.tsx`), react);
+		const reactPrelude = `${PRELUDES}/${page}.react.tsx`;
+		const lines = render(preludeOf(groups.count && !existsSync(reactPrelude) ? `${PRELUDES}/${page}.tsx` : reactPrelude), react);
 		files.set(`${PRELUDES}/${page}/page.react.tsx`, [
 			{
 				text: "/** @jsxImportSource react */",

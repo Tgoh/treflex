@@ -77,7 +77,7 @@ leading(save);
 
 **Shape.** Read it in the view with `useInFlight(action, node)`, and mark the action `leading` to drop a repeat, as guide [page 3](./guide/03-views.md#components) does. A selector reads `inFlight` only where busy is combined with other state.
 
-**Why.** Guide [page 3](./guide/03-views.md#two-mistakes) shows why a flag set in the action's first step fails while a click is queued. A flag cleared in a `finally` can also be lost: a stopped action's `finally` can't write the draft while it is let go inside `open(...)`. `inFlight` counts queued work and clears however the run ends. Rules: [`inFlight`](./reference/actions.md#inflight), [busy state](./reference/views.md#busy-state), [arrival marks](./reference/actions.md#arrival-marks).
+**Why.** Guide [page 3](./guide/03-views.md#three-mistakes) shows why a flag set in the action's first step fails while a click is queued. A flag cleared in a `finally` can also be lost: a stopped action's `finally` can't write the draft while it is let go inside `open(...)`. `inFlight` counts queued work and clears however the run ends. Rules: [`inFlight`](./reference/actions.md#inflight), [busy state](./reference/views.md#busy-state), [arrival marks](./reference/actions.md#arrival-marks).
 
 ### Stop stale work by replacing its entity
 
@@ -221,6 +221,30 @@ export function* assignColumn(draft: IColumn, info: IColumnInfo): IActionGenerat
 
 **Why.** A matched row keeps its node, `$Id`, work, binding and client-only fields; only the server's fields are written. After `reconcileRows` the list is in the incoming order with unmatched rows removed, so row `i` lines up with item `i`. A generic deep fold over state that holds entities is wrong: it deletes `$Id`, `$Receiver` and fields only the client writes, writes into child entities that may be held, and ends an entity's work through a bad match. A deep fold is right only over plain data the server owns, with no entities and no client-only fields; there, skip `$` keys, compare before assigning, and recurse rather than replace, since a replaced value re-runs every view that reads it. Rule: [refreshing rows](./reference/write-path.md#refreshing-rows).
 
+### Load data when the app opens
+
+**Situation.** Server data should load each time the app opens, whether the boot restores a save or starts fresh.
+
+**Shape.** The boot dispatches the load once the runtime exists, after the restore or the fresh start, on both paths. No view starts it.
+
+```ts
+const fetchBoard = defineEffect<{ Type: "App/FetchBoard" }, IBoardInfo>("App/FetchBoard");
+
+export function* refreshBoard(draft: IBoard): IActionGenerator {
+    const info = yield* fetchBoard();
+    yield* assignBoard(draft, info);
+}
+leading(refreshBoard);
+
+export async function boot(): Promise<IRuntime<IBoard>> {
+    const runtime = await restoreOrCreate();
+    void runtime.dispatch(refreshBoard, "Board");
+    return runtime;
+}
+```
+
+**Why.** A restore doesn't run what the fresh path runs, such as an `init`, so a load placed there runs on the first open only, and a load a component dispatches when it mounts runs again at each mount. The boot discards the dispatch's promise, so a failed load needs the runtime's `onError` ([the dispatch promise](./reference/failure.md#the-dispatch-promise)). Rules: [restoring](./reference/restart-and-records.md#restoring), [arrival marks](./reference/actions.md#arrival-marks).
+
 ### One owner for each fact, and others derive it
 
 **Situation.** A parent shows state its children own: a run shows how many of its questions wait for an answer, a session shows whether its import is building.
@@ -333,6 +357,45 @@ export function* saved(draft: INote): IActionGenerator {
 ```
 
 **Why.** An action that waits on a delay holds its entity, and keeps `inFlight` true, for the whole delay, and a restore drops it. A timer row holds nothing between ticks and is saved. Rule: [timers](./reference/live-sources.md#timers).
+
+### Debounce with a timer whose payload changes
+
+**Situation.** Typing should search once the person pauses, not on every key.
+
+**Shape.** Each keystroke writes the text and starts the same timer with the text as its payload. The tick stops the timer and starts the search, which is marked `latest`.
+
+```ts
+declare module "treflex" {
+    interface ITimerRegistry {
+        "Picker/Pause": { Text: string };
+    }
+}
+
+interface IPicker extends IEntity {
+    readonly $Receiver?: IReceiverId<IPicker>;
+    Text: string;
+    Found: string[];
+}
+
+export const PickerReceiver = receiver<IPicker>("PickerReceiver")({
+    *"Picker/Pause"(draft) {
+        yield* stopTimer(draft, "Picker/Pause");
+        yield* start(find, draft);
+    }
+});
+
+export function* setText(draft: IPicker, text: string): IActionGenerator {
+    draft.Text = text;
+    yield* startTimer(draft, "Picker/Pause", PickerReceiver, 300, { Text: text });
+}
+
+export function* find(draft: IPicker) {
+    draft.Found = yield* open(findItems({ Query: draft.Text }));
+}
+latest(find);
+```
+
+**Why.** Starting the timer again with a changed payload restarts its interval, so each new text pushes the tick back until the text has stood for the interval; with no payload, every start would equal the first and change nothing. `latest` stops a search still running when the next one starts, so an older answer never lands after a newer one. Rules: [timers](./reference/live-sources.md#timers), [arrival marks](./reference/actions.md#arrival-marks).
 
 ### Timed rows live on an entity that never waits
 

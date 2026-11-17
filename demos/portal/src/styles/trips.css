@@ -295,7 +295,6 @@
 	--flip: 1;
 }
 
-/* The flash behind the pill as it lands. */
 .total .vpill::before {
 	content: "";
 	position: absolute;
@@ -453,8 +452,8 @@
 }
 
 /*
- * The flourish. On the trip, the box's lift runs longest (2.3s), so its own animationend clears the playing flag;
- * on the start screen, .cards runs voucher-timeline for that. The .now delays match the ticker delays in
+ * The flourish. The box's own 2.3s animation on the trip, and .cards' voucher-timeline on the start screen, outlast
+ * every other part, so their animationend clears the playing flag. The .now delays change with the ticker delays in
  * trips/flourish.ts, and the ticker runs its TICK_MS (700ms). Each build's trip view sets .burst on the hero while it
  * plays, so the sparkles fly past the hero's clipping edge.
  */
@@ -631,31 +630,57 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-	.total.vdrop,
-	.cards.vdrop {
-		animation: voucher-timeline 0.2s linear;
-	}
-
-	.total.vdrop .now,
-	.cards.vdrop .card .meta .now {
-		animation: voucher-fade 0.2s ease-out;
+	/* voucher-timeline shows nothing, but the box still needs its 2.3s animation: its end clears the playing flag. */
+	.total.vdrop {
+		animation-name: voucher-timeline;
 	}
 
 	.total.vdrop::before,
-	.total.vdrop::after,
-	.total.vdrop b s::after,
-	.total.vdrop .vpill,
-	.total.vdrop .vpill::before,
-	.total.vdrop .sparks i,
-	.cards.vdrop .card .meta s::after,
-	.cards.vdrop .card .meta .vpill {
+	.total.vdrop .sparks i {
 		animation: none;
+	}
+
+	.total.vdrop::after,
+	.total.vdrop .vpill::before {
+		animation-name: voucher-pulse;
+	}
+
+	.total.vdrop b s::after,
+	.cards.vdrop .card .meta s::after {
+		animation-name: voucher-reveal;
+	}
+
+	.total.vdrop .now,
+	.cards.vdrop .card .meta .now,
+	.total.vdrop .vpill,
+	.cards.vdrop .card .meta .vpill {
+		animation-name: voucher-fade;
+		animation-timing-function: ease-out;
 	}
 }
 
 @keyframes voucher-fade {
 	from {
 		opacity: 0;
+	}
+}
+
+@keyframes voucher-pulse {
+	0%,
+	100% {
+		opacity: 0;
+	}
+	35% {
+		opacity: 1;
+	}
+}
+
+@keyframes voucher-reveal {
+	from {
+		clip-path: inset(0 100% 0 0);
+	}
+	to {
+		clip-path: inset(0);
 	}
 }
 
@@ -1379,5 +1404,89 @@
 @container board (max-width: 660px) {
 	.opts {
 		grid-template-columns: 1fr;
+	}
+}
+
+@media (max-width: 600px), (max-height: 500px) and (pointer: coarse) {
+	.start {
+		padding: 22px 16px 24px;
+		gap: 22px;
+	}
+
+	.start h1 {
+		font-size: 42px;
+	}
+
+	.start .lede {
+		font-size: 15px;
+	}
+
+	.card .art {
+		height: 130px;
+	}
+
+	.card h3 {
+		font-size: 30px;
+	}
+
+	.card .go {
+		gap: 10px;
+	}
+
+	.hero {
+		padding: 16px 16px 14px;
+		gap: 14px;
+	}
+
+	.hero > svg {
+		width: 100%;
+	}
+
+	.hero h1 {
+		font-size: 34px;
+	}
+
+	.hero p {
+		font-size: 13px;
+	}
+
+	.board {
+		padding: 16px;
+	}
+
+	.askcard {
+		padding: 16px;
+	}
+
+	.askcard h2 {
+		font-size: 25px;
+	}
+
+	.opt {
+		padding: 12px 14px;
+	}
+
+	.fly .t {
+		font-size: 20px;
+	}
+
+	.opt .f {
+		flex-wrap: wrap;
+		gap: 8px;
+	}
+
+	.stopnote {
+		flex-wrap: wrap;
+	}
+
+	.rail {
+		padding: 16px;
+	}
+
+	/* main scrolls in their place, in portal.css's phone block. */
+	.start,
+	.tscroll {
+		flex: none;
+		overflow: visible;
 	}
 }

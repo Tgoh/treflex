@@ -2,6 +2,7 @@ import type { IRestoreProps } from "../shell/RestoreBanner";
 import type { IChatRow } from "./Chat";
 import { createEffect, createSignal, For, Index, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import { RestoreBanner } from "../shell/RestoreBanner";
+import { focusChatHalf } from "../shell/responsive";
 import { sendable } from "./Conversation";
 import { Chat, Conversation, Message } from "./contexts";
 import { conversationLabel, person } from "./directory";
@@ -195,23 +196,52 @@ export const ChatView = Chat.provider<{
 	restore: IRestoreProps;
 }>((props) => {
 	const chat = Chat.use();
+	const [showPane, setShowPane] = createSignal(true);
+	let root!: HTMLDivElement;
+	const show = (pane: boolean) => {
+		setShowPane(pane);
+		focusChatHalf(root, pane);
+	};
+	const open = (id: string) => {
+		show(true);
+		void chat.openConversation(id);
+	};
+	let shownId = untrack(() => chat.current()?.$Id);
+	createEffect(
+		on(
+			() => chat.current()?.$Id,
+			(id) => {
+				if (id !== undefined && shownId !== undefined && id !== shownId) show(true);
+				shownId = id;
+			}
+		)
+	);
 	return (
-		<div class="chat">
+		<div
+			ref={root}
+			class="chat"
+			classList={{
+				"show-pane": showPane()
+			}}
+		>
 			<div class="chans">
 				<div>
 					<div class="label">Channels</div>
-					<For each={chat.rows().Channels}>{(row) => <Row row={row} onOpen={() => chat.openConversation(row.Id)} />}</For>
+					<For each={chat.rows().Channels}>{(row) => <Row row={row} onOpen={() => open(row.Id)} />}</For>
 				</div>
 				<div>
 					<div class="label">Direct</div>
-					<For each={chat.rows().Direct}>{(row) => <Row row={row} onOpen={() => chat.openConversation(row.Id)} />}</For>
+					<For each={chat.rows().Direct}>{(row) => <Row row={row} onOpen={() => open(row.Id)} />}</For>
 				</div>
 			</div>
 			<div class="pane">
 				<Show when={chat.paneHead()}>
 					{(head) => (
 						<div class="phead">
-							<div>
+							<button type="button" class="pback" aria-label="All conversations" onClick={() => show(false)}>
+								‹
+							</button>
+							<div class="ptitle" tabIndex={-1}>
 								<b>{head().Title}</b>
 								<small>{head().Topic}</small>
 							</div>

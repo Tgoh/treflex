@@ -56,6 +56,8 @@ export function registerServices(runtime: IRuntime<object>): void {
 
 Construction throws `SolidServerBuildError`, in every build, when `solid-js` resolved to its server build, where a memo never re-runs and every selector would keep its first value. Resolve `solid-js` with the `solid` and `browser` conditions: `resolve.conditions: ["solid", "browser"]` in a Vite or vitest config, with `ssr.resolve.conditions` too under vitest, or `node --conditions=browser` for a plain Node process.
 
+`treflex` depends on `solid-js` `^1.9.7`, and a Solid app's components must run on that same copy: on another, a view never updates on the runtime's writes. `TreflexProvider` from `treflex-solid` throws an `Error` that starts `[treflex] Two copies of solid-js are loaded`, in every build, when they differ. Dedupe `solid-js` (`npm dedupe`, `pnpm dedupe`, `yarn dedupe`), and if two copies remain, force one version that `^1.9.7` covers: `overrides` in `package.json` for npm, `pnpm.overrides` for pnpm, `resolutions` for yarn.
+
 ### Options
 
 | Option | |

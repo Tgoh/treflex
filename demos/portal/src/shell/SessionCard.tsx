@@ -1,13 +1,36 @@
-import type { IPortalHost } from "./host";
-import { createSignal, onCleanup, Show } from "solid-js";
+import type { IPortalHost, IRendererSwap } from "./host";
+import { createSignal, Index, onCleanup, Show } from "solid-js";
 import { wallClock } from "../portal/clock";
 import { sessionStatus } from "../portal/sessionStatus";
-import { otherBuildUrl } from "./builds";
+import { otherBuild, swapButtons } from "./builds";
 import { CheckIcon } from "./icons";
 
-const OTHER_BUILD_URL = otherBuildUrl("solid");
+function SwapSegment(props: { swap: IRendererSwap }) {
+	const [pending, setPending] = createSignal(props.swap.pending());
+	onCleanup(props.swap.onPendingChange(setPending));
+	return (
+		<fieldset class="seg" aria-label="Renderer">
+			<Index each={swapButtons("solid", pending())}>
+				{(button) => (
+					<button
+						type="button"
+						classList={{
+							on: button().Pressed
+						}}
+						aria-pressed={button().Pressed}
+						aria-busy={button().Busy}
+						onClick={() => props.swap.switchTo(button().Build)}
+					>
+						{button().Label}
+					</button>
+				)}
+			</Index>
+		</fieldset>
+	);
+}
 
 export function SessionCard(props: { host: IPortalHost; recordsOpen: boolean; onToggleRecords: () => void }) {
+	const other = otherBuild("solid", props.host.swap);
 	const [saved, setSaved] = createSignal(props.host.autosave.state());
 	const [now, setNow] = createSignal(wallClock());
 	onCleanup(props.host.autosave.onChange(setSaved));
@@ -34,21 +57,28 @@ export function SessionCard(props: { host: IPortalHost; recordsOpen: boolean; on
 					Reset
 				</button>
 			</div>
-			<div class="seg">
-				<span class="on" aria-current="true">
-					Solid
-				</span>
-				<Show
-					when={OTHER_BUILD_URL}
-					fallback={
-						<button type="button" disabled>
-							React
-						</button>
-					}
-				>
-					{(url) => <a href={url()}>React</a>}
-				</Show>
-			</div>
+			<Show
+				when={other.kind === "swap" && other}
+				fallback={
+					<div class="seg">
+						<span class="on" aria-current="true">
+							Solid
+						</span>
+						<Show
+							when={other.kind === "link" && other}
+							fallback={
+								<button type="button" disabled>
+									React
+								</button>
+							}
+						>
+							{(link) => <a href={link().href}>React</a>}
+						</Show>
+					</div>
+				}
+			>
+				{(swap) => <SwapSegment swap={swap().swap} />}
+			</Show>
 			<button type="button" class="toggle" onClick={() => props.onToggleRecords()} aria-pressed={props.recordsOpen}>
 				<span>Record stream</span>
 				<span

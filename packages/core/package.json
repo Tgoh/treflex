@@ -1,7 +1,7 @@
 {
 	"name": "treflex",
-	"version": "0.1.0",
-	"description": "A runtime for application state and coordination, built on Solid",
+	"version": "0.1.1",
+	"description": "A runtime for app state and the work running on it, for Solid and React",
 	"license": "MIT",
 	"author": "Tam Goh",
 	"repository": {
@@ -40,10 +40,8 @@
 			"import": "./dist/internal.js"
 		}
 	},
-	"peerDependencies": {
-		"solid-js": "^1.9.7"
-	},
 	"dependencies": {
+		"solid-js": "^1.9.7",
 		"uuid": "^11.1.0"
 	}
 }
