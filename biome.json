@@ -1,0 +1,116 @@
+{
+	"$schema": "https://biomejs.dev/schemas/2.4.12/schema.json",
+	"formatter": {
+		"enabled": true,
+		"indentStyle": "tab",
+		"lineWidth": 140
+	},
+	"javascript": {
+		"formatter": {
+			"quoteStyle": "double",
+			"semicolons": "always",
+			"trailingCommas": "none",
+			"expand": "always"
+		}
+	},
+	"linter": {
+		"enabled": true,
+		"domains": {
+			"react": "none",
+			"test": "recommended"
+		},
+		"rules": {
+			"recommended": true,
+			"suspicious": {
+				"noExplicitAny": "off"
+			},
+			"complexity": {
+				"noBannedTypes": "off"
+			},
+			"style": {
+				"noNonNullAssertion": "off",
+				"noUnusedTemplateLiteral": "off",
+				"useImportType": "error"
+			},
+			"correctness": {
+				"noUnusedVariables": "warn",
+				"noUnusedImports": "warn",
+				"noUnusedFunctionParameters": "off",
+				"useYield": "off"
+			},
+			"performance": {
+				"noAccumulatingSpread": "off"
+			}
+		}
+	},
+	"assist": {
+		"actions": {
+			"source": {
+				"organizeImports": {
+					"level": "on",
+					"options": {
+						"groups": [{ "type": true }]
+					}
+				}
+			}
+		}
+	},
+	"overrides": [
+		{
+			"includes": ["**"],
+			"plugins": ["./packages/core/biome/require-yield-star.grit"]
+		},
+		{
+			"includes": ["packages/react/**", "demos/react-todo/**", "demos/react-portal/**"],
+			"linter": {
+				"domains": {
+					"react": "recommended"
+				}
+			}
+		},
+		{
+			"includes": [
+				"**",
+				"!packages/core/src/Runtime/createActivityLogSource.ts",
+				"!packages/core/src/Runtime/createAskTable.ts",
+				"!packages/core/src/Runtime/createDataSourceMap.ts",
+				"!packages/core/src/Runtime/createResourceManager.ts",
+				"!packages/core/src/Runtime/createResourceTable.ts",
+				"!packages/core/src/Runtime/createRuntime.ts",
+				"!packages/core/src/Runtime/createTimerScheduler.ts",
+				"!packages/core/src/Runtime/createTimerTable.ts",
+				"!packages/core/src/Runtime/createWriteGateway.ts",
+				"!packages/core/src/Runtime/fanOut.ts",
+				"!packages/core/src/Runtime/fiberMachine.ts",
+				"!packages/core/src/Runtime/processAction.ts",
+				"!packages/core/tests/Runtime/journal.test.ts",
+				"!packages/core/tests/Runtime/journalCost.test.ts",
+				"!packages/core/tests/Runtime/resourceCost.test.ts",
+				"!demos/portal/src/portal/clock.ts"
+			],
+			"plugins": ["./packages/core/biome/no-nondeterminism.grit"]
+		}
+	],
+	"files": {
+		"includes": [
+			"packages/*/src/**/*.ts",
+			"packages/*/src/**/*.tsx",
+			"packages/*/tests/**/*.ts",
+			"packages/*/tests/**/*.tsx",
+			"packages/*/tests/**/*.mjs",
+			"tests/**/*.ts",
+			"tests/**/*.tsx",
+			"demos/react-todo/src/**/*.ts",
+			"demos/react-todo/src/**/*.tsx",
+			"demos/portal/src/**/*.ts",
+			"demos/portal/src/**/*.tsx",
+			"demos/react-portal/src/**/*.ts",
+			"demos/react-portal/src/**/*.tsx",
+			"scripts/**/*.mjs",
+			"!scripts/test-pack/**",
+			"!packages/eslint/tests/fixture/**",
+			"!packages/core/tests/SideBySide/baseline",
+			"!tests/docs/preludes/**"
+		]
+	}
+}

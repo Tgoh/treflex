@@ -1,0 +1,25 @@
+{
+	"compilerOptions": {
+		"allowSyntheticDefaultImports": true,
+		"customConditions": [
+			"treflex-source"
+		],
+		"declaration": true,
+		"esModuleInterop": true,
+		"incremental": true,
+		"isolatedModules": true,
+		"lib": [
+			"ES2022",
+			"DOM"
+		],
+		"module": "ESNext",
+		"moduleResolution": "bundler",
+		"skipLibCheck": true,
+		"strict": true,
+		"target": "ES2022",
+		"types": [
+			"vite/client"
+		],
+		"verbatimModuleSyntax": true
+	}
+}

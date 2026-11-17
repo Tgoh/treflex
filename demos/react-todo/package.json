@@ -1,0 +1,24 @@
+{
+	"name": "treflex-react-todo",
+	"private": true,
+	"type": "module",
+	"description": "The todo demo projected through treflex-react",
+	"scripts": {
+		"dev": "vite",
+		"typecheck": "tsc --noEmit"
+	},
+	"dependencies": {
+		"react": "19.1.0",
+		"react-dom": "19.1.0",
+		"solid-js": "^1.9.7",
+		"treflex": "file:../../packages/core",
+		"treflex-react": "file:../../packages/react"
+	},
+	"devDependencies": {
+		"@types/react": "19.1.2",
+		"@types/react-dom": "19.1.2",
+		"@vitejs/plugin-react": "4.4.1",
+		"typescript": "^6.0.2",
+		"vite": "^6.3.5"
+	}
+}

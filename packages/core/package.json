@@ -1,0 +1,49 @@
+{
+	"name": "treflex",
+	"version": "0.1.0",
+	"description": "A runtime for application state and coordination, built on Solid",
+	"license": "MIT",
+	"author": "Tam Goh",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/Tgoh/treflex.git",
+		"directory": "packages/core"
+	},
+	"type": "module",
+	"sideEffects": false,
+	"scripts": {
+		"build": "node ../../scripts/build.mjs",
+		"prepack": "node ../../scripts/build.mjs --pack",
+		"postpack": "node ../../scripts/build.mjs --unpack"
+	},
+	"files": [
+		"dist/**/*.js",
+		"dist/**/*.d.ts",
+		"biome",
+		"README.md",
+		"LICENSE"
+	],
+	"exports": {
+		".": {
+			"treflex-source": "./src/index.ts",
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		},
+		"./snapshot": {
+			"treflex-source": "./src/Snapshot/index.ts",
+			"types": "./dist/Snapshot/index.d.ts",
+			"import": "./dist/Snapshot/index.js"
+		},
+		"./internal": {
+			"treflex-source": "./src/internal.ts",
+			"types": "./dist/internal.d.ts",
+			"import": "./dist/internal.js"
+		}
+	},
+	"peerDependencies": {
+		"solid-js": "^1.9.7"
+	},
+	"dependencies": {
+		"uuid": "^11.1.0"
+	}
+}

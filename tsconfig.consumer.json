@@ -1,0 +1,19 @@
+{
+	"extends": "./tsconfig.base.json",
+	"compilerOptions": {
+		"erasableSyntaxOnly": true,
+		"exactOptionalPropertyTypes": true,
+		"incremental": false,
+		"jsx": "preserve",
+		"jsxImportSource": "solid-js",
+		"noEmit": true,
+		"noUncheckedIndexedAccess": true,
+		"types": []
+	},
+	"include": [
+		"packages/core/src",
+		"packages/solid/src",
+		"packages/react/src",
+		"packages/eslint/src"
+	]
+}

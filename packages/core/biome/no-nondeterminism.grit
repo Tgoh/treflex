@@ -1,0 +1,34 @@
+language js
+
+// Exempt the folders where reading the clock, drawing randomness or minting ids
+// is the mechanism (effect implementations, runtime-service caches, session
+// stores), never effect wrappers: a wrapper only yields its descriptor, so the
+// side effect never belongs in one.
+//
+// Bare-member patterns (`Math.random`, not `Math.random()`) so the diagnostic
+// also fires on aliasing — `const r = Math.random`, `arr.map(Math.random)` —
+// not just direct calls. `new Date()` / `Date()` match only the argless,
+// clock-reading forms; `new Date(iso)` and `new Date(epoch)` (deterministic
+// parses) are intentionally allowed.
+//
+// treflex's own exemptions are the exclusion list on the override that turns
+// this plugin on in biome.json, not changes to these patterns.
+
+pattern banned_nondeterminism() {
+	any {
+		`Math.random`,
+		`Date.now`,
+		`performance.now`,
+		`crypto.randomUUID`,
+		`crypto.getRandomValues`,
+		`new Date()`,
+		`Date()`
+	}
+}
+
+banned_nondeterminism() as $hit where {
+	register_diagnostic(
+		span = $hit,
+		message = "Non-determinism is confined to the effect-implementation layer (see the allow-list in biome.json). Route it through an effect — generateGuid() / now() / random() — so the draw is recorded and a test can stub it. Read directly, a re-run of the generator or a restored runtime takes a different value. See docs/reference/effects.md#non-determinism."
+	)
+}

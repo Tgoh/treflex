@@ -1,0 +1,329 @@
+.tank {
+	flex: 1;
+	min-height: 0;
+	margin: 22px 28px 28px 32px;
+	border-radius: 18px;
+	position: relative;
+	overflow: hidden;
+	container-type: size;
+	background:
+		radial-gradient(1200px 500px at 50% -10%, rgba(64, 160, 190, 0.35), transparent 60%),
+		radial-gradient(800px 300px at 50% 110%, rgba(20, 80, 110, 0.5), transparent 70%),
+		linear-gradient(180deg, #0b3a52 0%, #072536 45%, #03121d 100%);
+	box-shadow:
+		inset 0 0 0 1px rgba(255, 255, 255, 0.05),
+		0 24px 60px -30px rgba(3, 18, 29, 0.9);
+}
+
+.tank .rays,
+.tank .floor,
+.snow,
+.bubble {
+	pointer-events: none;
+}
+
+.tank .rays {
+	position: absolute;
+	inset: 0;
+	background: repeating-linear-gradient(100deg, rgba(160, 230, 255, 0.06) 0 40px, transparent 40px 120px);
+	mask-image: linear-gradient(180deg, #000, transparent 70%);
+}
+
+.tank .floor {
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	height: 90px;
+	background: radial-gradient(60% 100% at 50% 100%, rgba(80, 200, 200, 0.18), transparent);
+}
+
+.snow {
+	position: absolute;
+	top: 0;
+	z-index: 1;
+	border-radius: 50%;
+	background: radial-gradient(circle, rgba(214, 247, 247, 0.92), rgba(150, 215, 215, 0.16));
+	animation: aqua-fall var(--dur) linear var(--delay) infinite;
+}
+
+@keyframes aqua-fall {
+	0% {
+		transform: translateY(-30px) translateX(0);
+		opacity: 0;
+	}
+	10% {
+		opacity: 0.7;
+	}
+	90% {
+		opacity: 0.42;
+	}
+	100% {
+		transform: translateY(100cqh) translateX(var(--drift));
+		opacity: 0;
+	}
+}
+
+.bubble {
+	position: absolute;
+	bottom: -24px;
+	z-index: 1;
+	border-radius: 50%;
+	border: 1px solid hsl(186 72% 82% / 0.4);
+	background: radial-gradient(circle at 34% 30%, hsl(186 84% 92% / 0.5), transparent 62%);
+	animation: aqua-rise var(--dur) ease-in var(--delay) infinite;
+}
+
+@keyframes aqua-rise {
+	0% {
+		transform: translateY(0) translateX(0);
+		opacity: 0;
+	}
+	14% {
+		opacity: 0.72;
+	}
+	84% {
+		opacity: 0.46;
+	}
+	100% {
+		transform: translateY(-100cqh) translateX(16px);
+		opacity: 0;
+	}
+}
+
+.school-layer,
+.giant-layer {
+	position: absolute;
+	inset: 0;
+	z-index: 2;
+	pointer-events: none;
+}
+
+.giant-layer {
+	z-index: 3;
+}
+
+/* Moved by a transform in tank units, so the glide between waypoints never triggers layout.
+   The 2.6s is SWIM_MS in aquarium/Fish.ts. */
+.fish-slot {
+	position: absolute;
+	left: 0;
+	top: 0;
+	transform: translate(calc(var(--fish-x) * 1cqw), calc(var(--fish-y) * 1cqh));
+	transition: transform 2.6s cubic-bezier(0.4, 0, 0.35, 1);
+	will-change: transform;
+}
+
+.fish-slot.holding {
+	transition: none;
+}
+
+.fish-slot.arriving {
+	animation: fish-fade 0.6s ease;
+}
+
+@keyframes fish-fade {
+	from {
+		opacity: 0;
+	}
+}
+
+.fish-inner {
+	position: relative;
+	display: block;
+	padding: 0;
+	border: 0;
+	background: none;
+	pointer-events: auto;
+	cursor: pointer;
+	transform: translate(-50%, -50%);
+	transition: transform 0.25s ease;
+}
+
+.arriving .fish-inner {
+	animation: fish-bloom 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes fish-bloom {
+	from {
+		transform: translate(-50%, -50%) scale(0.25);
+	}
+}
+
+.fish-inner:hover {
+	transform: translate(-50%, -50%) scale(1.16);
+}
+
+.fish-inner::after {
+	content: "";
+	position: absolute;
+	inset: -15%;
+	border: 1px solid #ff8475;
+	border-radius: 50%;
+	opacity: 0;
+	transition: opacity 0.2s ease;
+}
+
+.fish-inner:hover::after {
+	opacity: 0.55;
+}
+
+.fish-body {
+	display: block;
+	position: relative;
+	transition: transform 0.45s ease;
+}
+
+.fish-body::before {
+	content: "";
+	position: absolute;
+	inset: calc(-1 * var(--glow));
+	z-index: -1;
+	background: radial-gradient(closest-side, hsl(var(--hue) 96% 62% / 0.6), transparent);
+	pointer-events: none;
+}
+
+.fish-svg {
+	display: block;
+	width: 100%;
+	height: auto;
+	overflow: visible;
+	animation: fish-undulate var(--wobble) ease-in-out var(--undulate-delay) infinite;
+}
+
+@keyframes fish-undulate {
+	0%,
+	100% {
+		transform: scaleY(1);
+	}
+	50% {
+		transform: scaleY(0.92);
+	}
+}
+
+.fish-core {
+	fill: hsl(var(--hue) 74% 59%);
+}
+
+.fish-fin {
+	fill: hsl(var(--hue) 70% 62% / 0.5);
+}
+
+.fish-tail {
+	fill: hsl(var(--hue) 72% 56% / 0.82);
+	transform-origin: 24px 28px;
+	animation: fish-tail calc(var(--wobble) * 0.5) ease-in-out var(--tail-delay) infinite;
+}
+
+@keyframes fish-tail {
+	0%,
+	100% {
+		transform: rotate(-12deg);
+	}
+	50% {
+		transform: rotate(12deg);
+	}
+}
+
+/* The 2.7s is PHOTOPHORE_S in aquarium/decoration.ts, which also sets each one's delay. */
+.photophore {
+	fill: hsl(var(--hue) 100% 86%);
+	animation: photophore 2.7s ease-in-out infinite;
+}
+
+@keyframes photophore {
+	0%,
+	100% {
+		opacity: 0.55;
+	}
+	50% {
+		opacity: 1;
+	}
+}
+
+.fish-eye {
+	fill: #02151a;
+}
+
+.fish-glint {
+	fill: hsl(var(--hue) 100% 93%);
+	opacity: 0.9;
+}
+
+.tankbar {
+	position: absolute;
+	top: 16px;
+	left: 18px;
+	right: 18px;
+	z-index: 4;
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	gap: 16px;
+	color: #cfe8f3;
+	font-size: 12.5px;
+	pointer-events: none;
+}
+
+.tankbar span:last-child {
+	color: #8fb6c6;
+}
+
+.schools {
+	position: absolute;
+	left: 18px;
+	right: 18px;
+	bottom: 16px;
+	z-index: 4;
+	max-height: calc(100% - 64px);
+	overflow-y: auto;
+	display: flex;
+	flex-wrap: wrap;
+	align-content: flex-end;
+	gap: 8px;
+}
+
+/* Clear of the toast while it shows, placed in the tank by main.app-aquarium .toast in portal.css. */
+main.app-aquarium:has(.toast) .schools {
+	right: 376px;
+}
+
+.school {
+	background: rgba(3, 18, 29, 0.6);
+	border: 1px solid rgba(255, 255, 255, 0.1);
+	color: #d8eef7;
+	font-size: 12px;
+	border-radius: 99px;
+	padding: 4px 6px 4px 8px;
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	backdrop-filter: blur(6px);
+}
+
+.school i {
+	width: 9px;
+	height: 9px;
+	border-radius: 50%;
+}
+
+.school button {
+	width: 20px;
+	height: 20px;
+	border-radius: 50%;
+	border: 0;
+	background: rgba(255, 255, 255, 0.08);
+	color: #d8eef7;
+	font-size: 13px;
+	line-height: 1;
+	display: grid;
+	place-items: center;
+}
+
+.school button:hover {
+	background: rgba(255, 255, 255, 0.18);
+}
+
+.school button:disabled {
+	opacity: 0.35;
+}

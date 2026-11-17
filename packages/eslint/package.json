@@ -1,0 +1,41 @@
+{
+	"name": "treflex-eslint",
+	"version": "0.1.0",
+	"description": "ESLint rules for treflex applications",
+	"license": "MIT",
+	"author": "Tam Goh",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/Tgoh/treflex.git",
+		"directory": "packages/eslint"
+	},
+	"type": "module",
+	"engines": {
+		"node": ">=22"
+	},
+	"scripts": {
+		"build": "node ../../scripts/build.mjs",
+		"prepack": "node ../../scripts/build.mjs --pack",
+		"postpack": "node ../../scripts/build.mjs --unpack"
+	},
+	"files": [
+		"dist/**/*.js",
+		"dist/**/*.d.ts",
+		"README.md",
+		"LICENSE"
+	],
+	"exports": {
+		".": {
+			"treflex-source": "./src/index.ts",
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		}
+	},
+	"dependencies": {
+		"@typescript-eslint/utils": "^8.58.0"
+	},
+	"peerDependencies": {
+		"eslint": ">=9",
+		"typescript": ">=5.4 <6.1"
+	}
+}

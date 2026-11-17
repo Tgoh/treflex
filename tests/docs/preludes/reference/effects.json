@@ -1,0 +1,5 @@
+{
+	"wrap": [
+		{ "match": "const result = yield* fetchJson({ Url: \"/api/rows\"", "before": "function* loadRows(): IActionGenerator {", "after": "}" }
+	]
+}

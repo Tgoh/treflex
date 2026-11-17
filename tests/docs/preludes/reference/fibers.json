@@ -1,0 +1,7 @@
+{
+	"wrap": [
+		{ "match": "yield* parallel(loadUsers(), loadPosts());", "before": "function* both(): IActionGenerator {", "after": "}" },
+		{ "match": "yield* parallelSettled(loadUsers(), loadPosts());", "before": "function* settled(draft: IFeed): IActionGenerator {", "after": "}" },
+		{ "match": "yield* open(parallelSettled(fetchPreview(id), fetchParts(id)));", "before": "function* openFanOut(doc: IDocument, id: string) {", "after": "}" }
+	]
+}

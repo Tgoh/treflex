@@ -1,0 +1,103 @@
+language js
+
+// The bare-yield rule guards on text, because the absence of the `yield*`
+// star is not expressible as a node field in Biome's GritQL.
+//
+// A generator built as an argument, `parallel(runNode(draft, id))`, is the
+// legitimate form, so the discard rule matches whole statements only.
+
+pattern treflex_generator_creators() {
+	or {
+		`answer`,
+		`ask`,
+		`closeResource`,
+		`generateGuid`,
+		`open`,
+		`openResource`,
+		`parallel`,
+		`parallelSettled`,
+		`publish`,
+		`publishToNearest`,
+		`registerDataSource`,
+		`startTimer`,
+		`stopTimer`,
+		`unregisterDataSource`,
+		`getData`,
+		`getDataGlobal`,
+		`getDataPath`,
+		`select`,
+		`transient`,
+		`inFlight`,
+		`pendingAsks`,
+		`mapGen`,
+		`filterGen`,
+		`someGen`
+	}
+}
+
+// Only these: other creators share names with local helpers that answer a value, such as a
+// test's `select(runtime, selector)`.
+pattern treflex_value_reads() {
+	or {
+		`inFlight`,
+		`pendingAsks`,
+		`someGen`
+	}
+}
+
+pattern treflex_value_read_call() {
+	JsCallExpression(callee = treflex_value_reads())
+}
+
+// `start` is a common name outside treflex, so it counts only inside a generator function. By
+// text, because the star is a token that GritQL can't match as a field here.
+pattern treflex_generator_function() {
+	or {
+		JsFunctionDeclaration(),
+		JsFunctionExpression(),
+		JsMethodObjectMember(),
+		JsMethodClassMember()
+	} as $generator where {
+		$generator <: r"(?:(?:static|async|public|private|protected|override)\s+)*(?:function\s*)?\*[\s\S]*"
+	}
+}
+
+any {
+	JsYieldExpression(argument = JsYieldArgument(expression = $x)) as $bare where {
+		$x <: JsCallExpression(),
+		$bare <: not r"yield\s*\*[\s\S]*",
+		register_diagnostic(
+			span = $bare,
+			message = "Bare `yield` of a call — this hands the generator object to the runtime unrun. Delegate with `yield*` instead: effects, actions, and reads are all called as `yield* fn(...)`. See docs/reference/actions.md#actions."
+		)
+	},
+	JsExpressionStatement(expression = JsCallExpression(callee = $fn)) as $stmt where {
+		or {
+			$fn <: treflex_generator_creators(),
+			and {
+				$fn <: `start`,
+				$stmt <: within treflex_generator_function()
+			}
+		},
+		register_diagnostic(
+			span = $stmt,
+			message = "This call builds a generator and discards it — the effect never dispatches. Call it with `yield*` from inside an action. See docs/reference/actions.md#actions."
+		)
+	},
+	or {
+		JsIfStatement(test = $test),
+		JsWhileStatement(test = $test),
+		JsConditionalExpression(test = $test),
+		JsLogicalExpression(left = $test),
+		JsUnaryExpression(argument = $test),
+		JsxAttribute(name = $name, initializer = $test) where {
+			$name <: `when`
+		}
+	} where {
+		$test <: contains treflex_value_read_call() as $call until JsYieldExpression(),
+		register_diagnostic(
+			span = $call,
+			message = "A generator object is always truthy, so this condition never reads the value. Read it with `yield*` first, as in `if (yield* inFlight(save, draft))`. A view reads busy state with useInFlight, and other reads through a selector."
+		)
+	}
+}

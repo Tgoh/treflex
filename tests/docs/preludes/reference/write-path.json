@@ -1,0 +1,5 @@
+{
+	"wrap": [
+		{ "match": "const row = { A: 1 };", "before": "function* copyAndFreeze(draft: IPlain): IActionGenerator {", "after": "}" }
+	]
+}

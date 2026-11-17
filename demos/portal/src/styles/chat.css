@@ -1,0 +1,369 @@
+.chat {
+	flex: 1;
+	display: grid;
+	grid-template-columns: 250px minmax(0, 1fr);
+	min-height: 0;
+}
+
+.chans {
+	border-right: 1px solid var(--line);
+	padding: 18px 12px;
+	display: flex;
+	flex-direction: column;
+	gap: 18px;
+	background: #f8f5ef;
+	overflow-y: auto;
+}
+
+.chans .label {
+	color: var(--muted);
+	padding: 0 10px 6px;
+}
+
+.ch {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	width: 100%;
+	padding: 6px 10px;
+	border: 0;
+	border-radius: 8px;
+	background: none;
+	font-size: 13.5px;
+	color: var(--ink2);
+	text-align: left;
+}
+
+.ch:hover {
+	background: #efe9de;
+}
+
+.ch .h {
+	color: var(--muted);
+	width: 14px;
+	text-align: center;
+}
+
+.ch .nm {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.ch.unread {
+	color: var(--ink);
+	font-weight: 600;
+}
+
+.ch.on {
+	background: var(--ink);
+	color: #fff;
+}
+
+.ch.on .h {
+	color: #9aa0ab;
+}
+
+.ch .n {
+	margin-left: auto;
+	font-size: 11px;
+	font-weight: 700;
+	background: var(--rose);
+	color: #fff;
+	border-radius: 99px;
+	padding: 0 7px;
+}
+
+.ch .typ {
+	margin-left: auto;
+	font-size: 11px;
+	color: var(--teal);
+	font-weight: 500;
+}
+
+.ch.on .typ {
+	color: #5eead4;
+}
+
+.chat .pa {
+	width: 22px;
+	height: 22px;
+	border-radius: 50%;
+	display: grid;
+	place-items: center;
+	color: #fff;
+	font-size: 10px;
+	font-weight: 700;
+	position: relative;
+	flex: none;
+}
+
+.chat .pa.on::after {
+	content: "";
+	position: absolute;
+	right: -2px;
+	bottom: -2px;
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: #22c55e;
+	border: 2px solid #f8f5ef;
+}
+
+.pane {
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+	min-width: 0;
+	background: var(--panel);
+}
+
+.pane-notes {
+	flex: 0 1 auto;
+	min-height: 0;
+	overflow-y: auto;
+}
+
+.phead {
+	padding: 16px 28px;
+	border-bottom: 1px solid var(--line);
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 16px;
+	flex: none;
+}
+
+.phead b {
+	font-size: 16px;
+	font-weight: 600;
+}
+
+.phead small {
+	color: var(--muted);
+	font-size: 12.5px;
+	margin-left: 10px;
+}
+
+.faces {
+	display: flex;
+	flex: none;
+}
+
+.chat .faces .pa {
+	width: 26px;
+	height: 26px;
+	border: 2px solid var(--panel);
+	margin-left: -7px;
+	font-size: 10.5px;
+}
+
+.intro {
+	margin: 14px 28px 0;
+	padding: 10px 14px;
+	border-radius: 10px;
+	background: var(--teal-soft);
+	color: #134e4a;
+	font-size: 13px;
+	display: flex;
+	align-items: center;
+	gap: 14px;
+	flex: none;
+}
+
+.intro b {
+	font-weight: 600;
+}
+
+.intro .btn {
+	flex: none;
+}
+
+.msgs {
+	flex: 1;
+	min-height: 160px;
+	overflow-y: auto;
+	display: flex;
+	flex-direction: column-reverse;
+	padding: 18px 28px;
+}
+
+.msgs-in {
+	display: flex;
+	flex-direction: column;
+	gap: 16px;
+}
+
+.day {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	font-size: 11.5px;
+	color: var(--muted);
+	font-weight: 600;
+}
+
+.day::before,
+.day::after {
+	content: "";
+	flex: 1;
+	height: 1px;
+	background: var(--line);
+}
+
+.m {
+	display: grid;
+	grid-template-columns: 38px minmax(0, 1fr);
+	gap: 12px;
+}
+
+.chat .m .pa {
+	width: 38px;
+	height: 38px;
+	border-radius: 10px;
+	font-size: 13px;
+}
+
+.m .who {
+	font-size: 14px;
+	font-weight: 600;
+}
+
+.m .who time {
+	font-weight: 400;
+	color: var(--muted);
+	font-size: 12px;
+	margin-left: 8px;
+}
+
+.m p {
+	font-size: 14px;
+	color: var(--ink2);
+	margin-top: 2px;
+	line-height: 1.5;
+	overflow-wrap: anywhere;
+}
+
+.m.streaming p {
+	color: var(--ink);
+}
+
+/* The 0.3s is LETTER_FADE_MS in chat/Message.ts. */
+.m p .letter {
+	animation: letter-in 0.3s ease-out;
+}
+
+@keyframes letter-in {
+	from {
+		opacity: 0;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.m p .letter {
+		animation: none;
+	}
+}
+
+.caret {
+	display: inline-block;
+	width: 2px;
+	height: 16px;
+	background: var(--teal);
+	vertical-align: -3px;
+	margin-left: 2px;
+	animation: caret 1s steps(2) infinite;
+}
+
+@keyframes caret {
+	50% {
+		opacity: 0;
+	}
+}
+
+.m .btn.voucher {
+	margin-top: 6px;
+	padding: 5px 11px;
+	font-size: 12.5px;
+}
+
+.m .btn.voucher.applied {
+	opacity: 1;
+	background: var(--panel);
+	color: var(--muted);
+	border-color: var(--line);
+}
+
+.m.sending > div {
+	opacity: 0.55;
+}
+
+.m .status {
+	font-size: 12px;
+	margin-top: 4px;
+	display: flex;
+	gap: 8px;
+	align-items: center;
+	color: var(--muted);
+}
+
+.m .status.bad {
+	color: var(--rose);
+	font-weight: 500;
+}
+
+.m .status button {
+	font-size: 12px;
+	border: 1px solid #e7b9c2;
+	border-radius: 6px;
+	padding: 1px 8px;
+	background: #fff;
+	color: var(--rose);
+}
+
+.m .status button:hover {
+	border-color: var(--rose);
+}
+
+.pane .typing {
+	font-size: 12.5px;
+	color: var(--muted);
+	padding: 0 28px 6px;
+	min-height: 25px;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex: none;
+}
+
+.composer {
+	margin: 0 28px 20px;
+	border: 1px solid var(--line);
+	border-radius: 12px;
+	background: #fff;
+	padding: 10px 14px;
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	color: var(--muted);
+	font-size: 14px;
+	box-shadow: 0 6px 18px -14px rgba(0, 0, 0, 0.3);
+	flex: none;
+}
+
+.composer input {
+	flex: 1;
+	min-width: 0;
+	border: 0;
+	outline: none;
+	font: inherit;
+	color: var(--ink);
+	background: none;
+	padding: 2px 0;
+}
+
+.composer span {
+	flex: none;
+	font-size: 12px;
+}

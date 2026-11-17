@@ -1,0 +1,7 @@
+{
+	"wrap": [
+		{ "match": "const row = yield* entity<IRow>({ Name: name, Loaded: false });", "before": "function* addRow(draft: IKitchen, name: string): IActionGenerator {", "after": "}" },
+		{ "match": "leading(save);", "before": "namespace Marks {", "after": "}" },
+		{ "match": "const order = yield* open(fetchOrder(id));", "before": "function* recheck(draft: IKitchen, id: string) {", "after": "}" }
+	]
+}

@@ -1,0 +1,8 @@
+{
+	"wrap": [
+		{ "match": "draft.SelectedId = idOf(row);", "before": "function* selectRow(draft: IList, row: IRow): IActionGenerator {", "after": "}" },
+		{ "match": "const edit = useComponentState", "before": "function Edit(props: { row: IRow }) {", "after": "}" },
+		{ "match": "target.Tickets.push", "before": "function* handOver(draft: IKitchen, target: IStation, leaving: IStation): IActionGenerator {", "after": "}" },
+		{ "match": "draft.Selected = draft.Items[0];", "before": "function* aliases(draft: IAliasing): IActionGenerator {", "after": "}" }
+	]
+}

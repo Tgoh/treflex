@@ -1,0 +1,11 @@
+{
+	"wrap": [
+		{ "match": "export default createEntityFeature<ITodoList>", "replace": [["export default createEntityFeature", "const Todo = createEntityFeature"]], "before": "", "after": "" },
+		{ "match": "<For each={workspace.state.Windows}>", "before": "function Workspace(props: { workspace: { state: IWorkspace } }) {\nconst workspace = props.workspace;\nreturn (", "after": ");\n}" },
+		{ "match": "<progress value={editor.uploaded()} />", "before": "function Upload(props: { editor: { uploaded(): number } }) {\nconst editor = props.editor;", "after": "}" },
+		{ "match": "<AddressForm state={record.state.Address} />", "before": "function RecordView(props: { record: { state: IRecord } }) {\nconst record = props.record;\nreturn (<>", "after": "</>);\n}" },
+		{ "match": "<For each={list.rows()}>", "before": "function ListView(props: { list: { rows(): IRowView[] } }) {\nconst list = props.list;", "after": "}" },
+		{ "match": "createComponentFeature<IGridState>", "before": "namespace Grid {\ndeclare const actions: {};\ndeclare const selectors: {};", "after": "}" }
+	],
+	"react": ["useRoot<ITodoList>()"]
+}
