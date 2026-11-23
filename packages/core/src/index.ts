@@ -65,6 +65,7 @@ export type {
 	IRecord,
 	IRecordChange,
 	IRecordExtras,
+	IRecordLanding,
 	IRecordRoot,
 	IRecordTapListener
 } from "./Types/IRecord";
@@ -86,7 +87,7 @@ export type {
 	IRuntimeEventRegistry
 } from "./Types/IRuntimeEvent";
 export type { IRead, IReadGenerator, ISelector, ISelectorGenerator } from "./Types/ISelector";
-export type { ISerializedThrow } from "./Utility/serializeThrow";
+export type { INativeErrorName, ISerializedThrow } from "./Utility/serializeThrow";
 export { answer } from "./Effects/answer";
 export { ask } from "./Effects/ask";
 export { closeResource } from "./Effects/closeResource";
@@ -108,6 +109,8 @@ export { external } from "./Reads/external";
 export { getData, getDataGlobal } from "./Reads/getData";
 export { getDataPath, type IGetDataPathResult } from "./Reads/getDataPath";
 export { select } from "./Reads/select";
+export { resumable } from "./Resume/resumable";
+export { UnreleasedResumeError } from "./Resume/unreleasedResumeError";
 export { latest, leading } from "./Runtime/arrivalPolicy";
 export { type IInFlightStub, inFlight } from "./Runtime/arrivals";
 export { AnswerOutsideOwnerError, AskRefusedError, type IAskRefusedReason } from "./Runtime/askErrors";
@@ -128,9 +131,9 @@ export { named, UnnamedActionError } from "./Runtime/named";
 export { NonPlainDataError } from "./Runtime/nonPlainDataError";
 export { open } from "./Runtime/open";
 export { pendingAsks } from "./Runtime/pendingAsks";
-export { SolidServerBuildError } from "./Runtime/reactiveHost";
 export { receiver } from "./Runtime/receiver";
 export {
+	type IReconcileRowsItemKey,
 	type IReconcileRowsKey,
 	type IReconcileRowsOptions,
 	type IReconcileRowsUpdate,
@@ -138,6 +141,7 @@ export {
 	ReconcileRowsWaitError,
 	reconcileRows
 } from "./Runtime/reconcileRows";
+export { redactArgs } from "./Runtime/redactArgs";
 export { isRefusal, OutsideActionError, TreflexRefusal } from "./Runtime/refusal";
 export { StateAliasError } from "./Runtime/stateAlias";
 export { StateCycleError } from "./Runtime/stateCycle";

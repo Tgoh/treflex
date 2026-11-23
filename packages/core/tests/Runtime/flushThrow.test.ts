@@ -1,9 +1,9 @@
 import type { IActionGenerator } from "../../src/Types/IAction";
-import { createEffect, createRoot } from "solid-js";
 import { describe, expect, it } from "vitest";
 import { parallel } from "../../src/Effects/parallel";
 import { parallelSettled } from "../../src/Effects/parallelSettled";
 import { createRuntime } from "../../src/Runtime/createRuntime";
+import * as reactive from "../reactive";
 
 interface IRoot {
 	$Id: string;
@@ -24,7 +24,7 @@ function build() {
 	);
 	runtime.registerImplementation("wait", () => new Promise(() => {}));
 	runtime.registerImplementation("echo", () => "echoed");
-	createEffect(() => {
+	reactive.effect(() => {
 		if (runtime.state.Note === "boom") {
 			throw new Error("flush failed");
 		}
@@ -49,7 +49,7 @@ function* counted(draft: IRoot): IActionGenerator {
 	}
 }
 
-describe("a view effect throwing in a step's flush", () => {
+describe("a computation throwing in a step's flush", () => {
 	it.each<
 		[
 			string,
@@ -76,7 +76,7 @@ describe("a view effect throwing in a step's flush", () => {
 			}
 		]
 	])("runs the finally of %s, whose generator was suspended when the flush threw", async (_shape, action) => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const runtime = build();
 				await settle();
@@ -90,7 +90,7 @@ describe("a view effect throwing in a step's flush", () => {
 	});
 
 	it("leaves a finally that already ran alone when the step that finished the generator has a throwing flush", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const runtime = build();
 				await settle();

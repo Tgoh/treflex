@@ -2,7 +2,6 @@ import type { IRuntimeInternal } from "../../src/Runtime/internals";
 import type { IActionGenerator } from "../../src/Types/IAction";
 import type { IEntity } from "../../src/Types/IEntity";
 import type { ISelectorGenerator } from "../../src/Types/ISelector";
-import { createEffect, createRoot } from "solid-js";
 import { describe, expect, it } from "vitest";
 import { entity } from "../../src/Effects/entity";
 import { inFlight } from "../../src/Runtime/arrivals";
@@ -10,6 +9,7 @@ import { createRuntime } from "../../src/Runtime/createRuntime";
 import { NonPlainDataError } from "../../src/Runtime/nonPlainDataError";
 import { createTestRuntime, guids, settled } from "../../src/Testing/createTestRuntime";
 import { filterGen, mapGen, someGen } from "../../src/Utility/arrayGen";
+import * as reactive from "../reactive";
 
 interface IRow extends IEntity {
 	Name: string;
@@ -96,13 +96,13 @@ function finish<R>(generator: Generator<unknown, R, unknown>): R {
 describe("mapGen, filterGen and someGen", () => {
 	it("re-derive a selector a view reads as work on a row starts and ends, and as rows arrive", async () => {
 		const { runtime, releases } = build();
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			const names: string[][] = [];
 			const any: boolean[] = [];
-			createEffect(() => {
+			reactive.effect(() => {
 				names.push(runtime.runSelector(busyNames, () => runtime.state));
 			});
-			createEffect(() => {
+			reactive.effect(() => {
 				any.push(runtime.runSelector(anyBusy, () => runtime.state));
 			});
 			await settled();

@@ -15,6 +15,10 @@
 		{
 			"includes": ["src/**", "!src/**/implementations/**"],
 			"plugins": ["./node_modules/treflex/biome/no-nondeterminism.grit"]
+		},
+		{
+			"includes": ["src/**"],
+			"plugins": ["./lifecycle.grit"]
 		}
 	]
 }

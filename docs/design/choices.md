@@ -28,7 +28,9 @@ A failure goes to the first thing that takes it: a `catch`, then the nearest err
 
 ## Why Solid
 
-treflex uses Solid for reading. Solid's reactivity is read-granular and independent of rendering, so a selector or a `getData` read can be a memo invalidated by exactly what it read. The tree is treflex's own, written through its draft and read through its views, so a node keeps its identity for its lifetime.
+treflex reads the way Solid does. Solid's reactivity is read-granular and independent of rendering, so a selector or a `getData` read can be a memo invalidated by exactly what it read. The tree is treflex's own, written through its draft and read through its views, so a node keeps its identity for its lifetime.
+
+The reactivity runs on an engine of treflex's own, in every app. A step's writes reach every engine-side reader inside the step, an action reads its own writes through a selector, and the record order holds, under Solid, React or no view at all. Solid 2 settles writes at a microtask flush and holds them while async work is pending, which would put that timing into core. So `treflex-solid` bridges the engine into Solid instead: each key and each selector a Solid computation reads gets a Solid signal, written at the runtime's write, and Solid's views, boundaries and holds see treflex state as they see their own signals.
 
 ## Lineage
 

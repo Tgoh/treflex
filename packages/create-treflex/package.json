@@ -1,6 +1,6 @@
 {
 	"name": "create-treflex",
-	"version": "0.2.0",
+	"version": "0.3.0",
 	"description": "Scaffolds a treflex app in React or Solid: npm create treflex@latest",
 	"license": "MIT",
 	"author": "Tam Goh",
@@ -11,7 +11,7 @@
 	},
 	"type": "module",
 	"engines": {
-		"node": ">=22"
+		"node": ">=22.13"
 	},
 	"bin": {
 		"create-treflex": "index.js"

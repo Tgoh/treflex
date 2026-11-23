@@ -49,6 +49,13 @@ export interface IEffectDeclarationOptions {
 	settles?: "sync";
 	redact?: boolean;
 	returns?: "module";
+	/**
+	 * The server tolerates this request arriving twice, so an action a restore resumes at a wait on
+	 * this type sends it again. See docs/reference/effects.md#options.
+	 *
+	 * @experimental
+	 */
+	idempotent?: boolean;
 }
 
 /** The creator `defineEffect` returns for a type that may suspend. */
@@ -89,7 +96,8 @@ type ISyncReturnCheck<F extends (...args: any[]) => any> = 0 extends 1 & ReturnT
 const OPTION_KEYS = new Set([
 	"settles",
 	"redact",
-	"returns"
+	"returns",
+	"idempotent"
 ]);
 
 function validate(type: unknown, options: unknown): IEffectDeclarationOptions {
@@ -106,7 +114,9 @@ function validate(type: unknown, options: unknown): IEffectDeclarationOptions {
 	const record = options as Record<string, unknown>;
 	for (const key of Object.keys(record)) {
 		if (!OPTION_KEYS.has(key)) {
-			throw new TypeError(`[treflex] defineEffect("${type}"): unknown option "${key}". The options are settles, redact and returns.`);
+			throw new TypeError(
+				`[treflex] defineEffect("${type}"): unknown option "${key}". The options are settles, redact, returns and idempotent.`
+			);
 		}
 	}
 	if (record.settles !== undefined && record.settles !== "sync") {
@@ -118,6 +128,9 @@ function validate(type: unknown, options: unknown): IEffectDeclarationOptions {
 	if (record.returns !== undefined && record.returns !== "module") {
 		throw new TypeError(`[treflex] defineEffect("${type}"): returns must be "module" or absent, not ${JSON.stringify(record.returns)}.`);
 	}
+	if (record.idempotent !== undefined && typeof record.idempotent !== "boolean") {
+		throw new TypeError(`[treflex] defineEffect("${type}"): idempotent must be a boolean.`);
+	}
 	return record as IEffectDeclarationOptions;
 }
 
@@ -125,8 +138,9 @@ function validate(type: unknown, options: unknown): IEffectDeclarationOptions {
  * Declares an effect type at module load and returns its typed creator. What
  * call sites and the record rely on belongs here, not on the implementation:
  * `settles: "sync"` (the yield gives up no event-loop turn), `redact: true`
- * (the record keeps only the Type), and `returns: "module"` (the result is
- * exempt from the copy and may carry module-level functions).
+ * (the record keeps only the Type), `returns: "module"` (the result is
+ * exempt from the copy and may carry module-level functions), and
+ * `idempotent: true` (a resumed action may send the request a second time).
  */
 export function defineEffect<E extends IEffect, R>(
 	type: SingleType<E>,
@@ -142,6 +156,8 @@ export function defineEffect<E extends IEffect, R>(
 		settles?: never;
 		redact?: boolean;
 		returns?: "module";
+		/** @experimental */
+		idempotent?: boolean;
 	}
 ): IEffectCreator<E, R>;
 export function defineEffect(
@@ -152,7 +168,8 @@ export function defineEffect(
 	declare(type, {
 		settles: valid.settles,
 		redact: valid.redact === true,
-		returns: valid.returns
+		returns: valid.returns,
+		idempotent: valid.idempotent === true
 	});
 	const creator = function* (payload?: object): Generator<IEffect, unknown, any> {
 		return yield {

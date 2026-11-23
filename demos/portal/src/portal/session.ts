@@ -2,6 +2,7 @@ import type { IRuntime, IRuntimeOptions } from "treflex";
 import type { IRestoreOutcome, IRestoreResult } from "treflex/snapshot";
 import type { IFakeBackendOptions } from "../backend/fakeBackend";
 import type { IPortal } from "./Portal";
+import type { IRestoredWork } from "./topics";
 import { createRuntime } from "treflex";
 import { createSnapshot, restoreRuntime, SnapshotRejectedError } from "treflex/snapshot";
 import { AquariumReceiver } from "../aquarium/Aquarium";
@@ -10,14 +11,14 @@ import { registerFakeBackend } from "../backend/fakeBackend";
 import { ChatReceiver } from "../chat/Chat";
 import { ConversationReceiver } from "../chat/Conversation";
 import { TourReceiver } from "../tour/Tour";
-import { PlannerReceiver } from "../trips/Planner";
+import { carryOn, PlannerReceiver } from "../trips/Planner";
 import { TripReceiver } from "../trips/Trip";
 import { wallClock } from "./clock";
 import { announceRestore, getDefaultState, init, PortalReceiver, ROOT_ID } from "./Portal";
 
 export const SESSION_KEY = "treflex-portal-session";
 // Bump when a change to the shape of state, or a renamed receiver, makes an older saved session wrong.
-export const APP_VERSION = 6;
+export const APP_VERSION = 7;
 
 export interface ISessionStore {
 	read(): string | null;
@@ -77,10 +78,24 @@ export function registerReceivers(runtime: IRuntime<IPortal>): void {
 	for (const r of RECEIVERS) runtime.registerReceiver(r);
 }
 
-export function announceDropped(runtime: IRuntime<IPortal>, outcome: IRestoreResult): Promise<unknown> {
-	return runtime.dispatch(announceRestore, ROOT_ID, [
-		...new Set(outcome.dropped.map((d) => d.entityId))
-	]);
+/**
+ * Announces what the restore resumed and dropped, then starts the dropped trip searches again. It starts only what
+ * `dropped` names, never what the tree looks to need: a resumed flight question is already running.
+ */
+export async function repairRestore(runtime: IRuntime<IPortal>, outcome: IRestoreResult): Promise<void> {
+	const work = (
+		entries: readonly {
+			name: string | null;
+			entityId: string;
+		}[]
+	): IRestoredWork[] =>
+		entries.map((entry) => ({
+			Name: entry.name,
+			EntityId: entry.entityId
+		}));
+	// Announced first, so the Portal/Restored cases read each dropped search before it starts again and can't miss one that finishes.
+	await runtime.dispatch(announceRestore, ROOT_ID, work(outcome.resumed), work(outcome.dropped));
+	await runtime.dispatch(carryOn, runtime.state.Trips.$Id, outcome.dropped);
 }
 
 export interface IBootOptions {
@@ -112,9 +127,9 @@ export async function boot(store: ISessionStore, { options = {}, backend, attach
 				rootId: ROOT_ID,
 				options,
 				setup,
-				repair: announceDropped
+				repair: repairRestore
 			});
-			if (result.repairError !== undefined) console.error("[portal] the restore's announcement failed:", result.repairError);
+			if (result.repairError !== undefined) console.error("[portal] the restore's repair failed:", result.repairError);
 			return {
 				runtime,
 				restored: result,

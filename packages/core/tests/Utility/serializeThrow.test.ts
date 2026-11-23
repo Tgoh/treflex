@@ -13,7 +13,8 @@ describe("serializeThrow", () => {
 			Thrown: "error",
 			Name: "TypeError",
 			Message: "boom",
-			Stack: original.stack
+			Stack: original.stack,
+			Native: "TypeError"
 		});
 	});
 

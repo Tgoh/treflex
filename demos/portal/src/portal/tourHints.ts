@@ -9,7 +9,7 @@ import { conversationLabel } from "../chat/directory";
 import { sendStatus } from "../chat/Message";
 import { reloadLine } from "../chat/restoreLines";
 import * as Tour from "../tour/Tour";
-import { awayMark, keepGoing, searchesOf, tripFacts } from "../trips/Trip";
+import { awayMark, carriesOn, keepGoing, searchesOf, tripFacts } from "../trips/Trip";
 
 export interface ITourHint {
 	Title: string;
@@ -31,7 +31,6 @@ const hint = (title: string, text: string): ITourHint => ({
 const PICK = hint("Pick a destination.", "An agent plans the trip in the background, and asks you when it needs a decision.");
 
 const searching = (trip: IHintTrip): boolean => trip.Facts.Searching.length > 0;
-const stopped = (trip: IHintTrip): boolean => trip.Facts.Searching.length === 0 && trip.Facts.Stopped.length > 0;
 const wantsYou = (trip: IHintTrip): boolean => trip.Facts.QuestionOpen || trip.Facts.NeedsChoice;
 
 function answerHint(open: IHintTrip | undefined, others: readonly IHintTrip[]): ITourHint {
@@ -43,16 +42,15 @@ function answerHint(open: IHintTrip | undefined, others: readonly IHintTrip[]): 
 	}
 	const asking = others.find(wantsYou);
 	if (asking) return hint("The agent wants your call.", `Open ${asking.Name} in the sidebar to answer its flight question.`);
-	const subject = open ?? others.find((t) => t.Facts.FlightsStopped || t.Facts.Statuses.flights === "searching");
-	if (!subject) return PICK;
-	const where = subject === open ? "" : `Open ${subject.Name} in the sidebar. `;
-	if (subject.Facts.FlightsStopped) {
-		return hint("Restart the flight search.", `${where}Restart it from the Flights card, and the agent asks you once it finishes.`);
-	}
-	if (subject.Facts.Statuses.flights === "searching") {
+	const subject = open ?? others.find((t) => t.Facts.Statuses.flights === "searching");
+	if (subject?.Facts.Statuses.flights === "searching") {
+		const where = subject === open ? "" : `Open ${subject.Name} in the sidebar. `;
 		return hint("Watch the agent work.", `${where}The agent asks you once the flight search finishes.`);
 	}
-	return hint("Plan another trip.", "This trip's flight search didn't find two good fares to ask you about.");
+	if (open?.Facts.Statuses.flights === "done") {
+		return hint("Plan another trip.", "This trip's flight search didn't find two good fares to ask you about.");
+	}
+	return PICK;
 }
 
 function leaveHint(open: IHintTrip | undefined, others: readonly IHintTrip[], trips: readonly IHintTrip[]): ITourHint {
@@ -68,20 +66,11 @@ function leaveHint(open: IHintTrip | undefined, others: readonly IHintTrip[], tr
 			`Go to the start screen or another trip, then come back to this one. ${keepGoing(open.Facts.Searching)} without a view.`
 		);
 	}
-	if (open && stopped(open)) {
-		return hint("Restart a search, then leave.", "Restart a search from its card, go to the start screen while it runs, then come back.");
-	}
-	const elsewhere = others.find(searching) ?? others.find(stopped);
-	if (elsewhere && searching(elsewhere)) {
+	const elsewhere = others.find(searching);
+	if (elsewhere) {
 		return hint(
 			"Leave a trip while it searches.",
 			`Open ${elsewhere.Name}, go to the start screen while it searches, then come back to it.`
-		);
-	}
-	if (elsewhere) {
-		return hint(
-			"Restart a search, then leave.",
-			`Open ${elsewhere.Name}, restart a search from its card, then leave it while it runs and come back.`
 		);
 	}
 	return hint("Leave a trip while it searches.", "Plan a trip, go to the start screen while it runs, then come back to it.");
@@ -101,9 +90,7 @@ function watchLine(trips: readonly IHintTrip[], live: IHintLive): string {
 	const trip = trips.find((t) => searching(t) || t.Facts.QuestionOpen);
 	if (trip) {
 		const kinds = trip.Facts.Searching;
-		return kinds.length > 0
-			? `${trip.Name}'s ${searchesOf(kinds)} ${kinds.length === 1 ? "comes" : "come"} back interrupted, with what ${kinds.length === 1 ? "it" : "they"} found kept.`
-			: `${trip.Name}'s open question closes, and the agent offers it again.`;
+		return kinds.length > 0 ? `${trip.Name}'s ${searchesOf(kinds)} ${carriesOn(kinds)}.` : `${trip.Name}'s open question is asked again.`;
 	}
 	if (live.Streaming) return reloadLine(live.Streaming);
 	if (live.Sending) return `Your message to ${live.Sending} comes back as Didn't send, with Retry.`;
@@ -135,9 +122,6 @@ function twoHint(open: IHintTrip | undefined, others: readonly IHintTrip[]): ITo
 		const whose = live === open ? "this trip's" : `${live.Name}'s`;
 		return hint("Run two at once.", `Plan another trip while ${whose} ${searchesOf(kinds)} ${kinds.length === 1 ? "runs" : "run"}.`);
 	}
-	if (open && stopped(open)) return hint("Run two at once.", "Restart a search from its card, then plan another trip while it runs.");
-	const idle = others.find(stopped);
-	if (idle) return hint("Run two at once.", `Open ${idle.Name} and restart a search, then plan another trip while it runs.`);
 	return hint("Run two at once.", "Start a trip, then plan another while the first is still searching.");
 }
 

@@ -1,4 +1,4 @@
-import { defineEffect, type IEffect, type IEntity } from "treflex";
+import { type IEffect, type IEntity } from "treflex";
 
 declare module "treflex" {
 	interface IMessageRegistry {
@@ -9,7 +9,10 @@ declare module "treflex" {
 interface IFeedInfo {
 	Title: string;
 }
-const fetchFeed = defineEffect<IEffect & { Type: "Reader/FetchFeed"; Url: string }, IFeedInfo | null>("Reader/FetchFeed");
+interface IFetchFeed extends IEffect {
+	Type: "Reader/FetchFeed";
+	Url: string;
+}
 
 interface IFeed extends IEntity {
 	Url: string;

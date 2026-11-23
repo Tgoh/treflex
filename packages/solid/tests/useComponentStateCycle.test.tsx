@@ -1,12 +1,11 @@
 import type { IActionGenerator, IWithId } from "treflex";
 import type { IUseComponentState } from "../src/Hooks/useComponentState";
-import { createRoot } from "solid-js";
 import { createRuntime, StateCycleError } from "treflex";
 import { rawOf } from "treflex/internal";
 import { describe, expect, it, vi } from "vitest";
 import { TreflexProvider } from "../src/Context/TreflexContext";
 import { useComponentState } from "../src/Hooks/useComponentState";
-import { unhandledDuring } from "./unhandledDuring";
+import { mount } from "./mount";
 
 function mountLocal<T extends object>(
 	factory: () => T
@@ -22,14 +21,11 @@ function mountLocal<T extends object>(
 		local = useComponentState(factory);
 		return null;
 	};
-	const dispose = createRoot((disposer) => {
-		void (
-			<TreflexProvider value={runtime as any}>
-				<Inner />
-			</TreflexProvider>
-		);
-		return disposer;
-	});
+	const { dispose } = mount(() => (
+		<TreflexProvider value={runtime as any}>
+			<Inner />
+		</TreflexProvider>
+	));
 	return {
 		local,
 		dispose
@@ -58,8 +54,8 @@ describe("useComponentState and a state cycle", () => {
 		dispose();
 	});
 
-	it("refuses a seed holding a frozen cycle, raised uncaught from the provider", async () => {
-		const raised = await unhandledDuring(() =>
+	it("refuses a seed holding a frozen cycle, thrown from the render that mounts it", () => {
+		expect(() =>
 			mountLocal(() => {
 				const a: any = {};
 				a.b = {
@@ -69,10 +65,7 @@ describe("useComponentState and a state cycle", () => {
 				Object.freeze(a);
 				return a;
 			})
-		);
-		expect(raised.map(String)).toEqual([
-			expect.stringMatching(/the factory's result is not plain: cycle at/)
-		]);
+		).toThrow(/the factory's result is not plain: cycle at/);
 	});
 
 	it("refuses a loop as the tree does, undoing the slice, and takes the next write", async () => {

@@ -36,11 +36,7 @@ export function restoreBanner(portal: IPortal): IRestoreLines | null {
 	const back = sections.flatMap((s) => s.Back);
 	const lost = sections.flatMap((s) => s.Lost);
 	if (lost.length === 0) {
-		lost.push(
-			portal.Restore?.LostAny
-				? "Nothing on what's still here"
-				: "Nothing: no search was running, no question was open and no message was sending"
-		);
+		lost.push(portal.Restore?.LostAny ? "Nothing on what's still here" : "Nothing: no question or message was cut off");
 	}
 	return {
 		Back: back,

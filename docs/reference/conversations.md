@@ -83,12 +83,22 @@ A dialog about another entity, a ticket say, is owned by the ticket, so removing
 
 #### A decision the server must accept
 
-Where a refusal should show in the dialog, the answer is the outcome, not the input. The dialog calls an action with the ask's id; the action saves and answers only on success, and hands a failure back to the dialog as its result. The ask stays open through the save, so the dialog keeps its mount and can try again:
+Where a refusal should show in the dialog, the answer is the outcome, not the input. The dialog calls an action with the ask's id; the action saves and answers only on success, and hands a failure back to the dialog as its result. A failure from the server is part of the save effect's answer. The ask stays open through the save, so the dialog keeps its mount and can try again:
 
 ```ts
+import { defineEffect, type IEffect } from "treflex";
+
 interface IPolicy extends IEntity {
     Name: string;
 }
+
+interface ISaveName extends IEffect {
+    Type: "Api/SaveName";
+    Id: string;
+    Name: string;
+}
+
+const saveName = defineEffect<ISaveName, IRenameResult | { Error: string }>("Api/SaveName");
 
 export function* askRename(draft: IPolicy) {
     const renamed = yield* open(ask<IRenameResult>(draft, { Path: "Policy/Rename", Name: draft.Name }));
@@ -96,15 +106,11 @@ export function* askRename(draft: IPolicy) {
 }
 
 export function* rename(draft: IPolicy, askId: IAskId<IRenameResult>, name: string): IActionGenerator<{ Error: string } | undefined> {
-    try {
-        const result = yield* api.rename(draft.$Id, name);
-        draft.Name = result.Name;
-        yield* answer(askId, result);
-        return undefined;
-    } catch (error) {
-        if (!(error instanceof ApiError)) throw error;
-        return { Error: error.message };
-    }
+    const result = yield* saveName({ Id: draft.$Id, Name: name });
+    if ("Error" in result) return { Error: result.Error };
+    draft.Name = result.Name;
+    yield* answer(askId, result);
+    return undefined;
 }
 ```
 
@@ -132,9 +138,12 @@ On the record stream an ask is one `ask` effect, whose descriptor carries the re
 
 ### The durable conversation
 
-A plain ask dies at a reload. A conversation that must survive one is built from state instead: an opening action writes a row into the tree and ends, the dialog renders the row, and the answering actions re-read the row from current state and do nothing when it is gone. Nothing waits on it, so a restore brings the row back with what the person typed. Where the answering view can't see the owner, the answer is a `publish`, and the owner's saved binding carries the wiring. Overlapping conversations of one kind carry an app-minted id in the row, passed back by the answering dispatch.
+A plain ask dies at a reload with the action waiting on it. A conversation that must survive one is written one of two ways, each right for the behaviour an app wants:
 
-**Choose per step: would the person be annoyed if a reload dismissed this?** A seconds-long confirm is a plain ask. Typed input they would resent re-entering is a row.
+- **Rows in state** survive any restore, a deploy included. An opening action writes a row into the tree and ends, the dialog renders the row, and the answering actions re-read the row from current state and do nothing when it is gone. Nothing waits on it, so a restore brings the row back with what the person typed. Where the answering view can't see the owner, the answer is a `publish`, and the owner's saved binding carries the wiring. Overlapping conversations of one kind carry an app-minted id in the row, passed back by the answering dispatch.
+- **Answers in locals, with resume,** survive a reload of the same build, and after a deploy the repair starts the conversation again. The flow is one action that asks inside `open(...)` and keeps each answer in a local variable, marked `resumable` on a runtime with `resume`; a restore into the same build asks the open question again, under a new id, and the flow carries on ([resuming a flow](./restart-and-records.md#resuming-a-flow)).
+
+**Choose per step: would the person be annoyed if a reload dismissed this?** A seconds-long confirm is a plain ask. Typed input they would resent re-entering is a row, or an answer in a resumed flow's locals.
 
 ## Caveats
 

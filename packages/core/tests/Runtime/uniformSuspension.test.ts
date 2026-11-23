@@ -1,9 +1,9 @@
 import type { IAction, IActionGenerator } from "../../src/Types/IAction";
-import { createRoot } from "solid-js";
 import { describe, expect, it } from "vitest";
 import { getDataGlobal } from "../../src/Reads/getData";
 import { createRuntime } from "../../src/Runtime/createRuntime";
 import { open } from "../../src/Runtime/open";
+import * as reactive from "../reactive";
 import { rootSetState } from "../testHelpers";
 
 type ITestState = {
@@ -16,7 +16,7 @@ const getDataAny = getDataGlobal as unknown as (key: string) => Generator<any, u
 
 describe("synchronous reads", () => {
 	it("runs consecutive read yields in one synchronous chain — nothing interleaves", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const runtime = createRuntime<ITestState>({
 					$Id: "Root",
@@ -61,7 +61,7 @@ describe("synchronous reads", () => {
 	});
 
 	it("runs an effect settlement's following read chain synchronously — adjacent by construction", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const runtime = createRuntime<ITestState>({
 					$Id: "Root",
@@ -122,7 +122,7 @@ describe("synchronous reads", () => {
 	});
 
 	it("keeps effect yields as interleave points — the recorded boundary", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const runtime = createRuntime<ITestState>({
 					$Id: "Root",

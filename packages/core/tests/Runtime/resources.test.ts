@@ -1854,7 +1854,7 @@ describe("resources: methods", () => {
 		world.runtime.dispose();
 	});
 
-	it("sends a handler's error to the caller by reference", async () => {
+	it("sends a handler's error to the caller as a copy of its native type", async () => {
 		const world = build();
 		world.runtime.registerReceiver(FeedReceiver);
 		registerFeed(world);
@@ -1868,7 +1868,9 @@ describe("resources: methods", () => {
 		}
 		await world.dispatch(openFeed);
 		await world.dispatch(call);
-		expect(caught).toBeInstanceOf(AppError);
+		expect(caught).toBeInstanceOf(Error);
+		expect(caught).not.toBeInstanceOf(AppError);
+		expect((caught as Error).message).toBe("refused");
 		world.runtime.dispose();
 	});
 
@@ -2143,7 +2145,7 @@ describe("resources: r.run", () => {
 		});
 		world.runtime.registerReceiver(FeedReceiver);
 		world.runtime.registerImplementation("test/broken", () => {
-			throw new AppError("down");
+			throw new Error("down");
 		});
 		let ctx!: IResourceContext<"test/feed">;
 		world.runtime.registerResourceType("test/feed", (_params, r) => {
@@ -2155,7 +2157,7 @@ describe("resources: r.run", () => {
 				Type: "test/broken"
 			};
 		}
-		await expect(ctx.run(broken())).rejects.toBeInstanceOf(AppError);
+		await expect(ctx.run(broken())).rejects.toThrow("down");
 		function* timer(): Generator<any, void, any> {
 			yield* (startTimer as unknown as (...args: unknown[]) => Generator<any, void, any>)(world.runtime.state, "x", FeedReceiver, 10);
 		}

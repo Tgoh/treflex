@@ -7,7 +7,7 @@
 		"declaration": true,
 		"esModuleInterop": true,
 		"jsx": "preserve",
-		"jsxImportSource": "solid-js",
+		"jsxImportSource": "@solidjs/web",
 		"lib": [
 			"ES2022",
 			"DOM",

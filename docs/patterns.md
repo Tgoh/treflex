@@ -245,6 +245,54 @@ export async function boot(): Promise<IRuntime<IBoard>> {
 
 **Why.** A restore doesn't run what the fresh path runs, such as an `init`, so a load placed there runs on the first open only, and a load a component dispatches when it mounts runs again at each mount. The boot discards the dispatch's promise, so a failed load needs the runtime's `onError` ([the dispatch promise](./reference/failure.md#the-dispatch-promise)). Rules: [restoring](./reference/restart-and-records.md#restoring), [arrival marks](./reference/actions.md#arrival-marks).
 
+### Load a screen's data when its route opens
+
+**Situation.** A screen's data should load when the user opens the screen.
+
+**Shape.** The route is main state, since a restore should bring back the screen the user was on. The action that changes the route writes the location through the route resource's method and starts the screen's load, through an action that reads the route from the draft when it runs. A route that arrives from outside, from the URL or from back and forward, reaches the tree through what already carries it there, a [resource](./reference/live-sources.md#choosing-a-resource), and the receiver case that writes it starts the load the same way.
+
+After a restore every resource reopens ([resources after a restore](./reference/restart-and-records.md#resources-after-a-restore)). A route resource that delivers the current location when it opens, as it must for a deep link to load on a fresh boot, starts the load by itself. A boot that starts it as well, [as on opening](#load-data-when-the-app-opens), dispatches `refreshScreen`, never a load with an id it read from the restored state. The location can differ from the snapshot's, and that load, landing after the resource's, would replace the right one through `latest`; `refreshScreen` reads the route when it runs, so either order loads the board on screen.
+
+```ts
+declare module "treflex" {
+    interface IResourceTypeRegistry {
+        route: { Params: {}; Methods: { push(path: string): void } };
+    }
+    interface IResourceRegistry {
+        "App/Route": { Type: "route" };
+    }
+}
+
+interface IBoardsApp extends IEntity {
+    Screen: "Boards" | "Board";
+    BoardId: string | null;
+    Board: IBoard;
+}
+
+const fetchBoardById = defineEffect<{ Type: "App/FetchBoardById"; BoardId: string }, IBoardInfo>("App/FetchBoardById");
+
+export function* loadBoard(draft: IBoard, boardId: string): IActionGenerator {
+    const info = yield* fetchBoardById({ BoardId: boardId });
+    yield* assignBoard(draft, info);
+}
+latest(loadBoard);
+
+export function* refreshScreen(draft: IBoardsApp): IActionGenerator {
+    if (draft.Screen === "Board" && draft.BoardId !== null) {
+        yield* start(loadBoard, draft.Board, draft.BoardId);
+    }
+}
+
+export function* openBoard(draft: IBoardsApp, boardId: string): IActionGenerator {
+    draft.Screen = "Board";
+    draft.BoardId = boardId;
+    yield* resource(draft, "App/Route").push(`/boards/${boardId}`);
+    yield* refreshScreen(draft);
+}
+```
+
+**Why.** A load the screen's component dispatches when it mounts runs again at each mount; the navigation is the event behind it. A route written to the tree alone leaves the location behind, so a reload returns to the old link and in-app navigation makes no history entry. The load is keyed on what it loads, so it is marked `latest`: a second open stops a load still running for the first. Rules: [where an action starts](./reference/views.md#where-an-action-starts), [arrival marks](./reference/actions.md#arrival-marks).
+
 ### One owner for each fact, and others derive it
 
 **Situation.** A parent shows state its children own: a run shows how many of its questions wait for an answer, a session shows whether its import is building.
@@ -467,9 +515,9 @@ export function* draw(draft: IChartRow): IActionGenerator {
 
 **Situation.** An action handles some failures itself, such as a request the server refused.
 
-**Shape.** The effect implementation converts request failures, a failed `fetch` included, to an application error class. The action catches that class and rethrows everything else, as guide [page 6](./guide/06-failures.md#its-own-failures) does.
+**Shape.** The effect implementation answers a request failure with data, a failed `fetch` included. A `yield*` helper beside the effect throws an application error class from that answer, and the action catches that class and rethrows everything else, as guide [page 6](./guide/06-failures.md#its-own-failures) does.
 
-**Why.** A failed `fetch` rejects with a `TypeError`, the class a coding error throws, so a `catch` that takes everything shows bugs as outages and keeps them off the failure route. Rules: [when an action throws](./reference/failure.md#when-an-action-throws), [refusals](./reference/failure.md#refusals).
+**Why.** A failed `fetch` rejects with a `TypeError`, the class a coding error throws, so a `catch` that takes everything shows bugs as outages and keeps them off the failure route. Rules: [when an action throws](./reference/failure.md#when-an-action-throws), [a rejection crosses as a copy](./reference/effects.md#a-rejection-crosses-as-a-copy), [a failure the app handles](./reference/effects.md#a-failure-the-app-handles), [refusals](./reference/failure.md#refusals).
 
 ## Reads
 

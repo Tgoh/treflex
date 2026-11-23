@@ -161,7 +161,7 @@ export const Article = createEntityFeature<IArticle>("Reader/Article")({ markRea
 export const ArticleView = Article.provider(() => {
     const article = Article.use();
     return (
-        <a href={article.state.Link} classList={{ read: article.state.Read }} onClick={() => article.markRead()}>
+        <a href={article.state.Link} class={{ read: article.state.Read }} onClick={() => article.markRead()}>
             {article.state.Title}
         </a>
     );
@@ -202,6 +202,6 @@ Clicking an article runs `markRead` on that article. It doesn't wait for a refre
 
 ## Where the reference takes over
 
-`reconcileRows`' full contract is in [refreshing rows](../reference/write-path.md#refreshing-rows) and [keys and the refresh step](../reference/write-path.md#keys-and-the-refresh-step). [`start`](../reference/actions.md#start) and [which entity owns an action](../reference/actions.md#which-entity-owns-an-action) are in actions, and [a list over a selector](../reference/views.md#a-list-over-a-selector) in views. [Patterns](../patterns.md#a-refresh-per-entity-type) covers rows whose refresh is their own action.
+`reconcileRows`' full contract is in [refreshing rows](../reference/write-path.md#refreshing-rows), which also covers [a record of rows](../reference/write-path.md#a-record-of-rows) keyed by id, and [keys and the refresh step](../reference/write-path.md#keys-and-the-refresh-step). [`start`](../reference/actions.md#start) and [which entity owns an action](../reference/actions.md#which-entity-owns-an-action) are in actions, and [a list over a selector](../reference/views.md#a-list-over-a-selector) in views. [Patterns](../patterns.md#a-refresh-per-entity-type) covers rows whose refresh is their own action.
 
 Next: [5. Receivers and messages](./05-messages.md).

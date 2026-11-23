@@ -1,4 +1,4 @@
-import { entity, inFlight, latest, leading, named, open, start, workTag, type IActionGenerator, type IActionYield, type IEntity, type IOpenMark, type ISelectorGenerator } from "treflex";
+import { entity, inFlight, latest, leading, named, open, redactArgs, start, workTag, type IActionGenerator, type IActionYield, type IEntity, type IOpenMark, type ISelectorGenerator } from "treflex";
 
 import { useInFlight } from "treflex-solid";
 
@@ -43,3 +43,8 @@ interface IPicker extends IEntity {
 	Results: { Name: string }[];
 }
 declare function findCustomers(text: string): IActionGenerator<{ Name: string }[]>;
+
+interface ISession extends IEntity {
+	User: string;
+}
+declare function signIn(user: string, password: string): IActionGenerator<string>;

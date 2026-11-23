@@ -1,6 +1,7 @@
 import type { IEntity } from "../Types/IEntity";
 import type { IReceiver } from "../Types/IReceiver";
 import { mintedValues } from "../Effects/entity";
+import { errorClass } from "../Utility/errorClasses";
 import { BIND_WRITE, isDraftNode } from "./draftNode";
 import { TreflexRefusal } from "./refusal";
 import { rawOf } from "./viewProxy";
@@ -20,6 +21,8 @@ export class BindAfterWriteError extends TreflexRefusal {
 		this.id = id;
 	}
 }
+
+errorClass("treflex/BindAfterWriteError", BindAfterWriteError);
 
 function write(verb: "bind" | "unbind", node: unknown, receiverId: string | undefined): void {
 	if (node === null || typeof node !== "object" || Array.isArray(node)) {

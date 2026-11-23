@@ -2,7 +2,7 @@ import type { IAskEntry } from "../Types/IAskEntry";
 import type { IAskId } from "../Types/IAskId";
 import type { IDiagEmitter } from "../Types/IRuntimeEvent";
 import type { IJournal } from "./createJournal";
-import { host } from "../Solid/host";
+import { host } from "../Reactive/host";
 import { consoleDiag } from "../Types/IRuntimeEvent";
 import { bumpLater } from "./arrivals";
 

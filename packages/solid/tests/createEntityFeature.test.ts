@@ -1,17 +1,43 @@
 import type { IEntity } from "treflex";
-import { createRoot } from "solid-js";
+import { createComponent, createRoot } from "solid-js";
 import { describe, expect, it } from "vitest";
 import { createEntityFeature } from "../src/Context/createEntityFeature";
 import { TreflexProvider } from "../src/Context/TreflexContext";
+import { mount } from "./mount";
 
 interface State extends IEntity {
 	Value: number;
 }
 
+// Under no owner at all, Solid's own error comes first: a context can only be read under one.
+function underOwner<T>(fn: () => T): T {
+	return createRoot((dispose) => {
+		try {
+			return fn();
+		} finally {
+			dispose();
+		}
+	});
+}
+
 describe("createEntityFeature", () => {
 	it("use() throws a clear error when called outside the matching provider", () => {
 		const ctx = createEntityFeature<State>("test-feature")({});
-		expect(() => ctx.use()).toThrowError(/use\(\) called outside the matching provider.*test-feature/);
+		expect(() => underOwner(ctx.use)).toThrowError(/use\(\) called outside the matching provider.*test-feature/);
+	});
+
+	it("its provider throws an error naming the missing TreflexProvider when none is above it", () => {
+		const Wrapped = createEntityFeature<State>("test-feature-unprovided")({}).provider(() => null);
+		expect(() =>
+			mount(() =>
+				createComponent(Wrapped as any, {
+					state: {
+						$Id: "e1",
+						Value: 0
+					}
+				})
+			)
+		).toThrowError("[treflex] createEntityFeature's provider called outside a TreflexProvider.");
 	});
 
 	it("two factory calls with one id share one context in development (the HMR contract)", () => {
@@ -27,27 +53,26 @@ describe("createEntityFeature", () => {
 			b: function* () {}
 		});
 		let seen: any;
-		createRoot((d) => {
-			(TreflexProvider as unknown as Function)({
+		const Wrapped = first.provider(() => {
+			seen = second.use();
+			return null;
+		});
+		mount(() =>
+			createComponent(TreflexProvider, {
 				value: {
 					dispatch: () => Promise.resolve(),
 					runSelector: () => undefined
-				},
+				} as any,
 				get children() {
-					const Wrapped = first.provider(() => {
-						seen = second.use();
-						return null;
-					});
-					return (Wrapped as Function)({
+					return createComponent(Wrapped as any, {
 						state: {
 							$Id: "e1",
 							Value: 0
 						}
 					});
 				}
-			});
-			d();
-		});
+			})
+		).dispose();
 		// second.use() resolved inside first's provider, so the context is
 		// shared, and the refs now hold the second evaluation's module.
 		expect(typeof seen.b).toBe("function");
@@ -56,16 +81,11 @@ describe("createEntityFeature", () => {
 
 	it("use() throws with the module id in the message when provided", () => {
 		const ctx = createEntityFeature<State>("/path/to/my/Module.ts")({});
-		try {
-			ctx.use();
-			expect.fail("expected use() to throw");
-		} catch (e) {
-			expect((e as Error).message).toContain("/path/to/my/Module.ts");
-		}
+		expect(() => underOwner(ctx.use)).toThrowError("/path/to/my/Module.ts");
 	});
 
 	it("use() throws without an id when the factory was constructed anonymously", () => {
 		const ctx = createEntityFeature<State>()({});
-		expect(() => ctx.use()).toThrowError(/use\(\) called outside the matching provider/);
+		expect(() => underOwner(ctx.use)).toThrowError(/use\(\) called outside the matching provider/);
 	});
 });

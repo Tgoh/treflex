@@ -1,5 +1,4 @@
 import type { IActionGenerator } from "../../src/Types/IAction";
-import { createRoot } from "solid-js";
 import { describe, expect, it, vi } from "vitest";
 import { publish } from "../../src/Effects/publish";
 import { publishToNearest } from "../../src/Effects/publishToNearest";
@@ -7,6 +6,7 @@ import { startTimer } from "../../src/Effects/startTimer";
 import { bind } from "../../src/Runtime/bind";
 import { createRuntime } from "../../src/Runtime/createRuntime";
 import { receiver } from "../../src/Runtime/receiver";
+import * as reactive from "../reactive";
 import { rootSetState } from "../testHelpers";
 
 const publishAny = publish as any;
@@ -25,7 +25,7 @@ function bump(id: string) {
 
 describe("a fan-out that is only partly unresolved", () => {
 	it("delivers to every resolvable bound entity, names only the rest, and reports the receiver once", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const runtime = createRuntime<any>(
 					{
@@ -105,7 +105,7 @@ describe("a fan-out that is only partly unresolved", () => {
 	});
 
 	it("skips a bound entity an earlier receiver removed mid-fan-out, without a receiver:error", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const runtime = createRuntime<any>(
 					{
@@ -178,7 +178,7 @@ describe("the timer miss path's dedupe keys", () => {
 	it("do not collide across ids and receivers that share a joined spelling", async () => {
 		vi.useFakeTimers();
 		try {
-			await createRoot(async (dispose) => {
+			await reactive.root(async (dispose) => {
 				try {
 					// ("x y", "r") and ("x", "y r") join to the same string under a
 					// space-separated key, so a naive key reports one of the two.
@@ -224,7 +224,7 @@ describe("the timer scheduler's miss path", () => {
 	it("reports once, keeps the row, appends no dispatch record, and heals on registration", async () => {
 		vi.useFakeTimers();
 		try {
-			await createRoot(async (dispose) => {
+			await reactive.root(async (dispose) => {
 				try {
 					const runtime = createRuntime<any>(
 						{
@@ -282,7 +282,7 @@ describe("the timer scheduler's miss path", () => {
 
 describe("Action/Error escalation into an unresolved ancestor", () => {
 	it("is named in UnresolvedIds and passed, reaching the working error boundary above it", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const runtime = createRuntime<any>(
 					{
@@ -355,7 +355,7 @@ describe("Action/Error escalation into an unresolved ancestor", () => {
 
 describe("publishToNearest past an unresolved ancestor", () => {
 	it("still does not fall through, which the shadow test in messaging.test.ts also pins", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const runtime = createRuntime<any>({
 					$Id: "Root",

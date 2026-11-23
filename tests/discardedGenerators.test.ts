@@ -20,7 +20,9 @@ const globbed = import.meta.glob([
 	"../demos/todo/src/**/*.ts",
 	"../demos/todo/src/**/*.tsx",
 	"../demos/portal/src/**/*.ts",
-	"../demos/portal/src/**/*.tsx"
+	"../demos/portal/src/**/*.tsx",
+	"../demos/checkout/src/**/*.ts",
+	"../demos/checkout/src/**/*.tsx"
 ]);
 const cwd = (
 	globalThis as {
@@ -126,7 +128,7 @@ const OPTIONS: ts.CompilerOptions = {
 		"treflex-source"
 	],
 	jsx: ts.JsxEmit.Preserve,
-	jsxImportSource: "solid-js",
+	jsxImportSource: "@solidjs/web",
 	strict: true,
 	skipLibCheck: true,
 	noEmit: true
@@ -299,6 +301,8 @@ describe("discarded generator calls", () => {
 		expect(realFiles).toContain(`${cwd}/demos/portal/src/trips/Planner.ts`);
 		expect(realFiles).toContain(`${cwd}/demos/portal/src/trips/PlannerView.tsx`);
 		expect(realFiles).toContain(`${cwd}/demos/todo/src/index.tsx`);
+		expect(realFiles).toContain(`${cwd}/demos/checkout/src/shop/shop.ts`);
+		expect(realFiles).toContain(`${cwd}/demos/checkout/src/views/ShopView.tsx`);
 		expect(realFiles.length).toBeGreaterThan(350);
 
 		const files = program.getSourceFiles().filter((f) => !f.isDeclarationFile && !(f.fileName in SEEDS) && realFiles.includes(f.fileName));

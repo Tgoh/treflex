@@ -14,6 +14,20 @@ export type IRecordChange = {
 	// The array's length before a created index write at or past its end,
 	// present exactly when the write grew an array.
 	GrewFrom?: number;
+	/**
+	 * The entity the write landed in, as the tree stood when it was made: `Path` counts from the acting
+	 * entity and can name a position another node holds by then. Present on a change of a step that began
+	 * while a tap asked with `landing: true`, when an entity holds the written place, so a change without
+	 * one reads the same whether no entity holds the place or no tap asked. See
+	 * docs/reference/restart-and-records.md#where-a-write-landed.
+	 */
+	Landing?: IRecordLanding;
+};
+
+/** The nearest entity at or above a written place, and the keys from that entity down to it. */
+export type IRecordLanding = {
+	EntityId: string;
+	Path: PropertyKey[];
 };
 
 /**
@@ -24,8 +38,6 @@ export type IRecordChange = {
 export type IExternalAnswer = {
 	Key: string;
 	Value?: unknown;
-	/** `Value`'s JSON form doesn't give back exactly what the action received, such as a `-0`. */
-	Lossy?: true;
 	Redacted?: true;
 };
 
@@ -52,8 +64,17 @@ export type IRecord =
 			EntityId: string;
 			Path: string[];
 			Args: unknown[];
+			/** On an action marked `redactArgs`: `Args` is empty because its arguments were withheld. */
+			ArgsRedacted?: true;
 			StartedBy?: string;
 			Origin?: IActionOrigin;
+			/**
+			 * On an action a restore resumed: its `ActionId` in the snapshot, which `result.resumed` names
+			 * it by. See docs/reference/restart-and-records.md#what-a-restore-reports.
+			 *
+			 * @experimental
+			 */
+			ResumedFrom?: string;
 	  }
 	| {
 			Seq: number;

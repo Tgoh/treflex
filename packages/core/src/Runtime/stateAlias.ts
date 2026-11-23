@@ -1,3 +1,4 @@
+import { errorClass } from "../Utility/errorClasses";
 import { TreflexRefusal } from "./refusal";
 
 export class StateAliasError extends TreflexRefusal {
@@ -17,3 +18,5 @@ export class StateAliasError extends TreflexRefusal {
 		this.others = others;
 	}
 }
+
+errorClass("treflex/StateAliasError", StateAliasError);

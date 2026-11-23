@@ -1,11 +1,12 @@
-import type { JSX } from "solid-js";
+import type { JSX } from "@solidjs/web";
 import type { IActionGenerator, IAskEntry, IAskId, IEntity, IRuntime, ISelectorGenerator } from "treflex";
-import { createRoot, For } from "solid-js";
+import { For } from "solid-js";
 import { AnswerOutsideOwnerError, answer, ask, createRuntime, open, pendingAsks } from "treflex";
 import { describe, expect, it } from "vitest";
 import { createEntityFeature } from "../src/Context/createEntityFeature";
 import { TreflexProvider, useDispatch } from "../src/Context/TreflexContext";
 import { useComponentState } from "../src/Hooks/useComponentState";
+import { mount } from "./mount";
 import { pendingAsksOf } from "./treeWrite";
 
 type IAnswer = "yes" | "no" | undefined;
@@ -49,21 +50,17 @@ const Row = createEntityFeature<IRow>("tests/askDialog/Row")({});
 type IButtons = Record<string, () => Promise<unknown>>;
 
 // The dialog a view renders for an open ask: its buttons stand in for DOM clicks.
-function mount(runtime: IRuntime<IRoot>, Dialog: (props: { entry: IAskEntry; buttons: IButtons }) => JSX.Element) {
+function mountScreen(runtime: IRuntime<IRoot>, Dialog: (props: { entry: IAskEntry; buttons: IButtons }) => JSX.Element) {
 	const buttons: IButtons = {};
 	const View = Screen.provider(() => {
 		const screen = Screen.use();
 		return <For each={screen.openAsks()}>{(entry) => <Dialog entry={entry} buttons={buttons} />}</For>;
 	});
-	const dispose = createRoot((disposer) => {
-		TreflexProvider({
-			value: runtime,
-			get children() {
-				return <View state={runtime.state} />;
-			}
-		});
-		return disposer;
-	});
+	const { dispose } = mount(() => (
+		<TreflexProvider value={runtime}>
+			<View state={runtime.state} />
+		</TreflexProvider>
+	));
 	return {
 		buttons,
 		dispose
@@ -82,7 +79,7 @@ describe("change 5 in Solid: a dialog answers an ask by dispatching at its owner
 				}
 			]
 		});
-		const { buttons, dispose } = mount(runtime, (props) => {
+		const { buttons, dispose } = mountScreen(runtime, (props) => {
 			const dispatch = useDispatch();
 			const id = props.entry.Id as IAskId<IAnswer>;
 			props.buttons.yes = () => dispatch(answers, props.entry.OwnerId, id, "yes");
@@ -119,7 +116,7 @@ describe("change 5 in Solid: a dialog answers an ask by dispatching at its owner
 			props.buttons.local = () => local.dispatch(answers, props.entry.Id as IAskId<IAnswer>, local.state.Choice);
 			return null;
 		});
-		const { buttons, dispose } = mount(runtime, (props) => {
+		const { buttons, dispose } = mountScreen(runtime, (props) => {
 			const row = runtime.state.Rows.find((r) => r.$Id === props.entry.OwnerId)!;
 			return <RowDialog state={row} entry={props.entry} buttons={props.buttons} />;
 		});

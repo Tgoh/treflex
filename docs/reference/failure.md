@@ -8,9 +8,9 @@ The guide teaches this in [6. Failures](../guide/06-failures.md). The pattern [c
 
 ### When an action throws
 
-**A failure is handled by the first thing that takes it.** Inside the action, that is a `catch`, which sees the action's own throws and its effects' rejections. A throw that leaves the action takes [the route](#the-route) to one taker: the nearest error boundary, or `onError` at the top. Its dispatch promise rejects with it, and the [`failure` event](#the-failure-event) reports it. Writes made before the throw stay.
+**A failure is handled by the first thing that takes it.** Inside the action, that is a `catch`, which sees the action's own throws and its effects' rejections, each rejection [as a copy](./effects.md#a-rejection-crosses-as-a-copy). A throw that leaves the action takes [the route](#the-route) to one taker: the nearest error boundary, or `onError` at the top. Its dispatch promise rejects with it, and the [`failure` event](#the-failure-event) reports it. Writes made before the throw stay. The route, `onError`, the `failure` event and the dispatch promise carry what the action ended with, the object and not its serialized form: for a rejection nobody converted, that is the copy. What the tap extras carry is in [the tap](./restart-and-records.md#the-tap).
 
-Handling meant for one call is a `catch` inside the action, which rethrows anything it doesn't expect, a [refusal](#refusals) included:
+Handling meant for one call is a `catch` inside the action, which rethrows anything it doesn't expect, a [refusal](#refusals) included. The failure it expects is part of the effect's answer, and a helper throws it as the app's class. Here `save` is that helper and `ConflictError` its class, both from the [example in effects](./effects.md#a-failure-the-app-handles):
 
 ```ts
 import type { IActionGenerator, IEntity } from "treflex";
@@ -21,10 +21,9 @@ interface IEditor extends IEntity {
     SaveError: string;
 }
 
-export function* save(draft: IEditor): IActionGenerator {
+export function* submit(draft: IEditor): IActionGenerator {
     try {
-        const saved = yield* api.save(draft.Form);
-        draft.Version = saved.Version;
+        draft.Version = yield* save(draft.Form);
     } catch (error) {
         if (!(error instanceof ConflictError)) throw error;
         draft.SaveError = "Someone else changed this record.";
@@ -57,7 +56,7 @@ No entity hears its own failure, so a root's goes to `onError`.
 
 ### onError
 
-`createRuntime(state, { onError })` is the root taker: it takes what no error boundary took, called with the live error and an `IErrorContext` ([below](#the-route)).
+`createRuntime(state, { onError })` is the root taker: it takes what no error boundary took, called with the error and an `IErrorContext` ([below](#the-route)).
 
 **Log from the [`failure` event](#the-failure-event), and keep a root taker.** The event observes, and takes nothing: with no `onError`, every failure nothing else takes is reported twice, once by the logger and once as an unhandled rejection. Keep an `onError` that does nothing else:
 
@@ -77,7 +76,7 @@ export function boot(seed: IShell, log: (event: IFailureEvent) => void) {
 
 Once a throw leaves the action, in this order:
 
-1. **The terminal record lands**: `action:end` with `Status: "errored"`, the live error on the tap extras.
+1. **The terminal record lands**: `action:end` with `Status: "errored"`, the error on the tap extras.
 2. **The route starts**, looking for one taker: the nearest error boundary, or `onError` at the top, or nothing ([below](#the-route)).
 3. **The dispatch promise rejects** with it ([below](#the-dispatch-promise)).
 4. **The `failure` event fires** once the route has ended, saying whether something took it.
@@ -89,7 +88,7 @@ Nothing is unwound, with two exceptions: a step whose writes break the tree rule
 1. **The nearest error boundary**: the nearest ancestor [bound](./messaging.md#binding) to a registered receiver with an `Action/Error` case, walking up from the failing entity's parent, from where the entity is now. An ancestor bound to an unregistered receiver is passed. An entity that has left the tree has no error boundary. An action on [part of an entity](./views.md#a-form-over-part-of-an-entity) fails from that entity.
 2. **The error boundary has taken it when its action completes**, an early return included. If its action ends cancelled or dropped, the failure goes on up.
 3. **An error boundary passes a failure on by rethrowing the payload it was given.** The next one up gets the same failure, with the same publisher, `Name` and `Label`. Any other throw is the error boundary's own failure: it takes the route from the error boundary's entity, and carries the failure it was handling as `Cause`.
-4. **`onError`** takes what no error boundary took, a root's own failure included. Its `IErrorContext` is `{ Name, Label, EntityId, Cause? }`, `Name` and `Label` as on the [failure event](#the-failure-event), `Cause` being the live failure an error boundary was handling when the failure is the error boundary's own. A failure an error boundary took never reaches it, so it is not a count of every failure: the `failure` event is.
+4. **`onError`** takes what no error boundary took, a root's own failure included. Its `IErrorContext` is `{ Name, Label, EntityId, Cause? }`, `Name` and `Label` as on the [failure event](#the-failure-event), `Cause` being the failure an error boundary was handling when the failure is the error boundary's own. A failure an error boundary took never reaches it, so it is not a count of every failure: the `failure` event is.
 5. **Nothing**, when there is no `onError` or `onError` throws: an unhandled rejection ([below](#the-dispatch-promise) says of what).
 
 The delivery to an error boundary queues behind a [hold](./actions.md#holds) on its entity like any work, so an error boundary whose entity is held across a long wait hears its failures after the wait. [`action/long-hold`](./troubleshooting.md#actionlong-hold) names the stall; an action that must hear them during the wait wraps it in `open(...)`.
@@ -98,9 +97,23 @@ The delivery to an error boundary queues behind a [hold](./actions.md#holds) on 
 
 | Field | |
 |---|---|
-| `Error` | The throw, serialized: `{ Thrown: "error", Name, Message, Stack?, Fields? }` for an `Error`, `Fields` holding a JSON-safe copy of its enumerable own fields; `{ Thrown: "value", Data? }` for any other value, a server's error envelope say |
+| `Error` | The throw, serialized: `{ Thrown: "error", Name, Message, Stack?, Fields?, Native?, Class?, Cause?, Errors?, Error?, Suppressed? }` for an error; `{ Thrown: "value", Data? }` for any other value, a server's error envelope say |
 | `Name`, `Label` | The action that failed: its [durable name](./actions.md#durable-names) or `null`, and its function's own name or `null`, a label for display |
 | `Cause` | On an error boundary's own failure, the failure it was handling, serialized |
+
+An `Error`'s form holds:
+
+| Field | |
+|---|---|
+| `Name`, `Message`, `Stack?` | Read off the error |
+| `Fields` | The enumerable own string-keyed fields other than `name`, `message`, `stack` and `cause`, and other than `errors` on an `AggregateError` and `error` and `suppressed` on a `SuppressedError`, which `Errors`, `Error` and `Suppressed` carry; each as its JSON round trip |
+| `Native` | The nearest native error type up the prototype chain, such as `"TypeError"`, `"DOMException"` or `"WebAssembly.RuntimeError"`, typed `INativeErrorName`; absent for `Error` |
+| `Class` | The nearest of treflex's own error classes up the prototype chain, such as `"treflex/EntityGoneError"`: the error's class, or the one an app's class extends |
+| `Cause` | The error's own `cause`, serialized the same way |
+| `Errors` | An `AggregateError`'s `errors`, serialized the same way |
+| `Error`, `Suppressed` | A `SuppressedError`'s `error` and `suppressed`, serialized the same way. An error named `"SuppressedError"` that has both as own properties, as a compiler's helper makes where the engine has no `SuppressedError`, counts as one here and in `Fields`, and is rebuilt with both as own properties |
+
+`Error.Cause` is the thrown error's `cause`; the payload's own `Cause` is the failure an error boundary was handling. `Cause`, `Errors`, `Error` and `Suppressed` are followed eight levels below the thrown error and to 100 nested errors in all, with every item of `Errors` counted whether it is an error or not, read depth first in that order, and an error that is already on the way down is not followed again.
 
 The context's `publisher.Id` is the entity whose action failed. The error is serialized because a message is data. The shape is `ISerializedThrow`, and an app can make one itself with `serializeThrow(error)`, which never throws: to put a failure in state, or log it as data.
 
@@ -136,7 +149,7 @@ A dispatch refused before the action starts takes no route: a target [`dispatch`
 
 | Field | |
 |---|---|
-| `Error` | The live throw |
+| `Error` | What the action ended with |
 | `ActionId`, `EntityId` | The action that threw and its entity |
 | `Name`, `Label` | The action's [durable name](./actions.md#durable-names) or `null`, and its function's own name or `null`, a label for display. A log reads `Name ?? Label`. An error boundary's own failure, and a delivery's, has no name, and its label is the receiver's id |
 | `Status` | How the action ended: `"errored"`, `"cancelled"`, or `"completed"` for a close throw after it completed |
@@ -165,7 +178,7 @@ A failing `parallel` branch stops its siblings and rethrows once they have ended
 
 A **refusal** is a treflex rule the code broke, the same whatever the data: `DraftInsideOpenError`, `EntityReplacedError`, `StateAliasError`, `AskRefusedError` and the rest. Every one extends **`TreflexRefusal`**, and **`isRefusal(error)`** recognises one, from a duplicate module load too. What the data can cause is not a refusal, so a `catch` around work over a server's payload can stay broad: `NonPlainDataError` and `ReconcileRowsKeyError` aren't refusals, nor are `EntityGoneError` and `DraftDetachedError`, which correct code expects, nor the `TypeError`s of argument checks.
 
-JavaScript can't let a refusal skip a `catch`, so a `catch` that can meet one rethrows it, as `save` above does. A development build reports a refusal an action swallowed as [`action/refusal-swallowed`](./troubleshooting.md#actionrefusal-swallowed): one its own code was refused with, which it ended without rethrowing, judged when it and all its branches have ended. A refusal `parallel` rethrows into a broad `catch` counts, and so does one `parallelSettled` hands back. Another action's refusal that rejects an effect this one waited on is that action's.
+JavaScript can't let a refusal skip a `catch`, so a `catch` that can meet one rethrows it, as `submit` above does. A development build reports a refusal an action swallowed as [`action/refusal-swallowed`](./troubleshooting.md#actionrefusal-swallowed): one its own code was refused with, which it ended without rethrowing, judged when it and all its branches have ended. A refusal `parallel` rethrows into a broad `catch` counts, and so does one `parallelSettled` hands back. Another action's refusal that rejects an effect this one waited on is that action's.
 
 `DraftDetachedError` is caught on purpose, as `if (error instanceof DraftDetachedError) return;`, or avoided by checking `isAttached` first ([`actions.md`](./actions.md#held-references)).
 
@@ -176,16 +189,24 @@ JavaScript can't let a refusal skip a `catch`, so a `catch` that can meet one re
 
 #### A view's throw
 
-**A view's throw is the view's failure, never an action's.** Under the Solid `TreflexProvider`, a view that throws, while it mounts or in a flush, is raised as an unhandled rejection, once per error object. The action whose write it reacted to completes, and the views queued behind it still run. The crashed view keeps its last output; one that should show a fallback goes inside Solid's `ErrorBoundary`. A cached selector or `getData` read holds a throw from its compute and rethrows it to each reader, so it fails the views reading it, and computes again when something it read changes. In React, an error boundary catches that rethrow in render.
+**A view's throw is the view's failure, never an action's.** In Solid, a view runs in Solid's flush, not in the step that wrote, so its throw, while it mounts or on an update, never fails the action whose write it reacted to. The throw is Solid's: `TreflexProvider` holds no boundary, and the nearest `<Errored>` of the app's own takes it, above the provider or below it. With none, Solid stops updating every view on the page, under other roots and other runtimes too, and its flush rethrows the error uncaught. An app from `npm create treflex` puts an `<Errored>` at its root.
+
+A boundary swaps its whole subtree to its fallback and pauses the subtree's effects. It comes back when the computation that threw runs again without throwing, with the children as they were:
+
+- a throw on update comes back when the state it read changes;
+- a reactive expression whose first run throws at mount comes back the same way;
+- a component body that throws at the app's first mount stays blank;
+- a component body that throws when a `<Show>` mounts it later comes back when the `Show` flips back.
+
+The user sees only the fallback, so it comes back only when something other than the user changes the state that threw. A cached selector or `getData` read holds a throw from its compute and rethrows it to each reader, so it fails the views reading it, and computes again when something it read changes. In React, an error boundary catches that rethrow in render.
 
 ### What treflex reports as data
 
-What treflex expects to go wrong comes back as data rather than a throw: `parallelSettled`'s outcomes, a cancelled or dropped dispatch resolving `undefined`, an ask whose owner left resolving `undefined`, a resource method nothing can answer resolving `undefined`. **`EntityGoneError`** is the race an interface meets most: a dispatch to an entity that isn't in the tree, or an `ask` or `openResource` on an owner that isn't or is leaving. Its `id` names the entity.
+What treflex expects to go wrong comes back as data rather than a throw: `parallelSettled`'s outcomes, a cancelled or dropped dispatch resolving `undefined`, an ask whose owner left resolving `undefined`, a resource method nothing can answer resolving `undefined`. **`EntityGoneError`** is the race an interface meets most: a dispatch to an entity that isn't in the tree, or an `ask` or `openResource` on an owner that isn't or is leaving. Its `id` names the entity. A `catch` matches it with `instanceof EntityGoneError`, which holds for the copy an action gets when an implementation's own dispatch rejected with it.
 
 ## Caveats
 
 - **When the `failure` event fires against the promise's handlers:** before them when `onError` took the failure, or an error boundary whose entity was free and which finished without waiting; otherwise after them.
 - **A publish of `Action/Error`** isn't refused: `publish("Action/Error", ...)` reaches every error boundary bound to a registered receiver, and `publishToNearest` the nearest one, and each handles it as a failure, though no action failed. Don't publish it.
-- **A thrown value with no JSON form** arrives changed in the payload, with a console warning. `Name` and `Message` read `"(unreadable)"`, exported as `UNREADABLE`, when the field reads `undefined` or its getter throws (any other value is stringified), and `Stack` is absent on the same terms. Throw `Error`s, or plain data.
-- **An action waiting on another's dispatch,** through an effect that calls `runtime.dispatch`, and not catching it, fails with the same error: its own failure, on its own route, so the one throw is heard on both.
-- **A view outside any provider,** a `createEffect` in a root of its own, still throws in the step's flush: the writing action fails with the view's error, and Solid discards the effects queued behind it, which stay dead until rebuilt. Keep views under a `TreflexProvider`.
+- **A thrown value with no JSON form** arrives changed in the payload, with a console warning, when the action threw it; one an implementation rejected with has already [crossed as its JSON form](./effects.md#a-rejection-crosses-as-a-copy). `Name` and `Message` read `"(unreadable)"`, exported as `UNREADABLE`, when the field reads `undefined` or its getter throws (any other value is stringified), and `Stack` is absent on the same terms.
+- **An action waiting on another's dispatch,** through an effect that calls `runtime.dispatch`, and not catching it, fails with a copy of the error: its own failure, on its own route, so the one throw is heard on both.

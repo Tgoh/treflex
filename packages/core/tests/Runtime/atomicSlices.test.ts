@@ -44,6 +44,8 @@ type IWorld = {
 	Sel?: IRow;
 	Pinned?: IRow;
 	Fresh?: IRow;
+	Box?: Record<string, number>;
+	Shelf?: Record<string, number>;
 };
 
 const seed = (): IWorld => ({
@@ -268,6 +270,145 @@ describe("a slice that breaks the tree rule is rolled back, and its action fails
 		]);
 		expect(h.pinged).toEqual([]);
 		expect(rawOf(h.runtime.state).Note).toBe("caught");
+		h.runtime.dispose();
+	});
+});
+
+describe("a record's key order after a rolled-back slice", () => {
+	async function boxed() {
+		const h = build();
+		await h.runtime.dispatch(function* (d: IWorld): IActionGenerator {
+			d.Box = {
+				a: 1,
+				b: 2,
+				c: 3,
+				d: 4,
+				e: 5
+			};
+			d.Shelf = {
+				x: 1,
+				y: 2,
+				z: 3
+			};
+		}, "root");
+		const before = h.shape();
+		const keys = () => {
+			const raw = rawOf(h.runtime.state);
+			return [
+				Object.keys(raw.Box!),
+				Object.keys(raw.Shelf!)
+			];
+		};
+		return {
+			...h,
+			before,
+			keys
+		};
+	}
+
+	it("puts keys deleted by delete and by writing undefined back in their places", async () => {
+		const h = await boxed();
+		const error = await h.refusal(function* (d) {
+			delete d.Box!.b;
+			d.Box!.d = undefined as never;
+			delete d.Box!.a;
+			d.Sel = d.Rows[0];
+		});
+		expect(error).toBeInstanceOf(StateAliasError);
+		expect(h.shape()).toBe(h.before);
+		expect(h.keys()).toEqual([
+			[
+				"a",
+				"b",
+				"c",
+				"d",
+				"e"
+			],
+			[
+				"x",
+				"y",
+				"z"
+			]
+		]);
+		h.runtime.dispose();
+	});
+
+	it("puts a key deleted and added again in the slice back in its place, with its old value", async () => {
+		const h = await boxed();
+		const error = await h.refusal(function* (d) {
+			delete d.Box!.b;
+			d.Box!.b = 9;
+			delete d.Box!.d;
+			d.Sel = d.Rows[0];
+		});
+		expect(error).toBeInstanceOf(StateAliasError);
+		expect(h.shape()).toBe(h.before);
+		expect(h.keys()[0]).toEqual([
+			"a",
+			"b",
+			"c",
+			"d",
+			"e"
+		]);
+		h.runtime.dispose();
+	});
+
+	it("puts back deletes interleaved across two records, each in its own order", async () => {
+		const h = await boxed();
+		const error = await h.refusal(function* (d) {
+			delete d.Box!.c;
+			delete d.Shelf!.x;
+			delete d.Box!.a;
+			delete d.Shelf!.y;
+			delete d.Box!.e;
+			d.Sel = d.Rows[0];
+		});
+		expect(error).toBeInstanceOf(StateAliasError);
+		expect(h.shape()).toBe(h.before);
+		expect(h.keys()).toEqual([
+			[
+				"a",
+				"b",
+				"c",
+				"d",
+				"e"
+			],
+			[
+				"x",
+				"y",
+				"z"
+			]
+		]);
+		h.runtime.dispose();
+	});
+
+	it("puts back the order the slice began with, after an earlier slice's deletes landed", async () => {
+		const h = await boxed();
+		await h.runtime.dispatch(function* (d: IWorld): IActionGenerator {
+			delete d.Box!.b;
+		}, "root");
+		const before = h.shape();
+		const error = await h.refusal(function* (d) {
+			delete d.Shelf!.y;
+			delete d.Box!.d;
+			delete d.Box!.a;
+			d.Sel = d.Rows[0];
+		});
+		expect(error).toBeInstanceOf(StateAliasError);
+		expect(h.shape()).toBe(before);
+		expect(h.keys()).toEqual([
+			[
+				"a",
+				"c",
+				"d",
+				"e"
+			],
+			[
+				"x",
+				"y",
+				"z"
+			]
+		]);
 		h.runtime.dispose();
 	});
 });

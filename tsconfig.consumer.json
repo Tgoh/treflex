@@ -5,7 +5,7 @@
 		"exactOptionalPropertyTypes": true,
 		"incremental": false,
 		"jsx": "preserve",
-		"jsxImportSource": "solid-js",
+		"jsxImportSource": "@solidjs/web",
 		"noEmit": true,
 		"noUncheckedIndexedAccess": true,
 		"paths": {

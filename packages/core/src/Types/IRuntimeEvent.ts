@@ -1,6 +1,6 @@
 /** A throw out of action code that the runtime caught. See docs/reference/failure.md#the-failure-event. */
 export interface IFailureEvent {
-	/** The live throw. */
+	/** What the action ended with. */
 	readonly Error: unknown;
 	readonly ActionId: string;
 	/** The durable name of the action that threw, or null. */

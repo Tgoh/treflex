@@ -3,7 +3,6 @@ import type { IActionGenerator } from "../../src/Types/IAction";
 import type { IEntity } from "../../src/Types/IEntity";
 import type { IRecord } from "../../src/Types/IRecord";
 import type { ISelectorGenerator } from "../../src/Types/ISelector";
-import { createMemo, createRoot } from "solid-js";
 import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 import { withoutIds } from "../../src/Effects/entity";
 import { generateGuid } from "../../src/Effects/generateGuid";
@@ -27,6 +26,7 @@ import { MoveBetweenRootsError, transient } from "../../src/Runtime/transient";
 import { rawOf, view } from "../../src/Runtime/viewProxy";
 import { createSnapshot } from "../../src/Snapshot/createSnapshot";
 import { restoreRuntime } from "../../src/Snapshot/index";
+import * as reactive from "../reactive";
 import { captureSurfaced, minted, rawWrite } from "../testHelpers";
 
 declare module "../../src/Registries/IMessageRegistry" {
@@ -1267,8 +1267,8 @@ export function transientRules(build_: string): void {
 			await h.runtime.dispatch(function* (draft: IOwner): IActionGenerator {
 				yield* registerDataSource(draft as never, "Transient/Theme");
 			}, "~nest");
-			await createRoot(async (dispose) => {
-				const name = createMemo(() =>
+			await reactive.root(async (dispose) => {
+				const name = reactive.memo(() =>
 					h.runtime.runSelector(
 						function* () {
 							const theme = yield* getData(
@@ -1764,8 +1764,10 @@ export function transientRules(build_: string): void {
 	describe(`slots ${build_}: views`, () => {
 		it("wakes a reader on the first write and on each one after, and goes back to empty with the owner", async () => {
 			const h = build();
-			await createRoot(async (dispose) => {
-				const count = createMemo(() => peek(h.runtime, progress, h.runtime.get("runtime/stateIdLookup")().owner?.state as IOwner).Running);
+			await reactive.root(async (dispose) => {
+				const count = reactive.memo(
+					() => peek(h.runtime, progress, h.runtime.get("runtime/stateIdLookup")().owner?.state as IOwner).Running
+				);
 				expect(count()).toBe(0);
 				await h.onOwner(function* (draft) {
 					(yield* progress(draft)).Running = 1;
@@ -1778,9 +1780,9 @@ export function transientRules(build_: string): void {
 				dispose();
 			});
 			const seen: number[] = [];
-			await createRoot(async (dispose) => {
+			await reactive.root(async (dispose) => {
 				const held = h.owner();
-				const count = createMemo(() => {
+				const count = reactive.memo(() => {
 					const value = peek(h.runtime, progress, held).Running;
 					seen.push(value);
 					return value;
@@ -1798,9 +1800,9 @@ export function transientRules(build_: string): void {
 
 		it("does not wake a reader of one slot when another slot on the owner is first written or changes", async () => {
 			const h = build();
-			await createRoot(async (dispose) => {
+			await reactive.root(async (dispose) => {
 				let runs = 0;
-				const count = createMemo(() => {
+				const count = reactive.memo(() => {
 					runs++;
 					return peek(h.runtime, progress, h.owner()).Running;
 				});
@@ -1819,9 +1821,9 @@ export function transientRules(build_: string): void {
 
 		it("does not wake a reader when a draft only reads", async () => {
 			const h = build();
-			await createRoot(async (dispose) => {
+			await reactive.root(async (dispose) => {
 				let runs = 0;
-				const count = createMemo(() => {
+				const count = reactive.memo(() => {
 					runs++;
 					return peek(h.runtime, progress, h.owner()).Running;
 				});
@@ -1841,8 +1843,8 @@ export function transientRules(build_: string): void {
 				return (yield* progress(draft)).Running;
 			}
 			const read = () => h.runtime.runSelector(count, h.owner);
-			await createRoot(async (dispose) => {
-				const value = createMemo(read);
+			await reactive.root(async (dispose) => {
+				const value = reactive.memo(read);
 				expect(value()).toBe(0);
 				await h.onOwner(function* (draft) {
 					(yield* progress(draft)).Running = 7;
@@ -1879,9 +1881,9 @@ export function transientRules(build_: string): void {
 			}> {
 				return yield* progress(draft);
 			}
-			await createRoot(async (dispose) => {
+			await reactive.root(async (dispose) => {
 				let runs = 0;
-				const slot = createMemo(() => {
+				const slot = reactive.memo(() => {
 					runs++;
 					return h.runtime.runSelector(whole, h.owner);
 				});
@@ -1901,7 +1903,7 @@ export function transientRules(build_: string): void {
 				expect(born).not.toBe(unborn);
 				expect(born.Running).toBe(1);
 				expect(rawOf(born)).not.toBe(born);
-				const seen = createMemo(() => born.Running);
+				const seen = reactive.memo(() => born.Running);
 				expect(seen()).toBe(1);
 				await h.onOwner(function* (draft) {
 					(yield* progress(draft)).Running = 2;
@@ -1920,8 +1922,8 @@ export function transientRules(build_: string): void {
 			await h.onOwner(function* (draft) {
 				(yield* progress(draft)).Running = 3;
 			});
-			await createRoot(async (dispose) => {
-				const value = createMemo(() =>
+			await reactive.root(async (dispose) => {
+				const value = reactive.memo(() =>
 					h.runtime.processSelector(count, () => h.runtime.get("runtime/stateIdLookup")().owner?.state as IOwner | undefined)
 				);
 				expect(value()).toBe(3);

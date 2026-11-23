@@ -5,7 +5,6 @@ import type { IAskId } from "../../src/Types/IAskId";
 import type { IEntity } from "../../src/Types/IEntity";
 import type { IRecord } from "../../src/Types/IRecord";
 import type { ISelectorGenerator } from "../../src/Types/ISelector";
-import { createEffect, createRoot } from "solid-js";
 import { describe, expect, it } from "vitest";
 import { answer } from "../../src/Effects/answer";
 import { ask } from "../../src/Effects/ask";
@@ -28,6 +27,7 @@ import { rawOf } from "../../src/Runtime/viewProxy";
 import { createSnapshot } from "../../src/Snapshot/createSnapshot";
 import { restoreRuntime } from "../../src/Snapshot/index";
 import { createTestRuntime, settled } from "../../src/Testing/createTestRuntime";
+import * as reactive from "../reactive";
 import { minted, mountComponent, pendingAsksOf } from "../testHelpers";
 
 type IAnswer = "yes" | "no" | undefined;
@@ -198,13 +198,11 @@ function build() {
 	const records: IRecord[] = [];
 	runtime.on("record", (record) => records.push(record));
 	const releases = new Map<string, (value?: unknown) => void>();
-	const rejects = new Map<string, (error: unknown) => void>();
 	runtime.registerImplementation(
 		"asks/wait",
 		(effect: { Type: string; Name: string }) =>
-			new Promise((resolve, reject) => {
+			new Promise((resolve) => {
 				releases.set(effect.Name, resolve);
-				rejects.set(effect.Name, reject);
 			})
 	);
 	return {
@@ -220,12 +218,6 @@ function build() {
 			if (!release) throw new Error(`nothing waits on ${name}`);
 			releases.delete(name);
 			release(value);
-		},
-		fail: (name: string, error: unknown) => {
-			const reject = rejects.get(name);
-			if (!reject) throw new Error(`nothing waits on ${name}`);
-			rejects.delete(name);
-			reject(error);
 		}
 	};
 }
@@ -614,9 +606,19 @@ export function askRules(label: string): void {
 				draft.Log.push(`renamed:${renamed.Name}:draft=${draft.Name}`);
 			}
 
+			function* saveName(name: string): Generator<any, IRenameResult, any> {
+				const answer:
+					| IRenameResult
+					| {
+							Error: string;
+					  } = yield* wait(`api:${name}`);
+				if ("Error" in answer) throw new ApiError(answer.Error);
+				return answer;
+			}
+
 			function* rename(draft: IWorld, askId: IAskId<IRenameResult>, name: string) {
 				try {
-					const result: IRenameResult = yield* wait(`api:${name}`);
+					const result = yield* saveName(name);
 					draft.Name = result.Name;
 					yield* answer(askId, result);
 				} catch (e) {
@@ -628,13 +630,15 @@ export function askRules(label: string): void {
 			}
 
 			it("saves, fails as data with the ask still open, retries and answers; the asker sees the draft as rename left it", async () => {
-				const { runtime, listed, release, fail } = build();
+				const { runtime, listed, release } = build();
 				const asking = runtime.dispatch(renameFlow, "root");
 				const entry = await opened(listed);
 				const id = entry.Id as IAskId<IRenameResult>;
 				const first = runtime.dispatch(rename, "root", id, "taken");
 				await tick();
-				fail("api:taken", new ApiError("That name is taken"));
+				release("api:taken", {
+					Error: "That name is taken"
+				});
 				expect(await first).toEqual({
 					Error: "That name is taken"
 				});
@@ -769,9 +773,9 @@ export function askRules(label: string): void {
 						})
 					);
 				});
-				await createRoot(async (dispose) => {
+				await reactive.root(async (dispose) => {
 					const underRoot: (readonly string[])[] = [];
-					createEffect(() => {
+					reactive.effect(() => {
 						underRoot.push(pendingAsksOf(runtime, runtime.state).map((entry) => entry.OwnerId));
 					});
 					await tick();
@@ -847,9 +851,9 @@ export function askRules(label: string): void {
 				expect(pendingAsksOf(runtime, group())).toEqual([
 					entry
 				]);
-				await createRoot(async (dispose) => {
+				await reactive.root(async (dispose) => {
 					const seen: number[] = [];
-					createEffect(() => {
+					reactive.effect(() => {
 						seen.push(pendingAsksOf(runtime, group()).length);
 					});
 					await tick();
@@ -890,8 +894,8 @@ export function askRules(label: string): void {
 				function* pending(draft: IWorld): ISelectorGenerator<number> {
 					return (yield* pendingAsks(draft)).length;
 				}
-				await createRoot(async (dispose) => {
-					createEffect(() => {
+				await reactive.root(async (dispose) => {
+					reactive.effect(() => {
 						runtime.runSelector(pending, () => runtime.state);
 					});
 					await settled();
@@ -914,9 +918,9 @@ export function askRules(label: string): void {
 				function* pending(draft: IWorld): ISelectorGenerator<number> {
 					return (yield* pendingAsks(draft)).length;
 				}
-				await createRoot(async (dispose) => {
+				await reactive.root(async (dispose) => {
 					const seen: number[] = [];
-					createEffect(() => {
+					reactive.effect(() => {
 						seen.push((runtime as IRuntimeInternal<IWorld>).runSelector(pending, () => runtime.state));
 					});
 					await settled();

@@ -1,23 +1,13 @@
-import type { IVersion } from "../Solid/host";
-import { host } from "../Solid/host";
+import type { IVersion } from "../Reactive/host";
+import { host } from "../Reactive/host";
 import { globalWeakMap } from "../Utility/globalWeakMap";
 
-// The notebook: which reactive scope read which property of which raw
-// object, as lazily created per-(object, key) versions. The view proxy
-// (viewProxy.ts) calls the track* half from its read traps; the write
-// gateway calls the notify* half at the recording proxy's set and delete
-// traps. Storage is keyed by raw object in WeakMaps rather than stamped on
-// the object as symbol properties, so raw nodes stay pristine for
-// getOwnPropertySymbols callers.
-//
-// A version is created on the first TRACKED read of a key and never
-// before: untracked reads (actions, effect implementations, handlers) pay
-// one WeakMap lookup and nothing else, and an unobserved slot costs a
-// write nothing but the lookups.
+// Keyed by raw object in WeakMaps rather than stamped on the object as symbol
+// properties, so raw nodes stay pristine for getOwnPropertySymbols callers.
 
 export interface ITracking {
 	trackKey(target: object, key: PropertyKey): void;
-	// $TRACK and ownKeys: the container's whole shape.
+	// The host's TRACK and ownKeys: the container's whole shape.
 	trackShape(target: object): void;
 	// The `in` operator.
 	trackHas(target: object, key: PropertyKey): void;
@@ -50,8 +40,6 @@ function recordFor(target: object): IRecord {
 	return record;
 }
 
-// Ownerless, so a version born inside a memo's compute is not disposed
-// with that memo's re-run.
 function newVersion(): IVersion {
 	return host.runUnowned(() => host.createVersion());
 }
@@ -105,11 +93,13 @@ export const tracking: ITracking = {
 	}
 };
 
-// The bumps one tree write implies, called after the write has landed on
-// the raw object. Nothing bumps for a write that changed nothing (1.9's
-// setProperty equality gate). Otherwise: the key, the container's shape
-// (element replacement must re-run For), the has-version when the key
-// appeared or vanished, and `length` when an array write moved it.
+/** Whether a reactive scope has ever tracked a read of `target`: its records outlive the scope. */
+export function isTracked(target: object): boolean {
+	return records.has(target);
+}
+
+// Called after the write has landed on the raw object. A key write bumps the
+// container's shape too, so a list over it hears an element replaced in place.
 export function notifyWrite(target: object, key: PropertyKey, changed: boolean, presenceChanged: boolean, lengthChanged: boolean): void {
 	if (!changed) {
 		return;

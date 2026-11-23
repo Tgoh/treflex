@@ -1,3 +1,4 @@
+import { errorClass } from "../Utility/errorClasses";
 import { TreflexRefusal } from "./refusal";
 
 // By registry name rather than import: recordingProxy.ts imports this module, so
@@ -77,12 +78,26 @@ export class HandWrittenIdError extends TreflexRefusal {
 	}
 }
 
+errorClass("treflex/DraftDetachedError", DraftDetachedError);
+errorClass("treflex/DraftInsideOpenError", DraftInsideOpenError);
+errorClass("treflex/EntityReplacedError", EntityReplacedError);
+errorClass("treflex/HandWrittenIdError", HandWrittenIdError);
+
 // In the string because nothing on the object could last: a spread, an action argument, an
 // effect's result and the write's own copy all keep the string and lose the object.
 const MINT_MARK = "~";
 
 export function mintedId(guid: string): string {
 	return `${MINT_MARK}${guid}`;
+}
+
+export function entityIdOf(node: object): string | null {
+	const id = (
+		node as {
+			$Id?: unknown;
+		}
+	).$Id;
+	return typeof id === "string" && id !== "" ? id : null;
 }
 
 export function isMintedId(id: unknown): boolean {

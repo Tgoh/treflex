@@ -37,8 +37,10 @@ describe("one copy of each runtime, with both renderers in one build", () => {
 				".": "src/index.ts"
 			},
 			"solid-js": {
-				".": "dist/solid.js",
-				"./web": "web/dist/web.js"
+				".": "dist/solid.js"
+			},
+			"@solidjs/web": {
+				".": "dist/web.js"
 			},
 			react: {
 				".": "index.js"
@@ -58,7 +60,7 @@ describe("one copy of each runtime, with both renderers in one build", () => {
 					"treflex-solid",
 					"treflex-react",
 					"solid-js",
-					"solid-js/web",
+					"@solidjs/web",
 					"react",
 					"react-dom/client"
 				],
@@ -73,7 +75,9 @@ describe("one copy of each runtime, with both renderers in one build", () => {
 				expect(ids[0], specifier).toMatch(
 					specifier.startsWith("treflex")
 						? new RegExp(`^${repoPath}/packages/(core|solid|react)/src/`)
-						: new RegExp(`^${repoPath}/(node_modules/${escaped(specifier.split("/")[0])}/|demos/portal-swap/node_modules/\\.vite/deps/)`)
+						: new RegExp(
+								`^${repoPath}/(node_modules/${escaped(specifier.replace(/^((@[^/]+\/)?[^/]+).*$/, "$1"))}/|demos/portal-swap/node_modules/\\.vite/deps/)`
+							)
 				);
 			}
 		} finally {
@@ -94,7 +98,7 @@ describe("one copy of each runtime, with both renderers in one build", () => {
 				const file = tsx(id);
 				if (!file) return;
 				runtimes.set(file, [
-					...(/from\s*["']solid-js\/web["']/.test(code)
+					...(/from\s*["']@solidjs\/web["']/.test(code)
 						? [
 								"solid"
 							]
@@ -148,10 +152,21 @@ describe("one copy of each runtime, with both renderers in one build", () => {
 
 		expect(packageFiles(modules, "solid-js")).toEqual({
 			[`${nodeModules}/solid-js`]: [
-				"dist/solid.js",
-				"web/dist/web.js"
+				"dist/internal.js",
+				"dist/solid.js"
 			]
 		});
+		expect(packageFiles(modules, "@solidjs/web")).toEqual({
+			[`${nodeModules}/@solidjs/web`]: [
+				"dist/web.js"
+			]
+		});
+		expect(Object.keys(packageFiles(modules, "@solidjs/signals"))).toEqual([
+			`${nodeModules}/@solidjs/signals`
+		]);
+		expect(
+			packageFiles(modules, "@solidjs/signals")[`${nodeModules}/@solidjs/signals`].filter((file) => !file.startsWith("dist/prod/"))
+		).toEqual([]);
 		expect(Object.keys(packageFiles(modules, "react"))).toEqual([
 			`${nodeModules}/react`
 		]);

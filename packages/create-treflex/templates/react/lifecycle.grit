@@ -1,0 +1,7 @@
+language js
+
+// The group stays non-capturing: Biome counts a capture as a variable and drops the whole pattern.
+JsCallExpression(callee=$fn) where {
+	$fn <: r"(?:\w+\.)?(?:useEffect|useLayoutEffect)",
+	register_diagnostic(span=$fn, message="Most lifecycle work has a better home: a value derived from state is a selector, and work an event causes starts in that event's handler. A lifecycle callback stays where it keeps something outside the tree in step while the view is mounted, such as focus, a DOM listener or a third-party widget, where it works on the component's own state, or where what is on screen causes the work. Then it says why: // biome-ignore lint/plugin/lifecycle: <reason>", severity="error")
+}

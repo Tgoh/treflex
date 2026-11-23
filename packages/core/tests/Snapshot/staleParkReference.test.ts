@@ -2,7 +2,6 @@ import type { IRuntime } from "../../src/Runtime/createRuntime";
 import type { IRuntimeInternal } from "../../src/Runtime/internals";
 import type { IActionGenerator } from "../../src/Types/IAction";
 import type { IRecord } from "../../src/Types/IRecord";
-import { createRoot } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { parallel } from "../../src/Effects/parallel";
 import { createActivityLog } from "../../src/Runtime/createActivityLog";
@@ -10,6 +9,7 @@ import { createRuntime } from "../../src/Runtime/createRuntime";
 import { open } from "../../src/Runtime/open";
 import { sliceSetState } from "../../src/Runtime/sliceSetState";
 import { StateAliasError } from "../../src/Runtime/stateAlias";
+import * as reactive from "../reactive";
 import { captureSurfaced, minted, rootSetState } from "../testHelpers";
 
 type ChildState = {
@@ -97,7 +97,7 @@ describe("stale-reference tripwire", () => {
 	});
 
 	it("warns stale-path-write for a held reference to a replaced node", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 				const runtime = tapped();
@@ -121,7 +121,7 @@ describe("stale-reference tripwire", () => {
 	});
 
 	it("warns orphaned-write for a held reference whose node left the tree", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 				const runtime = tapped();
@@ -143,7 +143,7 @@ describe("stale-reference tripwire", () => {
 	});
 
 	it("warns on a delete through a held reference to a replaced node", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 				const runtime = tapped();
@@ -166,7 +166,7 @@ describe("stale-reference tripwire", () => {
 	});
 
 	it("throws across a genuine park when another action replaced the held node — no warn, no write", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 				const barrier = createBarrier();
@@ -209,7 +209,7 @@ describe("stale-reference tripwire", () => {
 	});
 
 	it("stays silent for a re-derived reference to a moved node", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 				const runtime = tapped();
@@ -232,7 +232,7 @@ describe("stale-reference tripwire", () => {
 	});
 
 	it("stays silent for an unchanged held reference across a park", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 				const barrier = createBarrier();
@@ -259,7 +259,7 @@ describe("stale-reference tripwire", () => {
 	});
 
 	it("stays silent when a node is swapped out and back (same raw object)", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 				const runtime = tapped();
@@ -299,7 +299,7 @@ describe("stale-reference tripwire", () => {
 	};
 	for (const [name, attach] of Object.entries(taps)) {
 		it(`warns stale-path-write and orphaned-write under ${name}, whatever kinds it takes`, async () => {
-			await createRoot(async (dispose) => {
+			await reactive.root(async (dispose) => {
 				try {
 					const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 					const runtime = createRuntime<TestState>(initialState());
@@ -330,7 +330,7 @@ describe("stale-reference tripwire", () => {
 	}
 
 	it("warns stale-path-write under the activity log's tap", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 				const runtime = createRuntime<TestState>(initialState());
@@ -353,7 +353,7 @@ describe("stale-reference tripwire", () => {
 	});
 
 	it("stays silent with no tap", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 				const runtime = createRuntime<TestState>(initialState());
@@ -374,7 +374,7 @@ describe("stale-reference tripwire", () => {
 	});
 
 	it("warns orphaned-delete for a delete through a held reference whose node left the tree", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 				const runtime = tapped();
@@ -395,7 +395,7 @@ describe("stale-reference tripwire", () => {
 	});
 
 	it("stays silent when a sibling insert moves a parked action's slice (positional accessor)", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 				const barrier = createBarrier();
@@ -435,7 +435,7 @@ describe("stale-reference tripwire", () => {
 	});
 
 	it("stays silent for a lookup-derived ($Id-keyed) slice setter across the same move", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 				const barrier = createBarrier();
@@ -477,7 +477,7 @@ describe("stale-reference tripwire", () => {
 	});
 
 	it("pin: a sibling branch's navigation refreshes a held reference's path — the write journals the CURRENT path, silently", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 				const barrier = createBarrier();
@@ -531,7 +531,7 @@ describe("stale-reference tripwire", () => {
 	});
 
 	it("pin: a READ through a stale held reference neither warns nor fails — it sees the old node", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 				const runtime = tapped();
@@ -554,7 +554,7 @@ describe("stale-reference tripwire", () => {
 	});
 
 	it("pin: an aliased node's slice is refused, and none of its writes reach the record", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const surfaced = captureSurfaced();
 				const warn = vi.spyOn(console, "warn").mockImplementation(() => {});

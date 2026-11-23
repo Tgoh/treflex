@@ -16,6 +16,7 @@ const SITE = [
 	"README.md",
 	"quickstart.md",
 	"requirements.md",
+	"upgrading.md",
 	"guide/",
 	"patterns.md",
 	"reference/",

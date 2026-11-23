@@ -1,5 +1,5 @@
-import { For, type JSX, Show } from "solid-js";
-import { render } from "solid-js/web";
+import { type JSX, render } from "@solidjs/web";
+import { For, onSettled, Show } from "solid-js";
 import { createRuntime, transient, type IActionGenerator, type IEntity, type ILocation, type ISelectorGenerator } from "treflex";
 import { createComponentFeature, TreflexProvider, useComponentState, useDispatch, useInFlight, useLocate } from "treflex-solid";
 
@@ -39,6 +39,7 @@ interface IRowView {
 declare function save(draft: IEditor): IActionGenerator;
 declare function saveRow(draft: IRow): IActionGenerator;
 declare const editor: { state: IEditor & { Rows: IRow[] }; save(): Promise<unknown> };
+declare const Thread: { use(): { load(): Promise<unknown>; open(): Promise<unknown>; markVisited(): Promise<unknown> } };
 
 interface IGridState extends IEntity {
 	Widths: Record<string, number>;

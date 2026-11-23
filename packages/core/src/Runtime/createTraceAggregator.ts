@@ -31,6 +31,11 @@ export function createTraceAggregator(source: IObservable, onTrace: (trace: IAct
 					args: [
 						...record.Args
 					],
+					...(record.ArgsRedacted
+						? {
+								argsRedacted: true
+							}
+						: {}),
 					entityId: record.EntityId,
 					entries: [],
 					duration: 0

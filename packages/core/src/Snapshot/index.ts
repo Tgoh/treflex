@@ -9,10 +9,36 @@ import { createRuntime } from "../Runtime/createRuntime";
 import { buildTestRuntime, testRuntimeSite } from "../Testing/createTestRuntime";
 import { restoreWith } from "./restore";
 
-export type { ISnapshot, ISnapshotInFlightEntry, ISnapshotTimerRow } from "./ISnapshot";
-export type { IRestoreDrop, IRestoreResult, IRestoreUnresolvedRow } from "./loadSnapshot";
+export type {
+	IChangedState,
+	IDataOnlyComparison,
+	IDataOnlyRun,
+	IDiagCount,
+	IDiagSummary,
+	IDifferences,
+	IDifferentialDispatch,
+	IDifferentialOptions,
+	IDifferentialReport,
+	IDifferentialSettle,
+	IDifferentialSkip,
+	IDifferentialStep,
+	IDifferentialTarget,
+	IEventDifference,
+	IFailureSummary,
+	IHeldSummary,
+	IInFlightSummary,
+	IOnErrorSummary,
+	IRestorePoint,
+	ISettleMatch,
+	ISettleOutcome,
+	IStateDifference,
+	IUnfinished
+} from "./differentialRestore";
+export type { ISnapshot, ISnapshotInFlightEntry, ISnapshotInFlightState, ISnapshotTimerRow } from "./ISnapshot";
+export type { IDropReason, IRestoreDrop, IRestoreResult, IRestoreResumed, IRestoreUnresolvedRow } from "./loadSnapshot";
 export type { IRestored, IRestoreHooks, IRestoreOutcome } from "./restore";
 export { createSnapshot, SnapshotOfDisposedRuntimeError, SnapshotTooDeepError } from "./createSnapshot";
+export { differentialRestore, dispatchStep, settleStep } from "./differentialRestore";
 export { SNAPSHOT_FORMAT_VERSION } from "./ISnapshot";
 export { SnapshotRejectedError } from "./loadSnapshot";
 export { AsyncSetupError } from "./restore";

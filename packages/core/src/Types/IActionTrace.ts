@@ -17,7 +17,7 @@ export type IEffectEntry = {
 	effect: Record<string, unknown>;
 	/** The implementation's value, from the settlement's live extras. One of `result`, `error` and `aborted` is set. */
 	result?: unknown;
-	/** The implementation's throw, which reached the action. */
+	/** What the action was thrown for the effect: for an implementation's throw, the copy rebuilt from it. */
 	error?: unknown;
 	/** The action ended with the effect unsettled. The entry is appended at `action:end`, its duration to then. */
 	aborted?: boolean;
@@ -33,6 +33,8 @@ export type IActionTrace = {
 	/** The action:start record's `Label`. */
 	label: string | null;
 	args: unknown[];
+	/** The action:start record's `ArgsRedacted`. */
+	argsRedacted?: true;
 	entityId: string;
 	entries: ITraceEntry[];
 	duration: number;

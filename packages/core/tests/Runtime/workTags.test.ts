@@ -4,7 +4,6 @@ import type { IEntity } from "../../src/Types/IEntity";
 import type { IReceiver } from "../../src/Types/IReceiver";
 import type { IRecord } from "../../src/Types/IRecord";
 import type { ISelectorGenerator } from "../../src/Types/ISelector";
-import { createEffect, createRoot } from "solid-js";
 import { describe, expect, it } from "vitest";
 import { publish } from "../../src/Effects/publish";
 import { latest, leading } from "../../src/Runtime/arrivalPolicy";
@@ -15,6 +14,7 @@ import { open } from "../../src/Runtime/open";
 import { receiver } from "../../src/Runtime/receiver";
 import { workTag } from "../../src/Runtime/workTag";
 import { createTestRuntime, settled } from "../../src/Testing/createTestRuntime";
+import * as reactive from "../reactive";
 import { inFlightOf } from "../testHelpers";
 
 const publishAny = publish as unknown as (topic: string, data?: Record<string, unknown>) => Generator<any, void, any>;
@@ -227,9 +227,9 @@ describe("receiver cases and inFlight", () => {
 			["Refresh" as any]: search
 		});
 		await bindAll(h, Receiver);
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			const seen: boolean[] = [];
-			createEffect(() => {
+			reactive.effect(() => {
 				seen.push(h.runtime.runSelector(searching, () => h.panel()));
 			});
 			await settled();
@@ -267,9 +267,9 @@ describe("work tags", () => {
 		function* veiled(draft: IPanel): ISelectorGenerator<boolean> {
 			return yield* inFlight(Work, draft);
 		}
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			const seen: boolean[] = [];
-			createEffect(() => {
+			reactive.effect(() => {
 				seen.push(h.runtime.runSelector(veiled, () => h.panel()));
 			});
 			await settled();
@@ -313,8 +313,8 @@ describe("work tags", () => {
 			runsOnB++;
 			return yield* inFlight(Work, draft);
 		}
-		await createRoot(async (dispose) => {
-			createEffect(() => {
+		await reactive.root(async (dispose) => {
+			reactive.effect(() => {
 				h.runtime.runSelector(veiledB, () => h.panel("b"));
 			});
 			await settled();
@@ -360,9 +360,9 @@ describe("work tags", () => {
 				yield* inFlight(Work, draft)
 			];
 		}
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			const seen: boolean[][] = [];
-			createEffect(() => {
+			reactive.effect(() => {
 				seen.push(h.runtime.runSelector(reads, () => h.panel()));
 			});
 			await settled();

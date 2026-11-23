@@ -1,10 +1,11 @@
 import type { IActionGenerator, IAskEntry, IAskId, IEntity, ISelectorGenerator } from "treflex";
-import { createEffect, createRoot, For } from "solid-js";
+import { createEffect, For } from "solid-js";
 import { answer, ask, createRuntime, open, pendingAsks } from "treflex";
 import { describe, expect, it } from "vitest";
 import { createEntityFeature } from "../src/Context/createEntityFeature";
 import { TreflexProvider } from "../src/Context/TreflexContext";
 import { useComponentState } from "../src/Hooks/useComponentState";
+import { mount } from "./mount";
 import { pendingAsksOf } from "./treeWrite";
 
 type IAnswer = "yes" | "no" | undefined;
@@ -62,38 +63,36 @@ describe("a Solid view rendering pendingAsks(...)", () => {
 		const seen: (readonly string[])[] = [];
 		const mounted: IAskEntry[] = [];
 		let feature!: ReturnType<typeof Feature.use>;
-		const dispose = createRoot((disposer) => {
-			const View = Feature.provider(() => {
-				feature = Feature.use();
-				createEffect(() => {
-					seen.push(
-						feature.openAsks().map(
-							(entry) =>
-								(
-									entry.Request as {
-										Path: string;
-									}
-								).Path
-						)
-					);
-				});
-				return (
-					<For each={feature.openAsks()}>
-						{(entry) => {
-							mounted.push(entry);
-							return null;
-						}}
-					</For>
-				);
-			});
-			TreflexProvider({
-				value: runtime,
-				get children() {
-					return <View state={runtime.state} />;
+		const View = Feature.provider(() => {
+			feature = Feature.use();
+			createEffect(
+				() =>
+					feature.openAsks().map(
+						(entry) =>
+							(
+								entry.Request as {
+									Path: string;
+								}
+							).Path
+					),
+				(paths) => {
+					seen.push(paths);
 				}
-			});
-			return disposer;
+			);
+			return (
+				<For each={feature.openAsks()}>
+					{(entry) => {
+						mounted.push(entry);
+						return null;
+					}}
+				</For>
+			);
 		});
+		const { dispose } = mount(() => (
+			<TreflexProvider value={runtime}>
+				<View state={runtime.state} />
+			</TreflexProvider>
+		));
 		await settle();
 		const first = runtime.dispatch(asksOnRow, "root", "Demo/A");
 		await settle();
@@ -151,19 +150,15 @@ describe("a Solid view rendering pendingAsks(...)", () => {
 		await settle();
 		const [entry] = pendingAsksOf(runtime, runtime.state);
 		let feature!: ReturnType<typeof Row.use>;
-		const dispose = createRoot((disposer) => {
-			const View = Row.provider(() => {
-				feature = Row.use();
-				return null;
-			});
-			TreflexProvider({
-				value: runtime,
-				get children() {
-					return <View state={runtime.state.Rows.find((row) => row.$Id === entry!.OwnerId)!} />;
-				}
-			});
-			return disposer;
+		const View = Row.provider(() => {
+			feature = Row.use();
+			return null;
 		});
+		const { dispose } = mount(() => (
+			<TreflexProvider value={runtime}>
+				<View state={runtime.state.Rows.find((row) => row.$Id === entry!.OwnerId)!} />
+			</TreflexProvider>
+		));
 		await settle();
 
 		await feature.answersOnRow(entry!.Id as IAskId<IAnswer>, "no");
@@ -179,19 +174,15 @@ describe("a Solid view rendering pendingAsks(...)", () => {
 describe("an ask from component state", () => {
 	function mountLocal(runtime: ReturnType<typeof createRuntime<IRoot>>) {
 		let local!: ReturnType<typeof useComponentState<IEntity>>;
-		const dispose = createRoot((disposer) => {
-			const View = () => {
-				local = useComponentState<IEntity>(() => ({}));
-				return null;
-			};
-			TreflexProvider({
-				value: runtime,
-				get children() {
-					return <View />;
-				}
-			});
-			return disposer;
-		});
+		const View = () => {
+			local = useComponentState<IEntity>(() => ({}));
+			return null;
+		};
+		const { dispose } = mount(() => (
+			<TreflexProvider value={runtime}>
+				<View />
+			</TreflexProvider>
+		));
 		return {
 			local: () => local,
 			dispose

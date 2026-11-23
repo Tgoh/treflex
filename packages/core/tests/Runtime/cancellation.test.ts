@@ -1,7 +1,6 @@
 import type { IActionGenerator } from "../../src/Types/IAction";
 import type { IRecord } from "../../src/Types/IRecord";
 import type { IRuntimeEventOf } from "../../src/Types/IRuntimeEvent";
-import { createEffect, createRoot } from "solid-js";
 import { describe, expect, it, vi } from "vitest";
 import { parallel } from "../../src/Effects/parallel";
 import { publish } from "../../src/Effects/publish";
@@ -11,6 +10,7 @@ import { createTraceAggregator } from "../../src/Runtime/createTraceAggregator";
 import { FINALLY_YIELD_LIMIT } from "../../src/Runtime/fiberMachine";
 import { receiver } from "../../src/Runtime/receiver";
 import { sliceSetState } from "../../src/Runtime/sliceSetState";
+import * as reactive from "../reactive";
 import { rootSetState, treeWrite } from "../testHelpers";
 
 function createBarrier() {
@@ -44,7 +44,7 @@ type ParentState = {
 
 describe("cancellation: prerequisites", () => {
 	it("can run an action on a sliced store", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const runtime = createRuntime<ParentState>({
 					$Id: "parent",
@@ -83,7 +83,7 @@ describe("cancellation", () => {
 
 		const onTrace = vi.fn();
 
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const runtime = createRuntime<ParentState>(
 					{
@@ -149,7 +149,7 @@ describe("cancellation", () => {
 
 		const onTrace = vi.fn();
 
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const runtime = createRuntime<ParentState>({
 					$Id: "parent",
@@ -216,7 +216,7 @@ describe("cancellation", () => {
 
 		const onTrace = vi.fn();
 
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const runtime = createRuntime<RootState>(
 					{
@@ -283,7 +283,7 @@ describe("cancellation", () => {
 
 describe("cancellation: signal propagation", () => {
 	it("the per-action signal aborts when the owning entity leaves the tree", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const runtime = createRuntime<ParentState>(
 					{
@@ -342,7 +342,7 @@ describe("cancellation: signal propagation", () => {
 	});
 
 	it("an AbortError thrown by the implementation is silent at the action layer", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const onTrace = vi.fn();
 				const runtime = createRuntime<ParentState>(
@@ -411,7 +411,7 @@ describe("cancellation: signal propagation", () => {
 	});
 
 	it("does not abort the signal on normal completion", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const runtime = createRuntime<ParentState>({
 					$Id: "parent",
@@ -448,7 +448,7 @@ describe("cancellation: signal propagation", () => {
 	});
 
 	it("sibling actions on different entities have independent signals", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const runtime = createRuntime<ParentState>(
 					{
@@ -542,7 +542,7 @@ describe("cancellation: signal propagation", () => {
 	});
 
 	it("parallel children each hold their own signal, and all fire when the action's entity dies", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const runtime = createRuntime<ParentState>(
 					{
@@ -607,7 +607,7 @@ describe("cancellation: signal propagation", () => {
 	});
 
 	it("the branch is gone when its entity dies, whatever its effect is doing", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const runtime = createRuntime<ParentState>(
 					{
@@ -687,7 +687,7 @@ describe("cancellation: receiver branches cancel on bound entity dispose", () =>
 		let receivedSignal: AbortSignal | undefined;
 		let postBarrierWritten = false;
 
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				type ChildSlot = {
 					$Id: string;
@@ -797,7 +797,7 @@ describe("cancellation: the close", () => {
 	}
 
 	it("warns via diag and skips the rest of a finally that yields an effect, while outer finallys still run", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 			try {
 				const runtime = abortableRuntime();
@@ -851,7 +851,7 @@ describe("cancellation: the close", () => {
 	});
 
 	it("reports a finally that throws during the close to the failure event, as a close throw", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 			try {
 				const runtime = abortableRuntime();
@@ -908,7 +908,7 @@ describe("cancellation: the close", () => {
 	});
 
 	it("abandons a generator that keeps yielding in its close at the limit, and reports cancel/finally-yield-limit", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 			try {
 				const runtime = abortableRuntime();
@@ -969,7 +969,7 @@ describe("cancellation: the close", () => {
 		}
 
 		it("journals a cancelled action's finally writes as one Cancelling-stamped step on its own branch", async () => {
-			await createRoot(async (dispose) => {
+			await reactive.root(async (dispose) => {
 				try {
 					const runtime = abortableRuntime();
 					const records = tapped(runtime);
@@ -1016,7 +1016,7 @@ describe("cancellation: the close", () => {
 		});
 
 		it("appends nothing when the close writes nothing", async () => {
-			await createRoot(async (dispose) => {
+			await reactive.root(async (dispose) => {
 				try {
 					const runtime = abortableRuntime();
 					const records = tapped(runtime);
@@ -1049,7 +1049,7 @@ describe("cancellation: the close", () => {
 		});
 
 		it("leaves an ordinary step unstamped — the flag marks the close and nothing else", async () => {
-			await createRoot(async (dispose) => {
+			await reactive.root(async (dispose) => {
 				try {
 					const runtime = abortableRuntime();
 					runtime.registerImplementation("echo", () => "ok");
@@ -1077,7 +1077,7 @@ describe("cancellation: the close", () => {
 		});
 
 		it("stamps the close writes of a branch its sibling's failure stopped and attributes them to that branch", async () => {
-			await createRoot(async (dispose) => {
+			await reactive.root(async (dispose) => {
 				try {
 					const runtime = abortableRuntime();
 					const records = tapped(runtime);
@@ -1152,7 +1152,7 @@ describe("cancellation: the close", () => {
 			runtime.on("failure", (event) => {
 				failures.push(event);
 			});
-			createEffect(() => {
+			reactive.effect(() => {
 				const note = runtime.state.Note;
 				if (trips(note)) {
 					throw new Error(`flush failed: ${note}`);
@@ -1200,7 +1200,7 @@ describe("cancellation: the close", () => {
 
 			describe(`a ${shape} branch`, () => {
 				it("runs a suspended generator's finally, not its catch, and journals the finally's writes", async () => {
-					await createRoot(async (dispose) => {
+					await reactive.root(async (dispose) => {
 						try {
 							const w = flushWorld();
 							await settle();
@@ -1273,7 +1273,7 @@ describe("cancellation: the close", () => {
 				});
 
 				it("keeps the original error when a finally write trips the effect again, and surfaces the second throw", async () => {
-					await createRoot(async (dispose) => {
+					await reactive.root(async (dispose) => {
 						const deferred: (() => void)[] = [];
 						const microtask = vi.spyOn(globalThis, "queueMicrotask").mockImplementation((callback) => {
 							deferred.push(callback);
@@ -1319,7 +1319,7 @@ describe("cancellation: the close", () => {
 				});
 
 				it("runs an outer finally when the throw is from the flush of a slice inside a nested generator", async () => {
-					await createRoot(async (dispose) => {
+					await reactive.root(async (dispose) => {
 						try {
 							const w = flushWorld();
 							await settle();
@@ -1346,7 +1346,7 @@ describe("cancellation: the close", () => {
 				});
 
 				it("skips the rest of a finally that yields and reports both close diags without saying cancelled", async () => {
-					await createRoot(async (dispose) => {
+					await reactive.root(async (dispose) => {
 						const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 						try {
 							const w = flushWorld();
@@ -1415,7 +1415,7 @@ describe("cancellation: the close", () => {
 				});
 
 				it("abandons a runaway finally chain at the limit without saying cancelled", async () => {
-					await createRoot(async (dispose) => {
+					await reactive.root(async (dispose) => {
 						const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 						try {
 							const w = flushWorld();
@@ -1456,7 +1456,7 @@ describe("cancellation: the close", () => {
 		}
 
 		it("journals a cancelled branch's close writes when the close's own flush throws", async () => {
-			await createRoot(async (dispose) => {
+			await reactive.root(async (dispose) => {
 				try {
 					const w = flushWorld();
 					await settle();

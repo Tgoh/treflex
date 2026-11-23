@@ -1,5 +1,6 @@
 import type { IBuild } from "../../portal/src/shell/builds";
 import type { IRendererModule, ISwappedPortal } from "./swap";
+import { settled } from "treflex";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DRAWER_MEDIA } from "../../portal/src/shell/responsive";
 import { resetMedia, setMedia } from "../../react-portal/src/testMedia";
@@ -13,7 +14,6 @@ async function until(check: () => boolean, tries = 1000): Promise<void> {
 	}
 }
 
-/** Counts the listeners added to `target` and not yet removed, until `restore`. */
 function countListeners(target: EventTarget): {
 	count(): number;
 	restore(): void;
@@ -140,10 +140,12 @@ describe("the robust renderer swap, when a swap fails", () => {
 			segmentButton("React")!.click();
 			await until(() => busy() === "true");
 			segmentButton("Solid")!.click();
+			await settled();
 			expect(busy()).toBe("false");
 			expect(swapped.swap.pending()).toBeNull();
 
 			segmentButton("React")!.click();
+			await settled();
 			expect(busy()).toBe("true");
 			release();
 			await until(() => note() !== "");
@@ -390,9 +392,11 @@ describe("the robust renderer swap, when a swap fails", () => {
 			});
 			const portal = () => element.querySelector(".portal")!;
 			element.querySelector<HTMLButtonElement>(".mobilebar .menu")!.click();
+			await settled();
 			expect(portal().classList.contains("drawer-open")).toBe(true);
 
 			segmentButton("React")!.click();
+			await settled();
 			expect(portal().classList.contains("drawer-open")).toBe(false);
 
 			release();

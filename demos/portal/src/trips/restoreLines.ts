@@ -1,7 +1,7 @@
 import type { IRestoreLines } from "../portal/restoreBanner";
 import type { IPlannerRestore, IRestoredTrip } from "./Planner";
 import { clock, listed, plural } from "../text";
-import { SEARCH_NOUNS } from "./Trip";
+import { carriesOn, searchesOf } from "./Trip";
 
 function found(trip: IRestoredTrip): string | null {
 	const parts = [];
@@ -13,17 +13,13 @@ function found(trip: IRestoredTrip): string | null {
 	return line.charAt(0).toUpperCase() + line.slice(1);
 }
 
-function lostOn(trip: IRestoredTrip): string[] {
-	const name = trip.Name;
-	const lines: string[] = [];
-	if (trip.Stopped.length > 0) {
-		const nouns = listed(trip.Stopped.map((kind) => SEARCH_NOUNS[kind]));
-		lines.push(
-			`${name}'s ${nouns} ${trip.Stopped.length === 1 ? "search" : "searches"}, which ${trip.Stopped.length === 1 ? "was" : "were"} running`
-		);
-	}
-	if (trip.Unanswered) lines.push(`${name}'s open flight question`);
-	return lines;
+function carriedOn(trip: IRestoredTrip): string[] {
+	const kinds = trip.CarriedOn;
+	return kinds.length === 0
+		? []
+		: [
+				`${trip.Name}'s ${searchesOf(kinds)}, which ${carriesOn(kinds)}`
+			];
 }
 
 /** On a trip the restore didn't find, the lines name the restored trips as they do away from the planner. */
@@ -51,9 +47,9 @@ export function tripRestoreLines(note: IPlannerRestore, openTripId: string | nul
 		back.push(`${plural(note.Trips.length, "trip")} and everything the agent found`);
 	}
 
-	const lost = note.Trips.flatMap(lostOn);
-	if (note.Trips.some((t) => t.Stopped.length > 0))
-		lost.push("The stopped searches came back marked interrupted, with what they'd found kept");
+	back.push(...note.Trips.flatMap(carriedOn));
+	back.push(...note.Trips.filter((t) => t.AskedAgain).map((t) => `${t.Name}'s open flight question, which is asked again`));
+	const lost = note.Trips.filter((t) => t.Unanswered).map((t) => `${t.Name}'s open flight question`);
 	return {
 		Back: back,
 		Lost: lost

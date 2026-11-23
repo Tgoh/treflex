@@ -1,5 +1,5 @@
-import type { IOwnedMemo } from "../Solid/host";
-import { host } from "../Solid/host";
+import type { IOwnedMemo } from "../Reactive/host";
+import { host } from "../Reactive/host";
 import { callbackThrew, consoleDiag, type IDiagEmitter } from "../Types/IRuntimeEvent";
 
 export type { IOwnedMemo };

@@ -1,11 +1,10 @@
 import type { Component } from "solid-js";
 import type { IEntity } from "treflex";
 import type { IRuntimeInternal } from "treflex/internal";
-import { useContext } from "solid-js";
 import { buildContextProxy } from "./buildContextProxy";
 import { entityFeatureRegistry, makeUse, resolveFeatureEntry } from "./hmrRegistry";
-import { OwnerContext } from "./OwnerContext";
-import { useTreflexContext } from "./TreflexContext";
+import { OwnerContext, useOwner } from "./OwnerContext";
+import { runtimeFor } from "./TreflexContext";
 
 type Action<Type> = Type extends (state: any, ...args: infer P) => Generator<any, infer R, any>
 	? (...args: P) => Promise<R | undefined>
@@ -64,8 +63,8 @@ export function createEntityFeature<T extends IEntity>(
 				>
 			): Component<IProviderProps<T, NoInfer<P>>> => {
 				return (props: IProviderProps<T, NoInfer<P>>) => {
-					const treflex = useTreflexContext()!;
-					const outer = useContext(OwnerContext);
+					const treflex = runtimeFor("createEntityFeature's provider");
+					const outer = useOwner();
 					const gateway = (treflex as Partial<IRuntimeInternal<any>>).get?.("runtime/writeGateway");
 					// An entity in ComponentState, a widget's own row, passes the outer owner on: mounts are flat.
 					const ownerAccessor = () => {
@@ -81,11 +80,11 @@ export function createEntityFeature<T extends IEntity>(
 						state: T;
 					};
 					return (
-						<OwnerContext.Provider value={ownerAccessor}>
-							<Context.Provider value={context}>
+						<OwnerContext value={ownerAccessor}>
+							<Context value={context}>
 								<WrappedComponent {...bodyProps}></WrappedComponent>
-							</Context.Provider>
-						</OwnerContext.Provider>
+							</Context>
+						</OwnerContext>
 					);
 				};
 			},

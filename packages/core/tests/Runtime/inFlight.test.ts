@@ -3,7 +3,6 @@ import type { IActionGenerator } from "../../src/Types/IAction";
 import type { IEntity } from "../../src/Types/IEntity";
 import type { IRecord } from "../../src/Types/IRecord";
 import type { ISelectorGenerator } from "../../src/Types/ISelector";
-import { createEffect, createRoot } from "solid-js";
 import { describe, expect, it, vi } from "vitest";
 import { select } from "../../src/Reads/select";
 import { latest, leading } from "../../src/Runtime/arrivalPolicy";
@@ -12,6 +11,7 @@ import { createRuntime } from "../../src/Runtime/createRuntime";
 import { seat } from "../../src/Runtime/draftNode";
 import { open } from "../../src/Runtime/open";
 import { createTestRuntime, settled } from "../../src/Testing/createTestRuntime";
+import * as reactive from "../reactive";
 import { inFlightOf } from "../testHelpers";
 
 interface IPanel extends IEntity {
@@ -88,9 +88,9 @@ function* loading(draft: IPanel): ISelectorGenerator<boolean> {
 describe("inFlight(action, owner)", () => {
 	it("covers a normal action from arrival to its end, queued included, and re-derives a memoized selector a view reads", async () => {
 		const h = build();
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			const seen: boolean[] = [];
-			createEffect(() => {
+			reactive.effect(() => {
 				seen.push(h.runtime.runSelector(loading, h.panel));
 			});
 			await settled();
@@ -123,9 +123,9 @@ describe("inFlight(action, owner)", () => {
 		function* note(draft: IPanel): IActionGenerator {
 			draft.Log.push("noted");
 		}
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			let first = true;
-			createEffect(() => {
+			reactive.effect(() => {
 				const now = h.read(once);
 				if (first) {
 					first = false;
@@ -174,9 +174,9 @@ describe("inFlight(action, owner)", () => {
 		function* note(_draft: IPanel): IActionGenerator {
 			order.push("note");
 		}
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			let dispatched = false;
-			createEffect(() => {
+			reactive.effect(() => {
 				if (h.read(slow) && !dispatched) {
 					dispatched = true;
 					void h.runtime.dispatch(note, "panel");
@@ -318,9 +318,9 @@ describe("inFlight as a read", () => {
 				draft
 			);
 		}
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			const seen: boolean[] = [];
-			createEffect(() => {
+			reactive.effect(() => {
 				seen.push(h.runtime.runSelector(busy, h.panel));
 			});
 			await settled();
@@ -363,9 +363,9 @@ describe("inFlight as a read", () => {
 			yield* wait();
 			draft.Log.push("stored");
 		}
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			const seen: boolean[] = [];
-			createEffect(() => {
+			reactive.effect(() => {
 				seen.push(h.read(store));
 			});
 			await settled();
@@ -475,8 +475,8 @@ describe("inFlight as a read", () => {
 				yield* inFlight(load, draft)
 			];
 		}
-		await createRoot(async (dispose) => {
-			createEffect(() => {
+		await reactive.root(async (dispose) => {
+			reactive.effect(() => {
 				h.runtime.runSelector(saving, h.panel);
 				h.runtime.runSelector(both, h.panel);
 			});
@@ -545,9 +545,9 @@ describe("inFlight as a read", () => {
 		function* stashing(draft: IPanel): ISelectorGenerator<boolean> {
 			return yield* inFlight(stash, draft);
 		}
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			const seen: boolean[] = [];
-			createEffect(() => {
+			reactive.effect(() => {
 				seen.push(h.runtime.runSelector(stashing, h.panel));
 			});
 			await settled();

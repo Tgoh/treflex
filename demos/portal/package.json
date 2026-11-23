@@ -12,15 +12,16 @@
 		"test:watch": "vitest"
 	},
 	"dependencies": {
-		"solid-js": "^1.9.7",
+		"@solidjs/web": "^2.0.3",
+		"solid-js": "^2.0.3",
 		"treflex": "file:../../packages/core",
 		"treflex-solid": "file:../../packages/solid"
 	},
 	"devDependencies": {
+		"@solidjs/vite-plugin": "^3.0.1",
 		"@types/node": "^24.0.3",
 		"typescript": "^7.0.2",
-		"vite": "^6.3.5",
-		"vite-plugin-solid": "^2.11.7",
+		"vite": "^8.3.8",
 		"vitest": "^4.1.4"
 	}
 }

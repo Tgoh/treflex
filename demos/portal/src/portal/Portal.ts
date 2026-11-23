@@ -5,7 +5,7 @@ import type { ITour } from "../tour/Tour";
 import type { IPlanner } from "../trips/Planner";
 import type { IThreadLine } from "../trips/Trip";
 import type { IRestoreLines } from "./restoreBanner";
-import type { IAppId, IFinished } from "./topics";
+import type { IAppId, IFinished, IRestoredWork } from "./topics";
 import { named, publish, receiver, start, startTimer, stopTimer, transient } from "treflex";
 import * as Aquarium from "../aquarium/Aquarium";
 import * as Chat from "../chat/Chat";
@@ -30,7 +30,7 @@ export const TOAST_MS = 9000;
 
 /** What the last restore found across the apps, kept as it was so the banner reports the restore. */
 export interface IPortalRestore {
-	/** Whether any search, question or send was cut off, whatever has been removed since. */
+	/** Whether any question or send was cut off, whatever has been removed since. */
 	LostAny: boolean;
 }
 
@@ -138,9 +138,10 @@ export function* applyToastVoucher(draft: IPortal): IActionGenerator {
 }
 named(applyToastVoucher, "Portal/ApplyToastVoucher");
 
-export function* announceRestore(_draft: IPortal, droppedEntityIds: string[]): IActionGenerator {
+export function* announceRestore(_draft: IPortal, resumed: IRestoredWork[], dropped: IRestoredWork[]): IActionGenerator {
 	yield* publish("Portal/Restored", {
-		DroppedEntityIds: droppedEntityIds
+		Resumed: resumed,
+		Dropped: dropped
 	});
 }
 named(announceRestore, "Portal/AnnounceRestore");

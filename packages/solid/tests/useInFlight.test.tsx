@@ -1,13 +1,13 @@
-import type { JSX } from "solid-js";
+import type { JSX } from "@solidjs/web";
 import type { IActionGenerator, IEntity, IRuntime, ISelectorGenerator } from "treflex";
-import { createEffect, createRoot, createSignal, For, Show } from "solid-js";
+import { createEffect, createRoot, createSignal, Errored, For, flush, Show } from "solid-js";
 import { createRuntime, createTestRuntime, entity, inFlight, leading, workTag } from "treflex";
 import { describe, expect, it, vi } from "vitest";
 import { createEntityFeature } from "../src/Context/createEntityFeature";
 import { TreflexProvider } from "../src/Context/TreflexContext";
 import { useComponentState } from "../src/Hooks/useComponentState";
 import { useInFlight } from "../src/Hooks/useInFlight";
-import { unhandledDuring } from "./unhandledDuring";
+import { mount } from "./mount";
 
 interface IRow extends IEntity {
 	Name: string;
@@ -112,29 +112,30 @@ function world(id = "root") {
 	};
 }
 
-function mount(runtime: IRuntime<IRoot>, body: () => JSX.Element) {
-	return createRoot((dispose) => {
-		const View = Feature.provider(body);
-		TreflexProvider({
-			value: runtime,
-			get children() {
-				return <View state={runtime.state} />;
-			}
-		});
-		return dispose;
-	});
+function mountView(runtime: IRuntime<IRoot>, body: () => JSX.Element): () => void {
+	const View = Feature.provider(body);
+	return mount(() => (
+		<TreflexProvider value={runtime}>
+			<View state={runtime.state} />
+		</TreflexProvider>
+	)).dispose;
 }
+
+const push =
+	<T,>(into: T[]) =>
+	(value: T) => {
+		into.push(value);
+	};
 
 describe("useInFlight", () => {
 	it("flips in the same flush as a selector reading inFlight, and ignores other work", async () => {
 		const { runtime, releases } = world();
 		let feature!: ReturnType<typeof Feature.use>;
 		const seen: string[] = [];
-		const dispose = mount(runtime, () => {
+		const dispose = mountView(runtime, () => {
 			feature = Feature.use();
 			const busy = useInFlight(save, () => feature.state);
-			createEffect(() => seen.push(`hook ${busy()}`));
-			createEffect(() => seen.push(`selector ${feature.saving()}`));
+			createEffect(() => `hook ${busy()}, selector ${feature.saving()}`, push(seen));
 			return null;
 		});
 		const running = feature.other();
@@ -149,12 +150,9 @@ describe("useInFlight", () => {
 		await settle();
 		dispose();
 		expect(seen).toEqual([
-			"hook false",
-			"selector false",
-			"hook true",
-			"selector true",
-			"hook false",
-			"selector false"
+			"hook false, selector false",
+			"hook true, selector true",
+			"hook false, selector false"
 		]);
 	});
 
@@ -162,10 +160,13 @@ describe("useInFlight", () => {
 		const { runtime, releases } = world();
 		let feature!: ReturnType<typeof Feature.use>;
 		let busy!: () => boolean;
-		const dispose = mount(runtime, () => {
+		const dispose = mountView(runtime, () => {
 			feature = Feature.use();
 			busy = useInFlight(save, () => feature.state);
-			createEffect(() => busy());
+			createEffect(
+				() => busy(),
+				() => {}
+			);
 			return null;
 		});
 		const guarded = () => (busy() ? undefined : feature.save());
@@ -188,7 +189,7 @@ describe("useInFlight", () => {
 		let feature!: ReturnType<typeof Feature.use>;
 		const tag: boolean[] = [];
 		const list: boolean[] = [];
-		const dispose = mount(runtime, () => {
+		const dispose = mountView(runtime, () => {
 			feature = Feature.use();
 			const tagged = useInFlight(Busy, () => feature.state);
 			const either = useInFlight(
@@ -198,8 +199,8 @@ describe("useInFlight", () => {
 				],
 				() => feature.state
 			);
-			createEffect(() => tag.push(tagged()));
-			createEffect(() => list.push(either()));
+			createEffect(() => tagged(), push(tag));
+			createEffect(() => either(), push(list));
 			return null;
 		});
 		const running = feature.other();
@@ -223,14 +224,15 @@ describe("useInFlight", () => {
 	it("reads each row under <For> with no row feature", async () => {
 		const { runtime, releases } = world();
 		const seen: Record<string, boolean[]> = {};
-		const dispose = mount(runtime, () => {
+		const dispose = mountView(runtime, () => {
 			const feature = Feature.use();
 			return (
 				<For each={feature.state.Rows}>
 					{(row) => {
 						const busy = useInFlight(saveRow, row);
-						seen[row.$Id] = [];
-						createEffect(() => seen[row.$Id]!.push(busy()));
+						const into: boolean[] = [];
+						seen[row.$Id] = into;
+						createEffect(() => busy(), push(into));
 						return null;
 					}}
 				</For>
@@ -259,10 +261,10 @@ describe("useInFlight", () => {
 		const [open, setOpen] = createSignal(true);
 		let feature!: ReturnType<typeof Feature.use>;
 		const seen: boolean[] = [];
-		const dispose = mount(runtime, () => {
+		const dispose = mountView(runtime, () => {
 			feature = Feature.use();
 			const busy = useInFlight(saveRow, () => (open() ? feature.state.Open : undefined));
-			createEffect(() => seen.push(busy()));
+			createEffect(() => busy(), push(seen));
 			return null;
 		});
 		const stopped = runtime.dispatch(saveRow, "root-o1").catch(() => undefined);
@@ -295,10 +297,10 @@ describe("useInFlight", () => {
 		function Held() {
 			row = feature.state.Rows[2]!;
 			const busy = useInFlight(saveRow, row);
-			createEffect(() => seen.push(busy()));
+			createEffect(() => busy(), push(seen));
 			return null;
 		}
-		const dispose = mount(runtime, () => {
+		const dispose = mountView(runtime, () => {
 			feature = Feature.use();
 			return (
 				<Show when={ready()}>
@@ -308,6 +310,7 @@ describe("useInFlight", () => {
 		});
 		await feature.addRow("minted");
 		setReady(true);
+		flush();
 		const id = row.$Id;
 		const stopped = runtime.dispatch(saveRow, id).catch(() => undefined);
 		await settle();
@@ -335,9 +338,9 @@ describe("useInFlight", () => {
 		const here = world("here");
 		const there = world("there");
 		const seen: boolean[] = [];
-		const dispose = mount(here.runtime, () => {
+		const dispose = mountView(here.runtime, () => {
 			const busy = useInFlight(saveRow, there.runtime.state.Rows[0]);
-			createEffect(() => seen.push(busy()));
+			createEffect(() => busy(), push(seen));
 			return null;
 		});
 		const running = there.runtime.dispatch(saveRow, "there-r1");
@@ -357,12 +360,12 @@ describe("useInFlight", () => {
 		const { runtime, releases } = world();
 		let local!: ReturnType<typeof useComponentState<IRow>>;
 		const seen: boolean[] = [];
-		const dispose = mount(runtime, () => {
+		const dispose = mountView(runtime, () => {
 			local = useComponentState<IRow>(() => ({
 				Name: "local"
 			}));
 			const busy = useInFlight(saveRow, () => local.state);
-			createEffect(() => seen.push(busy()));
+			createEffect(() => busy(), push(seen));
 			return null;
 		});
 		const running = local.dispatch(saveRow);
@@ -396,7 +399,7 @@ describe("useInFlight", () => {
 			}
 		);
 		let busy!: () => boolean;
-		const dispose = mount(runtime, () => {
+		const dispose = mountView(runtime, () => {
 			const feature = Feature.use();
 			busy = useInFlight(save, () => feature.state);
 			return null;
@@ -407,18 +410,20 @@ describe("useInFlight", () => {
 
 	it("leaves no memo behind once its component unmounts", async () => {
 		const { runtime, releases } = world();
+		const View = () => {
+			const busy = useInFlight(save, runtime.state);
+			createEffect(
+				() => busy(),
+				() => {}
+			);
+			return null;
+		};
 		for (let at = 0; at < 50; at++) {
-			createRoot((dispose) => {
-				TreflexProvider({
-					value: runtime,
-					get children() {
-						const busy = useInFlight(save, runtime.state);
-						createEffect(() => busy());
-						return null;
-					}
-				});
-				return dispose;
-			})();
+			mount(() => (
+				<TreflexProvider value={runtime}>
+					<View />
+				</TreflexProvider>
+			)).dispose();
 		}
 		const reads = vi.spyOn(runtime, "processSelector");
 		const running = runtime.dispatch(save, "root");
@@ -429,20 +434,25 @@ describe("useInFlight", () => {
 		expect(reads).not.toHaveBeenCalled();
 	});
 
-	it("refuses a plain copy, naming the hook", async () => {
+	it("refuses a plain copy, naming the hook, at the first read, to the app's boundary", () => {
 		const { runtime } = world();
-		const heard = await unhandledDuring(() =>
-			mount(runtime, () => {
-				const copy: IRow = {
-					$Id: "root-r1",
-					Name: "copy"
-				};
-				useInFlight(saveRow, copy);
-				return null;
-			})
-		);
-		expect(heard).toHaveLength(1);
-		expect(String(heard[0])).toContain("useInFlight(): the owner is a plain object");
+		const View = Feature.provider(() => {
+			const copy: IRow = {
+				$Id: "root-r1",
+				Name: "copy"
+			};
+			const busy = useInFlight(saveRow, copy);
+			return <>{String(busy())}</>;
+		});
+		const { container, dispose } = mount(() => (
+			<Errored fallback={(error) => (error() as Error).message}>
+				<TreflexProvider value={runtime}>
+					<View state={runtime.state} />
+				</TreflexProvider>
+			</Errored>
+		));
+		expect(container.textContent).toContain("useInFlight(): the owner is a plain object");
+		dispose();
 	});
 
 	it("needs a TreflexProvider", () => {

@@ -4,7 +4,6 @@ import type { ISnapshot } from "../../src/Snapshot/ISnapshot";
 import type { IActionGenerator } from "../../src/Types/IAction";
 import type { IActionTrace } from "../../src/Types/IActionTrace";
 import type { IRecord } from "../../src/Types/IRecord";
-import { createRoot } from "solid-js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { startTimer } from "../../src/Effects/startTimer";
 import { stopTimer } from "../../src/Effects/stopTimer";
@@ -15,6 +14,7 @@ import { createTraceAggregator } from "../../src/Runtime/createTraceAggregator";
 import { createSnapshot } from "../../src/Snapshot/createSnapshot";
 import { restoreRuntime } from "../../src/Snapshot/index";
 import { createTestRuntime } from "../../src/Testing/createTestRuntime";
+import * as reactive from "../reactive";
 import { minted, rawReceiver, rootSetState } from "../testHelpers";
 
 type IChild = {
@@ -219,7 +219,7 @@ describe("timers on the live runtime", () => {
 	}
 
 	it("a tick dispatches the owner's receiver with the registered payload, send-to-self", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const runtime = createRuntime<IRootState>(initialState());
 				runtime.registerReceiver(rawReceiver("TickReceiver", [], tickReceiver()));
@@ -256,7 +256,7 @@ describe("timers on the live runtime", () => {
 	});
 
 	it("fixed delay: the next tick arms only after the previous dispatch settles", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const runtime = createRuntime<IRootState>(initialState());
 				let releaseGate!: (v?: unknown) => void;
@@ -303,7 +303,7 @@ describe("timers on the live runtime", () => {
 	});
 
 	it("stopTimer retracts the row and no further ticks fire", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const runtime = createRuntime<IRootState>(initialState());
 				runtime.registerReceiver(rawReceiver("TickReceiver", [], tickReceiver()));
@@ -337,7 +337,7 @@ describe("timers on the live runtime", () => {
 	});
 
 	it("drops a tick queued behind a hold when stopTimer runs before it starts, recorded and traced as dropped", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const runtime = createRuntime<IRootState>(initialState());
 				runtime.registerReceiver(rawReceiver("TickReceiver", [], tickReceiver()));
@@ -390,7 +390,7 @@ describe("timers on the live runtime", () => {
 	});
 
 	it("re-registering the same key replaces the schedule — the interval-change idiom", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const runtime = createRuntime<IRootState>(initialState());
 				runtime.registerReceiver(rawReceiver("TickReceiver", [], tickReceiver()));
@@ -419,7 +419,7 @@ describe("timers on the live runtime", () => {
 	});
 
 	it("the dispose cascade retracts a leaving entity's timer mid-interval", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const runtime = createRuntime<IRootState>(initialState());
 				const childReceiver = function* childReceiver(draft: IChild): IActionGenerator {
@@ -461,7 +461,7 @@ describe("timers on the live runtime", () => {
 	});
 
 	it("runtime.dispose clears every armed handle", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const runtime = createRuntime<IRootState>(initialState());
 				runtime.registerReceiver(rawReceiver("TickReceiver", [], tickReceiver()));

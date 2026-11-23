@@ -1,12 +1,13 @@
 import type { IActionGenerator, IEntity, ISelectorGenerator } from "treflex";
 import type { IRuntimeInternal } from "treflex/internal";
-import { createEffect, createRoot } from "solid-js";
+import { createEffect, createRoot, flush } from "solid-js";
 import { createRuntime, inFlight, leading, transient } from "treflex";
 import { describe, expect, it } from "vitest";
 import { createComponentFeature } from "../src/Context/createComponentFeature";
 import { createEntityFeature } from "../src/Context/createEntityFeature";
 import { TreflexProvider } from "../src/Context/TreflexContext";
 import { useComponentState } from "../src/Hooks/useComponentState";
+import { mount } from "./mount";
 import { minted } from "./treeWrite";
 
 interface IRow extends IEntity {
@@ -68,19 +69,15 @@ describe("a transient on component state", () => {
 	it("is written from a component action's draft, as on any entity", async () => {
 		const { runtime } = world();
 		let dispatch!: ReturnType<typeof useComponentState<IEntity>>["dispatch"];
-		const dispose = createRoot((disposer) => {
-			const View = () => {
-				dispatch = useComponentState<IEntity>(() => ({})).dispatch;
-				return null;
-			};
-			TreflexProvider({
-				value: runtime,
-				get children() {
-					return <View />;
-				}
-			});
-			return disposer;
-		});
+		const View = () => {
+			dispatch = useComponentState<IEntity>(() => ({})).dispatch;
+			return null;
+		};
+		const { dispose } = mount(() => (
+			<TreflexProvider value={runtime}>
+				<View />
+			</TreflexProvider>
+		));
 		let count = -1;
 		await dispatch(function* (draft): IActionGenerator {
 			const node = yield* loading(draft);
@@ -119,33 +116,27 @@ describe("a leading action on component state", () => {
 	function mountLocal(runtime: ReturnType<typeof world>["runtime"]) {
 		let local!: ReturnType<typeof useComponentState<ILocal>>;
 		let feature!: ReturnType<typeof Local.use>;
-		const dispose = createRoot((disposer) => {
-			const View = () => {
-				local = useComponentState<ILocal>(() => ({
-					Log: []
-				}));
+		const View = () => {
+			local = useComponentState<ILocal>(() => ({
+				Log: []
+			}));
+			return null;
+		};
+		const Body = Local.provider(
+			() => {
+				feature = Local.use();
 				return null;
-			};
-			const Body = Local.provider(
-				() => {
-					feature = Local.use();
-					return null;
-				},
-				() => ({
-					Log: []
-				})
-			);
-			TreflexProvider({
-				value: runtime,
-				get children() {
-					return [
-						<View />,
-						<Body />
-					];
-				}
-			});
-			return disposer;
-		});
+			},
+			() => ({
+				Log: []
+			})
+		);
+		const { dispose } = mount(() => (
+			<TreflexProvider value={runtime}>
+				<View />
+				<Body />
+			</TreflexProvider>
+		));
 		return {
 			local,
 			feature,
@@ -173,11 +164,16 @@ describe("a leading action on component state", () => {
 		const { runtime, releases } = world();
 		const { local, feature, dispose } = mountLocal(runtime);
 		const seen: boolean[] = [];
-		createRoot(() => {
-			createEffect(() => {
-				seen.push(feature.busy());
-			});
+		const disposeView = createRoot((disposer) => {
+			createEffect(
+				() => feature.busy(),
+				(busy) => {
+					seen.push(busy);
+				}
+			);
+			return disposer;
 		});
+		flush();
 		expect(runtime.processSelector(busy, () => local.state)).toBe(false);
 		const first = feature.state.$Id;
 		void runtime.dispatch(once, first, "a");
@@ -197,6 +193,7 @@ describe("a leading action on component state", () => {
 			true,
 			false
 		]);
+		disposeView();
 		dispose();
 	});
 });
@@ -224,22 +221,21 @@ describe("a leading action in a Solid view", () => {
 		);
 		let feature!: ReturnType<typeof Feature.use>;
 		const seen: boolean[] = [];
-		const dispose = createRoot((disposer) => {
-			const View = Feature.provider(() => {
-				feature = Feature.use();
-				createEffect(() => {
-					seen.push(feature.saving());
-				});
-				return null;
-			});
-			TreflexProvider({
-				value: runtime,
-				get children() {
-					return <View state={runtime.state} />;
+		const View = Feature.provider(() => {
+			feature = Feature.use();
+			createEffect(
+				() => feature.saving(),
+				(saving) => {
+					seen.push(saving);
 				}
-			});
-			return disposer;
+			);
+			return null;
 		});
+		const { dispose } = mount(() => (
+			<TreflexProvider value={runtime}>
+				<View state={runtime.state} />
+			</TreflexProvider>
+		));
 		await settle();
 		const first = feature.saveNote("one");
 		await expect(feature.saveNote("two")).resolves.toBeUndefined();
@@ -268,22 +264,21 @@ describe("a transient in a Solid view", () => {
 			}
 		);
 		const seen: number[] = [];
-		const dispose = createRoot((disposer) => {
-			const View = Feature.provider(() => {
-				const feature = Feature.use();
-				createEffect(() => {
-					seen.push(feature.count());
-				});
-				return null;
-			});
-			TreflexProvider({
-				value: runtime,
-				get children() {
-					return <View state={runtime.state} />;
+		const View = Feature.provider(() => {
+			const feature = Feature.use();
+			createEffect(
+				() => feature.count(),
+				(n) => {
+					seen.push(n);
 				}
-			});
-			return disposer;
+			);
+			return null;
 		});
+		const { dispose } = mount(() => (
+			<TreflexProvider value={runtime}>
+				<View state={runtime.state} />
+			</TreflexProvider>
+		));
 		await settle();
 		const done = runtime.dispatch(load, "root");
 		await settle();
@@ -312,22 +307,21 @@ describe("a transient in a Solid view", () => {
 			}
 		);
 		const seen: number[] = [];
-		const dispose = createRoot((disposer) => {
-			const View = Feature.provider(() => {
-				const feature = Feature.use();
-				createEffect(() => {
-					seen.push(feature.whole().Count);
-				});
-				return null;
-			});
-			TreflexProvider({
-				value: runtime,
-				get children() {
-					return <View state={runtime.state} />;
+		const View = Feature.provider(() => {
+			const feature = Feature.use();
+			createEffect(
+				() => feature.whole().Count,
+				(n) => {
+					seen.push(n);
 				}
-			});
-			return disposer;
+			);
+			return null;
 		});
+		const { dispose } = mount(() => (
+			<TreflexProvider value={runtime}>
+				<View state={runtime.state} />
+			</TreflexProvider>
+		));
 		await settle();
 		const done = runtime.dispatch(load, "root");
 		await settle();
@@ -365,10 +359,15 @@ describe("a transient in a Solid view", () => {
 		const lookup = runtime.get("runtime/stateIdLookup");
 		const seen: number[] = [];
 		const dispose = createRoot((disposer) => {
-			createEffect(() => {
-				const owner = lookup().kid?.state as IEntity | undefined;
-				seen.push(owner ? runtime.processSelector(count, () => owner) : 0);
-			});
+			createEffect(
+				() => {
+					const owner = lookup().kid?.state as IEntity | undefined;
+					return owner ? runtime.processSelector(count, () => owner) : 0;
+				},
+				(n) => {
+					seen.push(n);
+				}
+			);
 			return disposer;
 		});
 		await settle();
@@ -400,22 +399,21 @@ describe("a transient in a Solid view", () => {
 		});
 		let feature!: ReturnType<typeof Row.use>;
 		const seen: string[] = [];
-		const dispose = createRoot((disposer) => {
-			const View = Row.provider(() => {
-				feature = Row.use();
-				createEffect(() => {
-					seen.push(feature.state.Text);
-				});
-				return null;
-			});
-			TreflexProvider({
-				value: runtime,
-				get children() {
-					return <View state={runtime.processSelector(firstRow, () => runtime.state) as IRow} />;
+		const View = Row.provider(() => {
+			feature = Row.use();
+			createEffect(
+				() => feature.state.Text,
+				(text) => {
+					seen.push(text);
 				}
-			});
-			return disposer;
+			);
+			return null;
 		});
+		const { dispose } = mount(() => (
+			<TreflexProvider value={runtime}>
+				<View state={runtime.processSelector(firstRow, () => runtime.state) as IRow} />
+			</TreflexProvider>
+		));
 		await settle();
 		await feature.rename("second");
 		await settle();

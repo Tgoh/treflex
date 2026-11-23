@@ -1,6 +1,6 @@
 # treflex
 
-Treflex is a runtime for front-end application state and the work that runs on it: requests, timers, live connections and multi-step flows. The work lives in the state tree rather than in components, so it runs whether or not a view shows it, actions on one entity take turns, and the app survives a reload. It works with Solid or React, and runs on [Solid](https://solidjs.com)'s reactivity.
+Treflex is a runtime for front-end application state and the work that runs on it: requests, timers, live connections and multi-step flows. The work lives in the state tree rather than in components, so it runs whether or not a view shows it, actions on one entity take turns, and the app survives a reload. It works with Solid or React, on a reactive engine of its own that follows [Solid](https://solidjs.com)'s signals.
 
 **[See it running](https://tgoh.github.io/treflex/)**, and read [why use it](../../README.md#why-use-it).
 

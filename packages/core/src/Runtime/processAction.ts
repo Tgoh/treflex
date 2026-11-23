@@ -1,5 +1,7 @@
+import type { IVersion } from "../Reactive/host";
 import type { IRuntimeServiceKey, IRuntimeServiceValue } from "../Registries/IRuntimeServiceRegistry";
-import type { IVersion } from "../Solid/host";
+import type { IDeliveryAt } from "../Resume/history";
+import type { IPrefix, IReleaseWindow } from "../Resume/IPrefix";
 import type { IAction } from "../Types/IAction";
 import type { IActionContext } from "../Types/IActionContext";
 import type { IEffect } from "../Types/IEffect";
@@ -11,12 +13,12 @@ import type { IExternalRead } from "./createExternalTable";
 import type { IActionJournal, IJournal, IJournalSample } from "./createJournal";
 import type { IWriteGateway } from "./createWriteGateway";
 import type { IFiber, IFiberIdAllocator } from "./Fiber";
-import type { IFiberMachine, IFiberSettleInput, IFiberSettleOutcome } from "./fiberMachine";
+import type { IFiberAdvanceOutcome, IFiberMachine, IFiberSettleInput, IFiberSettleOutcome } from "./fiberMachine";
 import type { IReadHandler } from "./processSelector";
 import type { IRecordingContext } from "./recordingProxy";
 import type { IActionHold, IStepAction } from "./runningStep";
 import type { ISetState } from "./sliceSetState";
-import { host } from "../Solid/host";
+import { host } from "../Reactive/host";
 import { consoleDiag } from "../Types/IRuntimeEvent";
 import { DEV } from "../Utility/devMode";
 import { serializeThrow } from "../Utility/serializeThrow";
@@ -43,8 +45,10 @@ import { displayName, labelOf, nameOf, receiverOf, UnnamedActionError } from "./
 import { NonPlainDataError } from "./nonPlainDataError";
 import { type IOperationDriver, type IRuntimeOperation, operationOf } from "./operations";
 import { PENDING_ASKS_YIELD } from "./pendingAsks";
+import { crossRejection, noteActionFailure, refusalRoot } from "./rebuildThrow";
 import { caseOf } from "./receiver";
 import { createRecordingProxy } from "./recordingProxy";
+import { argsRedacted } from "./redactArgs";
 import { isRefusal } from "./refusal";
 import { TRANSIENT_YIELD } from "./transient";
 import { rawOf } from "./viewProxy";
@@ -75,12 +79,16 @@ declare module "../Registries/IRuntimeServiceRegistry" {
 	}
 }
 
+export type IInFlightState = "holding" | "open" | "regaining" | "queued" | "stopping";
+
 export interface IInFlightAction {
 	ActionId: string;
 	Name: string | null;
 	Label: string | null;
 	Receiver?: string;
 	EntityId: string;
+	State: IInFlightState;
+	Place?: number;
 }
 
 export type IProcessAction = <T, A extends any[], R>(
@@ -119,6 +127,12 @@ export interface IInternalDispatchOptions {
 	onStart?: () => boolean;
 	/** The dispatcher routes the outcome itself, so the action's failure takes no route of its own. */
 	settled?: (outcome: IActionOutcome, actionId: string) => void;
+	/** Runs the action's prefix from its history, synchronously, on a free entity. See `packages/core/src/Resume/prefix.ts`. */
+	prefix?: IPrefix;
+	/** A queued action put back from a snapshot: its id there, which its start carries as `ResumedFrom`. */
+	resumedFrom?: string;
+	/** Wraps the action's journal from its arrival on. */
+	journal?: (inner: IActionJournal) => IActionJournal;
 }
 
 export type IInternalDispatch = <T, A extends any[], R>(
@@ -135,6 +149,20 @@ export interface IProcessActionResult {
 	dispatchInternal: IInternalDispatch;
 	runningActions: (entityId: string) => readonly string[];
 	inFlightActions: () => IInFlightAction[];
+	/** In-flight work `inFlightActions` leaves out, from the same walk of the lines that numbers the rows' `Place`. Only resume asks. */
+	unlistedWork: () => IUnlistedWork;
+	/** Runs `dispatch`, during which the public dispatch diverges `prefix` and starts nothing. Only resume calls it. */
+	duringPrefix: (prefix: IPrefix, dispatch: () => void) => void;
+	liveRuns: (action: Function, key: string) => boolean;
+	/** Sets what the public dispatch asks before it dispatches, or clears it with null. Only resume's restore stage calls it. */
+	releaseWindow: (given: IReleaseWindow | null) => void;
+}
+
+export interface IUnlistedWork {
+	/** The entities on which work without a resource origin that `inFlightActions` leaves out holds the gate or stands in its line. */
+	readonly unnamed: ReadonlyMap<string, "holding" | "in-line">;
+	/** Every resource's delivery in flight. */
+	readonly deliveries: readonly IDeliveryAt[];
 }
 
 type IActiveAction = {
@@ -166,7 +194,7 @@ type IActiveAction = {
 	// Refusals thrown into the action's code that haven't left it since.
 	refusals: Set<unknown> | null;
 	emitDiag: IDiagEmitter;
-	resourceOrigin: boolean;
+	origin: IActionOrigin | undefined;
 	// Sampled at dispatch, not read when a record is made: after the entity's removal its root no
 	// longer resolves, and a late record would claim AppState.
 	recordRoot: IRecordRoot;
@@ -182,6 +210,12 @@ type IActiveAction = {
 interface IKept {
 	error: unknown;
 	close: boolean;
+}
+
+interface IUnlistedNotes {
+	readonly unnamed: Map<string, "holding" | "in-line">;
+	readonly deliveries: IDeliveryAt[];
+	readonly seen: Set<IActiveAction>;
 }
 
 interface IWaiter {
@@ -398,13 +432,14 @@ function refusalIn(active: IActiveAction, error: unknown): void {
 	if (!DEV || !isRefusal(error)) {
 		return;
 	}
-	const owner = refusalOwners.get(error);
+	const root = refusalRoot(error);
+	const owner = refusalOwners.get(root);
 	if (owner !== undefined && owner !== active) {
 		return;
 	}
-	refusalOwners.set(error, active);
+	refusalOwners.set(root, active);
 	active.refusals ??= new Set();
-	active.refusals.add(error);
+	active.refusals.add(root);
 }
 
 /** What makes one of an action's fibers step, taken one at a time in the order they came. */
@@ -489,8 +524,10 @@ export interface IActionEnv<T> {
 	/** The error has left the action's code, as a failure the runtime caught. */
 	refusalOut: (error: unknown) => void;
 	wakes: IWakeQueue;
-	/** Applies the runtime's `requireNames` to an action about to be started on `entityId`. */
-	requireName: (action: object, entityId: string) => void;
+	/** Applies the runtime's `requireNames`, and a restore's window before its release, to an action about to be started on `entityId`, throwing into the starter. */
+	admitStart: (action: Function, entityId: string) => void;
+	/** Set while the action's prefix is replayed, and null from its hand-over on. */
+	prefix: IPrefix | null;
 }
 
 export interface IFiberContext<T> {
@@ -518,7 +555,10 @@ function makeFiberContext<T>(
 		step: {
 			fiber,
 			name: env.actionName,
-			answer: (effect) => answerInStep(ctx, effect, (copied) => dispatchSync(ctx, copied)),
+			answer: (effect) =>
+				answerInStep(ctx, effect, (copied) =>
+					env.prefix === null ? dispatchSync(ctx, copied) : env.prefix.answerInStep(copied, settleResult)
+				),
 			retake: () => env.retakeHold(env.active),
 			hold: env.hold ?? undefined,
 			refused: env.refusalIn
@@ -726,6 +766,10 @@ function isThenable(value: unknown): value is PromiseLike<unknown> {
 	);
 }
 
+const CROSSING_RESULT = {
+	dropZeroSign: true
+};
+
 // A returns: "module" result is recorded so the recording proxy's set trap can
 // refuse it.
 function settleResult(effect: IEffect, value: unknown): unknown {
@@ -737,7 +781,7 @@ function settleResult(effect: IEffect, value: unknown): unknown {
 		recordCodeResult(value);
 		return value;
 	}
-	const copy = cloneStrict(value);
+	const copy = cloneStrict(value, CROSSING_RESULT);
 	if (!copy.ok) {
 		throw new NonPlainDataError(`effect "${effect.Type}": the result`, copy.kind, copy.path, "Convert at the implementation.");
 	}
@@ -786,6 +830,19 @@ function reportSyncViolation<T>(ctx: IFiberContext<T>, effect: IEffect, thenable
 	return error;
 }
 
+function crossEffectRejection<T>(ctx: IFiberContext<T>, effect: IEffect, error: unknown): unknown {
+	return crossRejection(
+		error,
+		{
+			where: `effect "${effect.Type}"`,
+			data: {
+				effectType: effect.Type
+			}
+		},
+		() => resolveDiag(ctx.env.runtimeStoreReader)
+	);
+}
+
 function dispatchSync<T>(ctx: IFiberContext<T>, effect: IEffect): IFiberSettleInput {
 	const call = syncCall.enter(effect.Type);
 	let value: unknown;
@@ -794,7 +851,7 @@ function dispatchSync<T>(ctx: IFiberContext<T>, effect: IEffect): IFiberSettleIn
 	} catch (error) {
 		return {
 			verb: "throw",
-			error: call.violation ?? error
+			error: call.violation ?? crossEffectRejection(ctx, effect, error)
 		};
 	} finally {
 		syncCall.exit(call);
@@ -998,14 +1055,15 @@ function runFiberLoop<T>(ctx: IFiberContext<T>, machine: IFiberMachine, onEnd?: 
 			run(input);
 			runAll(due);
 		};
-		const onError = (error: unknown): void => {
+		const onError = (error: unknown, fromImplementation = false): void => {
 			if (parkedOn === null) {
 				return;
 			}
+			const effect = parkedOn;
 			const due = unpark();
 			run({
 				verb: "throw",
-				error
+				error: fromImplementation ? crossEffectRejection(ctx, effect, error) : error
 			});
 			runAll(due);
 		};
@@ -1028,7 +1086,7 @@ function runFiberLoop<T>(ctx: IFiberContext<T>, machine: IFiberMachine, onEnd?: 
 			queueMicrotask(() => takeWake(wakes, onEnded));
 		};
 
-		const park = (effect: IEffect, dispatched: unknown): void => {
+		const park = (effect: IEffect, dispatched: unknown, fromImplementation = false): void => {
 			parkedOn = effect;
 			fiber.waitingOn = effect.Type;
 			parkedAfterResume = afterResume;
@@ -1051,7 +1109,7 @@ function runFiberLoop<T>(ctx: IFiberContext<T>, machine: IFiberMachine, onEnd?: 
 					if (ownFailure && fiber.stopped) {
 						ctx.env.failedUnderStop(fiber, error);
 					}
-					takeWake(wakes, () => onError(error));
+					takeWake(wakes, () => onError(error, fromImplementation));
 				}
 			);
 			fiber.endWait = endWait;
@@ -1111,10 +1169,14 @@ function runFiberLoop<T>(ctx: IFiberContext<T>, machine: IFiberMachine, onEnd?: 
 		};
 
 		// A cancelled run resolves undefined; callers tell it apart by machine.position.
-		const run = (resumeWith?: IFiberSettleInput): void => {
+		const run = (resumeWith?: IFiberSettleInput, sending?: IFiberAdvanceOutcome): void => {
+			let advanced = sending;
 			try {
 				let settled: IFiberSettleOutcome | null = resumeWith ? machine.settle(resumeWith) : null;
 				while (true) {
+					if (ctx.env.prefix?.halted(settled, machine.position)) {
+						return;
+					}
 					if (settled) {
 						if (settled.kind === "cancelled") {
 							resolve(undefined);
@@ -1136,10 +1198,37 @@ function runFiberLoop<T>(ctx: IFiberContext<T>, machine: IFiberMachine, onEnd?: 
 						resolve(undefined);
 						return;
 					}
-					const outcome = machine.advance();
+					const outcome = advanced ?? machine.advance();
+					advanced = undefined;
 					switch (outcome.kind) {
 						case "effect": {
 							const effect = outcome.effect;
+							const prefix = ctx.env.prefix;
+							if (prefix !== null) {
+								const recorded = prefix.answer(effect, settleResult);
+								if (recorded === null) {
+									return;
+								}
+								if (recorded === "held") {
+									parkOnDriver(effect);
+									prefix.held(() =>
+										takeWake(wakes, () => {
+											if (parkedOn !== effect || fiber.stopped) {
+												return;
+											}
+											prefix.sent();
+											unpark();
+											run(undefined, outcome);
+										})
+									);
+									return;
+								}
+								if (recorded.parks) {
+									letOthersIn(active, fiber);
+								}
+								settled = machine.settle(recorded.input);
+								break;
+							}
 							const operation = operationOf(effect);
 							if (operation) {
 								let parkOn: unknown;
@@ -1200,12 +1289,12 @@ function runFiberLoop<T>(ctx: IFiberContext<T>, machine: IFiberMachine, onEnd?: 
 								if (!fiber.stopped) {
 									settled = machine.settle({
 										verb: "throw",
-										error: effectError
+										error: crossEffectRejection(ctx, effect, effectError)
 									});
 									break;
 								}
 							}
-							park(effect, dispatched);
+							park(effect, dispatched, true);
 							return;
 						}
 						case "regain": {
@@ -1222,6 +1311,16 @@ function runFiberLoop<T>(ctx: IFiberContext<T>, machine: IFiberMachine, onEnd?: 
 							break;
 						}
 						case "read": {
+							if (ctx.env.prefix !== null) {
+								const recorded = ctx.env.prefix.read(outcome.yielded, (value, key) =>
+									copyForAction(ctx, value, "external", `external "${key}" in an action: the value`, key)
+								);
+								if (recorded === null) {
+									return;
+								}
+								settled = machine.settle(recorded);
+								break;
+							}
 							let input: IFiberSettleInput;
 							const inFlightAnswers: boolean[] = [];
 							const externalAnswers: IExternalRead[] = [];
@@ -1374,7 +1473,8 @@ export function createProcessAction(options: IProcessActionOptions): IProcessAct
 		});
 	}
 
-	function enter(key: string, active: IActiveAction): void {
+	// A replayed action's arrival is noted by its prefix binding's `arrived`, once the engine accepts the hand-over.
+	function enter(key: string, active: IActiveAction, replayed: boolean): void {
 		const work = workOf(works, key);
 		const firsts: IVersion[] = [];
 		for (const counted of active.counts) {
@@ -1385,7 +1485,9 @@ export function createProcessAction(options: IProcessActionOptions): IProcessAct
 		}
 		active.work = work;
 		work.entries.push(active);
-		noteArrival(active.counts);
+		if (!replayed) {
+			noteArrival(active.counts);
+		}
 		for (const version of firsts) {
 			bumpLater(version, emitDiag);
 		}
@@ -1502,6 +1604,62 @@ export function createProcessAction(options: IProcessActionOptions): IProcessAct
 		}
 	}
 
+	let replaying: IPrefix | null = null;
+	let beforeRelease: IReleaseWindow | null = null;
+	const madeWork = new WeakSet<IActiveAction>();
+
+	function refusedInWindow(open: IReleaseWindow, action: Function, setState: ISetState<any>, idAccessor: () => string): Error | null {
+		let key: string | null;
+		try {
+			key = host.untrack(() => gateKeyOf(idAccessor(), readNodeOf(setState), false));
+		} catch {
+			return null;
+		}
+		return key === null ? null : open.refuse(action, key, gates.get(key)?.holder?.actionId ?? null);
+	}
+
+	// By `fn`, not `counts`: a delivery of a marked case is never stopped by the case's mark.
+	function runsOf(action: Function, entries: readonly IActiveAction[], before: IActiveAction | null): IActiveAction[] {
+		return (before === null ? entries : entries.slice(0, entries.indexOf(before))).filter(
+			(entry) => entry.fn === action && !entry.ended && !entry.stopped
+		);
+	}
+
+	function duringPrefix(prefix: IPrefix, dispatch: () => void): void {
+		const outer = replaying;
+		replaying = prefix;
+		try {
+			dispatch();
+		} finally {
+			replaying = outer;
+		}
+	}
+
+	function dropReplayed(active: IActiveAction): void {
+		const gate = active.gate;
+		if (gate !== null) {
+			for (const waiter of gate.queue.filter((entry) => entry.active === active)) {
+				dequeue(gate, waiter);
+			}
+			if (gate.holder === active) {
+				freeGate(gate);
+			}
+		}
+		active.holding = false;
+		active.liveFibers.clear();
+		const work = active.work;
+		leave(active);
+		active.ended = true;
+		// `inFlightActions` lists rows in the order `works` made its entries, which a later resume reads.
+		if (madeWork.delete(active) && work !== null && work.entries.length === 0 && works.get(active.routeId) === work) {
+			works.delete(active.routeId);
+		}
+	}
+
+	function liveRuns(action: Function, key: string): boolean {
+		return runsOf(action, works.get(key)?.entries ?? [], null).length > 0;
+	}
+
 	function runningActions(entityId: string): readonly string[] {
 		const names: string[] = [];
 		for (const active of works.get(entityId)?.entries ?? []) {
@@ -1512,23 +1670,119 @@ export function createProcessAction(options: IProcessActionOptions): IProcessAct
 		return names;
 	}
 
+	function listed(active: IActiveAction): boolean {
+		return active.origin === undefined && active.gate !== null && (active.stopped ? !active.ended : active.root?.status === "running");
+	}
+
+	function noteDelivery(notes: IUnlistedNotes, active: IActiveAction, entityId: string, at: IDeliveryAt["At"]): void {
+		const origin = active.origin!;
+		notes.seen.add(active);
+		notes.deliveries.push({
+			Key: origin.Key,
+			OwnerId: origin.OwnerId,
+			EntityId: entityId,
+			At: at
+		});
+	}
+
+	function lines(unlisted: IUnlistedNotes | null): Map<
+		IActiveAction,
+		{
+			queued: boolean;
+			place: number;
+		}
+	> {
+		const waiting = new Map<
+			IActiveAction,
+			{
+				queued: boolean;
+				place: number;
+			}
+		>();
+		for (const gate of gates.values()) {
+			const holder = gate.holder;
+			if (unlisted !== null && holder !== null && !listed(holder)) {
+				if (holder.origin?.Kind === "resource:deliver") {
+					noteDelivery(unlisted, holder, gate.key, "holding");
+				} else if (holder.origin === undefined) {
+					unlisted.unnamed.set(gate.key, "holding");
+				}
+			}
+			let place = 0;
+			for (const waiter of gate.queue) {
+				const active = waiter.active;
+				if (active.stopped || waiting.has(active)) {
+					continue;
+				}
+				if (listed(active)) {
+					waiting.set(active, {
+						queued: waiter === active.waiter,
+						place: place++
+					});
+				} else if (unlisted !== null) {
+					if (active.origin?.Kind === "resource:deliver") {
+						if (!unlisted.seen.has(active)) {
+							noteDelivery(unlisted, active, gate.key, "in-line");
+						}
+					} else if (active.origin === undefined && !unlisted.unnamed.has(gate.key)) {
+						unlisted.unnamed.set(gate.key, "in-line");
+					}
+				}
+			}
+		}
+		return waiting;
+	}
+
+	function unlistedWork(): IUnlistedWork {
+		const notes: IUnlistedNotes = {
+			unnamed: new Map(),
+			deliveries: [],
+			seen: new Set()
+		};
+		lines(notes);
+		for (const work of works.values()) {
+			for (const active of work.entries) {
+				if (active.origin?.Kind === "resource:deliver" && !active.ended && !active.stopped && !notes.seen.has(active)) {
+					noteDelivery(notes, active, active.gate?.key ?? active.routeId, "open");
+				}
+			}
+		}
+		return notes;
+	}
+
 	function inFlightActions(): IInFlightAction[] {
+		const waiting = lines(null);
 		const inFlight: IInFlightAction[] = [];
 		for (const work of works.values()) {
 			for (const active of work.entries) {
-				if (!active.resourceOrigin) {
-					inFlight.push({
-						ActionId: active.actionId,
-						Name: active.durableName,
-						Label: active.label,
-						...(active.receiver !== undefined
-							? {
-									Receiver: active.receiver
-								}
-							: {}),
-						EntityId: active.entityId
-					});
+				if (!listed(active)) {
+					continue;
 				}
+				const key = active.gate!.key;
+				const wait = waiting.get(active);
+				inFlight.push({
+					ActionId: active.actionId,
+					Name: active.durableName,
+					Label: active.label,
+					...(active.receiver !== undefined
+						? {
+								Receiver: active.receiver
+							}
+						: {}),
+					EntityId: key,
+					...(active.stopped
+						? {
+								State: "stopping" as const
+							}
+						: wait !== undefined
+							? {
+									State: wait.queued ? ("queued" as const) : ("regaining" as const),
+									Place: wait.place
+								}
+							: {
+									State: gates.get(key)?.holder === active ? ("holding" as const) : ("open" as const)
+								})
+				});
 			}
 		}
 		return inFlight;
@@ -1679,6 +1933,16 @@ export function createProcessAction(options: IProcessActionOptions): IProcessAct
 		if (syncCallOpen()) {
 			refuseInSyncCall(`tried to dispatch action "${displayName(action)}"`);
 		}
+		if (replaying !== null) {
+			replaying.diverge(`step code dispatched "${displayName(action)}"`, true);
+			return Promise.resolve(undefined);
+		}
+		if (beforeRelease !== null) {
+			const refused = refusedInWindow(beforeRelease, action, setState, idAccessor);
+			if (refused !== null) {
+				return Promise.reject(refused);
+			}
+		}
 		// A first-slice throw is taken before the promise exists.
 		let running: Promise<R | undefined> | undefined;
 		let taken = false;
@@ -1796,7 +2060,7 @@ export function createProcessAction(options: IProcessActionOptions): IProcessAct
 			unrouted: [],
 			refusals: null,
 			emitDiag,
-			resourceOrigin: origin !== undefined,
+			origin,
 			recordRoot,
 			root: null,
 			gate: null,
@@ -1805,7 +2069,10 @@ export function createProcessAction(options: IProcessActionOptions): IProcessAct
 			ended: false,
 			unwanted: false
 		};
-		enter(key ?? entityId, active);
+		if (dispatchOptions?.prefix !== undefined && !works.has(key ?? entityId)) {
+			madeWork.add(active);
+		}
+		enter(key ?? entityId, active, dispatchOptions?.prefix !== undefined);
 		const linked = dispatchOptions?.signal;
 		const stopLinked = () => {
 			active.unwanted = true;
@@ -1840,7 +2107,9 @@ export function createProcessAction(options: IProcessActionOptions): IProcessAct
 		const startedBy = dispatchOptions?.startedBy;
 		const isRun = active.fn === null;
 		const journaling = journal.sample();
-		const actionJournal = withRoot(journal, active.recordRoot);
+		const prefix = dispatchOptions?.prefix ?? null;
+		const rooted = withRoot(journal, active.recordRoot);
+		const actionJournal = prefix !== null ? prefix.journal(rooted) : (dispatchOptions?.journal?.(rooted) ?? rooted);
 		const actionStart = performance.now();
 
 		const rootFiber = createFiber(allocateBranchId());
@@ -1854,6 +2123,7 @@ export function createProcessAction(options: IProcessActionOptions): IProcessAct
 			currentJournalChanges: null,
 			isDraft: true,
 			checkPaths: journal.enabled,
+			landing: false,
 			gateway: options.gateway,
 			wrote: DEV && options.gateway ? (target, written) => reportHeldWrite(active, action, target, written) : undefined
 		};
@@ -1904,11 +2174,28 @@ export function createProcessAction(options: IProcessActionOptions): IProcessAct
 			},
 			refusalIn: (error) => refusalIn(active, error),
 			refusalOut: (error) => {
-				active.refusals?.delete(error);
+				active.refusals?.delete(refusalRoot(error));
 			},
 			wakes: createWakeQueue(),
-			requireName: (started, startedOn) => requireName(started, options.gateway?.rootNameOf(startedOn) ?? "AppState", undefined)
+			admitStart: (started, startedOn) => {
+				requireName(started, options.gateway?.rootNameOf(startedOn) ?? "AppState", undefined);
+				const refused = beforeRelease?.refuseStart(started, startedOn) ?? null;
+				if (refused !== null) {
+					throw refused;
+				}
+			},
+			prefix
 		};
+		prefix?.bind({
+			live: () => {
+				env.prefix = null;
+			},
+			arrived: () => noteArrival(active.counts),
+			ordinary: () => {
+				env.journal = withRoot(journal, active.recordRoot);
+			},
+			drop: () => dropReplayed(active)
+		});
 		const ctx = makeFiberContext(env, rootFiber, origin);
 
 		let copies: A;
@@ -1932,7 +2219,14 @@ export function createProcessAction(options: IProcessActionOptions): IProcessAct
 					Path: [
 						...(resolvePath ? resolvePath(entityId) : [])
 					],
-					Args: copies as unknown as unknown[],
+					...(argsRedacted(action)
+						? {
+								Args: [],
+								ArgsRedacted: true as const
+							}
+						: {
+								Args: copies as unknown as unknown[]
+							}),
 					...(startedBy !== undefined
 						? {
 								StartedBy: startedBy
@@ -1943,6 +2237,11 @@ export function createProcessAction(options: IProcessActionOptions): IProcessAct
 								Origin: {
 									...origin
 								}
+							}
+						: {}),
+					...(dispatchOptions?.resumedFrom !== undefined
+						? {
+								ResumedFrom: dispatchOptions.resumedFrom
 							}
 						: {})
 				});
@@ -1982,6 +2281,10 @@ export function createProcessAction(options: IProcessActionOptions): IProcessAct
 				machine = createFiberMachine(ctx, () => action(draft, ...copies) as Generator<unknown, unknown, unknown>);
 				const first = machine.start();
 				if (first.kind === "errored") {
+					if (env.prefix !== null) {
+						env.prefix.diverge("the action threw out of its first step");
+						return new Promise<never>(() => {});
+					}
 					throw first.error;
 				}
 			} catch (initError) {
@@ -1995,10 +2298,12 @@ export function createProcessAction(options: IProcessActionOptions): IProcessAct
 		};
 
 		const policy = isRun ? null : policyOf(action);
+		if (prefix !== null && runsOf(action, active.work?.entries ?? [], active).length > 0) {
+			prefix.diverge(`live work of "${actionName}" is on the entity "${key ?? entityId}", and a second run would do its work again`);
+			return new Promise<never>(() => {});
+		}
 		if (policy) {
-			const entries = active.work?.entries ?? [];
-			// By `fn`, not `counts`: a delivery of a marked case is never stopped by the case's mark.
-			const ahead = entries.slice(0, entries.indexOf(active)).filter((entry) => entry.fn === action && !entry.ended && !entry.stopped);
+			const ahead = runsOf(action, active.work?.entries ?? [], active);
 			if (policy.kind === "leading" && ahead.length > 0) {
 				settleAction(ctx, actionStart, {
 					status: "dropped"
@@ -2026,6 +2331,10 @@ export function createProcessAction(options: IProcessActionOptions): IProcessAct
 		if (isFree(gate) && !holdBack) {
 			hold();
 			return start(false);
+		}
+		if (prefix !== null) {
+			prefix.diverge(`the entity "${key}" is held by live work`);
+			return new Promise<never>(() => {});
 		}
 		return new Promise<R | undefined>((resolve, reject) => {
 			const waiter: IWaiter = {
@@ -2064,6 +2373,7 @@ export function createProcessAction(options: IProcessActionOptions): IProcessAct
 		const active = ctx.env.active;
 		if (outcome.status === "errored") {
 			ctx.env.refusalOut(outcome.error);
+			noteActionFailure(outcome.error);
 		}
 		ctx.fiber.status = outcome.status === "dropped" ? "cancelled" : outcome.status;
 		active.liveFibers.delete(ctx.fiber);
@@ -2236,6 +2546,12 @@ export function createProcessAction(options: IProcessActionOptions): IProcessAct
 		processAction,
 		dispatchInternal,
 		runningActions,
-		inFlightActions
+		inFlightActions,
+		unlistedWork,
+		duringPrefix,
+		liveRuns,
+		releaseWindow: (given) => {
+			beforeRelease = given;
+		}
 	};
 }

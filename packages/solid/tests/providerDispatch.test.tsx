@@ -1,15 +1,16 @@
 import type { IActionGenerator, IEntity } from "treflex";
 import type { IRuntimeInternal } from "treflex/internal";
-import { createRoot, createSignal } from "solid-js";
+import { createSignal, flush } from "solid-js";
 import { createRuntime } from "treflex";
 import { rawOf, view } from "treflex/internal";
 import { describe, expect, it, vi } from "vitest";
 import { createEntityFeature } from "../src/Context/createEntityFeature";
 import { TreflexProvider } from "../src/Context/TreflexContext";
+import { mount } from "./mount";
 import { minted, treeWrite } from "./treeWrite";
 import { unhandledDuring } from "./unhandledDuring";
 
-// Compiled through vite-plugin-solid, so `props` is Solid's getter-backed object: under a plain
+// Compiled through the Solid plugin, so `props` is Solid's getter-backed object: under a plain
 // literal, a provider that reads `props.state` once at mount passes "re-reads props.state on
 // every dispatch".
 
@@ -34,7 +35,7 @@ interface IBound {
 	bump: () => Promise<unknown>;
 }
 
-function mount(
+function mountChild(
 	host: unknown,
 	props: {
 		state: unknown;
@@ -49,16 +50,11 @@ function mount(
 		return null;
 	};
 	const Wrapped = Child.provider(Inner);
-	const dispose = createRoot((disposer) => {
-		// Evaluated eagerly: Solid's JSX compiles a component to a
-		// createComponent call, and the Provider reads its children.
-		void (
-			<TreflexProvider value={host as any}>
-				<Wrapped {...(props as any)} />
-			</TreflexProvider>
-		);
-		return disposer;
-	});
+	const { dispose } = mount(() => (
+		<TreflexProvider value={host as any}>
+			<Wrapped {...(props as any)} />
+		</TreflexProvider>
+	));
 	if (!captured) {
 		throw new Error("harness: the wrapped component never ran");
 	}
@@ -88,7 +84,7 @@ describe("a discarded call that fails, with only a runtime onError", () => {
 		const runtime = createRuntime<IParent>(seed(), {
 			onError
 		});
-		const { bound, dispose } = mount(runtime, props);
+		const { bound, dispose } = mountChild(runtime, props);
 		return {
 			onError,
 			call: bound.bump,
@@ -141,20 +137,13 @@ async function failure(fn: () => unknown): Promise<Error> {
 	return caught as Error;
 }
 
-function runtimeWorld<R>(fn: (runtime: IRuntimeInternal<IParent>) => Promise<R>): Promise<R> {
-	return new Promise<R>((resolve, reject) => {
-		createRoot(async (disposer) => {
-			const runtime = createRuntime<IParent>(seed()) as IRuntimeInternal<IParent>;
-			try {
-				resolve(await fn(runtime));
-			} catch (error) {
-				reject(error);
-			} finally {
-				runtime.dispose();
-				disposer();
-			}
-		});
-	});
+async function runtimeWorld<R>(fn: (runtime: IRuntimeInternal<IParent>) => Promise<R>): Promise<R> {
+	const runtime = createRuntime<IParent>(seed()) as IRuntimeInternal<IParent>;
+	try {
+		return await fn(runtime);
+	} finally {
+		runtime.dispose();
+	}
 }
 
 function diagsOf(runtime: IRuntimeInternal<IParent>) {
@@ -177,7 +166,7 @@ function diagsOf(runtime: IRuntimeInternal<IParent>) {
 describe("the provider's dispatch on its state", () => {
 	it("writes to the entity when the mount site passes only state", async () => {
 		await runtimeWorld(async (runtime) => {
-			const { bound, dispose } = mount(runtime, {
+			const { bound, dispose } = mountChild(runtime, {
 				state: runtime.state.A[0]
 			});
 
@@ -199,7 +188,7 @@ describe("the provider's dispatch on its state", () => {
 			});
 
 			const [which, setWhich] = createSignal<"c1" | "c2">("c1");
-			const { bound, dispose } = mount(runtime, {
+			const { bound, dispose } = mountChild(runtime, {
 				get state() {
 					return which() === "c1" ? runtime.state.A[0] : runtime.state.B[0];
 				}
@@ -210,6 +199,7 @@ describe("the provider's dispatch on its state", () => {
 			expect(runtime.state.B[0].Value).toBe(0);
 
 			setWhich("c2");
+			flush();
 
 			await bound.bump();
 			expect(runtime.state.A[0].Value).toBe(1);
@@ -221,7 +211,7 @@ describe("the provider's dispatch on its state", () => {
 
 	it("accepts a raw node for the same entity: the check compares raw nodes", async () => {
 		await runtimeWorld(async (runtime) => {
-			const { bound, dispose } = mount(runtime, {
+			const { bound, dispose } = mountChild(runtime, {
 				state: rawOf(runtime.state.A[0])
 			});
 
@@ -239,7 +229,7 @@ describe("the provider's dispatch on its state", () => {
 				$Id: "c1",
 				Value: 100
 			});
-			const { bound, dispose } = mount(runtime, {
+			const { bound, dispose } = mountChild(runtime, {
 				state: stray
 			});
 
@@ -266,7 +256,7 @@ describe("the provider's dispatch on its state", () => {
 		await runtimeWorld(async (runtime) => {
 			const diags = diagsOf(runtime);
 			const held = runtime.state.A[0];
-			const { bound, dispose } = mount(runtime, {
+			const { bound, dispose } = mountChild(runtime, {
 				state: held
 			});
 			rawOf(runtime.state).A[0] = {
@@ -293,7 +283,7 @@ describe("the provider's dispatch on its state", () => {
 	it("rejects a plain copy that kept its $Id, and diags it as foreign", async () => {
 		await runtimeWorld(async (runtime) => {
 			const diags = diagsOf(runtime);
-			const { bound, dispose } = mount(runtime, {
+			const { bound, dispose } = mountChild(runtime, {
 				state: {
 					...runtime.state.A[0]
 				}
@@ -317,7 +307,7 @@ describe("the provider's dispatch on its state", () => {
 	it("rejects when the $Id is not in the tree, and diags dispatch/unresolved-entity once", async () => {
 		await runtimeWorld(async (runtime) => {
 			const diags = diagsOf(runtime);
-			const { bound, dispose } = mount(runtime, {
+			const { bound, dispose } = mountChild(runtime, {
 				state: {
 					$Id: "ghost",
 					Value: 0
@@ -346,7 +336,7 @@ describe("the provider's dispatch on its state", () => {
 
 	it("rejects a state prop with an empty $Id rather than writing nowhere", async () => {
 		await runtimeWorld(async (runtime) => {
-			const { bound, dispose } = mount(runtime, {
+			const { bound, dispose } = mountChild(runtime, {
 				state: {
 					$Id: "",
 					Value: 0
@@ -370,7 +360,7 @@ describe("the provider's dispatch on its state", () => {
 					Value: 0
 				})
 			);
-			const { bound, dispose } = mount(runtime, {
+			const { bound, dispose } = mountChild(runtime, {
 				state: late
 			});
 
@@ -399,30 +389,22 @@ describe("the provider's dispatch on its state", () => {
 	});
 
 	it("rejects rather than cross-writing between two runtimes", async () => {
-		await new Promise<void>((resolve, reject) => {
-			createRoot(async (disposer) => {
-				const a = createRuntime<IParent>(seed());
-				const b = createRuntime<IParent>(seed());
-				try {
-					const { bound, dispose } = mount(b, {
-						state: a.state.A[0]
-					});
-
-					const error = await failure(() => bound.bump());
-
-					expect(error.message).toMatch(/not a node of this runtime's tree/);
-					expect(a.state.A[0].Value).toBe(0);
-					expect(b.state.A[0].Value).toBe(0);
-					dispose();
-					resolve();
-				} catch (error) {
-					reject(error);
-				} finally {
-					a.dispose();
-					b.dispose();
-					disposer();
-				}
+		const a = createRuntime<IParent>(seed());
+		const b = createRuntime<IParent>(seed());
+		try {
+			const { bound, dispose } = mountChild(b, {
+				state: a.state.A[0]
 			});
-		});
+
+			const error = await failure(() => bound.bump());
+
+			expect(error.message).toMatch(/not a node of this runtime's tree/);
+			expect(a.state.A[0].Value).toBe(0);
+			expect(b.state.A[0].Value).toBe(0);
+			dispose();
+		} finally {
+			a.dispose();
+			b.dispose();
+		}
 	});
 });

@@ -1,4 +1,4 @@
-import type { JSX } from "solid-js";
+import type { JSX } from "@solidjs/web";
 import { Show } from "solid-js";
 
 export function FailedCard(props: {
@@ -11,10 +11,12 @@ export function FailedCard(props: {
 }) {
 	return (
 		<div
-			class="boot"
-			classList={{
-				inset: props.inset === true
-			}}
+			class={[
+				"boot",
+				{
+					inset: props.inset === true
+				}
+			]}
 		>
 			<div class="bootcard">
 				<b>{props.title}</b>
@@ -30,10 +32,12 @@ export function FailedCard(props: {
 					{props.children}
 					<button
 						type="button"
-						class="btn"
-						classList={{
-							dark: !props.onRetry
-						}}
+						class={[
+							"btn",
+							{
+								dark: !props.onRetry
+							}
+						]}
 						onClick={() => props.onReset()}
 					>
 						Reset

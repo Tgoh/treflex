@@ -1,3 +1,4 @@
+import { errorClass } from "../Utility/errorClasses";
 import { TreflexRefusal } from "./refusal";
 
 export type IAskRefusedReason = "outside-open" | "in-branch" | "in-run";
@@ -55,3 +56,6 @@ export class AnswerOutsideOwnerError extends TreflexRefusal {
 		this.answererId = answererId;
 	}
 }
+
+errorClass("treflex/AskRefusedError", AskRefusedError);
+errorClass("treflex/AnswerOutsideOwnerError", AnswerOutsideOwnerError);

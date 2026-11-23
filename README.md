@@ -1,10 +1,10 @@
 # Treflex
 
-Treflex is a runtime for front-end application state and the work that runs on it: requests, timers, live connections and multi-step flows. Its reactivity follows [Solid](https://solidjs.com)'s signals, which we think are the best model there is, and in a Solid app it runs on Solid itself. It has first-class bindings for React, where most people come from.
+Treflex is a runtime for front-end application state and the work that runs on it: requests, timers, live connections and multi-step flows. Its reactivity follows [Solid](https://solidjs.com)'s signals, which we think are the best model there is, on an engine of its own. It has first-class bindings for Solid and for React, where most people come from.
 
 In most apps that work lives in components and `async` functions, so it depends on what's on screen and on what changed during each `await`. Treflex keeps it in the state tree instead, where it runs whether or not a view shows it.
 
-**[See it running →](https://tgoh.github.io/treflex/)** A trip planner, an aquarium and a team chat. Plan a trip and switch apps: its searches carry on. Reload the page: the trips, the fish mid-swim and the half-streamed messages come back, and a search the reload cut off says so, with what it had found.
+**[See it running →](https://tgoh.github.io/treflex/)** A trip planner, an aquarium and a team chat. Plan a trip and switch apps: its searches carry on. Reload the page: the trips, the fish mid-swim and the half-streamed messages come back, and a search the reload cut off carries on where it left off.
 
 ## Why use it
 
@@ -99,7 +99,6 @@ Know these before you start:
 
 - **State is plain data.** Objects, arrays, strings, numbers, booleans and `null`; no class instances, `Date`s or `Map`s. That is what lets the tree save as one string.
 - **Actions are generators,** and async work goes through declared effects.
-- **A React app carries a small part of Solid.** It comes with `treflex`, and the React binding reads the runtime through `useSyncExternalStore`.
 - **It isn't a server-cache library.** Server data lives in the state tree as entities and refreshes through actions, so for data a treflex feature owns, it takes React Query's place. The two can run side by side while you adopt it.
 - **There is no server-side rendering yet.** It runs in the browser and in headless tests.
 - **It is pre-1.0.** The API can change before 1.0.
@@ -121,12 +120,13 @@ What a coding agent, or a person, has to work with in a treflex app:
 npm create treflex@latest my-app
 ```
 
-It asks for React or Solid, or takes `-- --template react` or `-- --template solid`. To add treflex to an existing app, `npm install treflex treflex-react` or `npm install treflex treflex-solid solid-js`, then follow [the quickstart's steps by hand](./docs/quickstart.md#add-treflex-to-an-existing-app).
+It asks for React or Solid, or takes `-- --template react` or `-- --template solid`. To add treflex to an existing app, `npm install treflex treflex-react` or `npm install treflex treflex-solid solid-js @solidjs/web`, then follow [the quickstart's steps by hand](./docs/quickstart.md#add-treflex-to-an-existing-app).
 
 - **[The quickstart](./docs/quickstart.md)** gets a first app running in React or Solid. Start here.
 - **[The guide](./docs/guide/01-entities.md)** then builds one small app, a feed reader, a step per page.
 - **[The live demo's source](./demos/portal/)** maps each capability onto the files that use it. Run it with `npm run demo:portal`, `npm run demo:react-portal` for the React build, or `npm run demo:portal-swap` for the [swap build](https://tgoh.github.io/treflex/swap/), which switches between the two in place.
 - **[`demos/react-todo`](./demos/react-todo/)** and **[`demos/todo`](./demos/todo/)** are one entity in one file, in React and in Solid, for the syntax.
+- **[`demos/checkout`](./demos/checkout/)** is a checkout flow written as one action, and what a reload does to it. Run it with `npm run demo:checkout`.
 - **[Patterns](./docs/patterns.md)** collects the shapes that cross concepts, and **[the reference](./docs/README.md#reference)** states every rule, one page per concept, with every diag code in [troubleshooting](./docs/reference/troubleshooting.md).
 - **[The principles](./docs/design/principles.md)** are what treflex is built on, and why.
 

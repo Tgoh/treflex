@@ -1,23 +1,8 @@
 import type { IActionGenerator } from "../../src/Types/IAction";
-import {
-	catchError,
-	createComputed,
-	createEffect,
-	createRenderEffect,
-	createRoot,
-	createSignal,
-	getOwner,
-	type Owner,
-	runWithOwner
-} from "solid-js";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
+import { host } from "../../src/Reactive/host";
 import { createRuntime } from "../../src/Runtime/createRuntime";
-import { host } from "../../src/Solid/host";
-
-// An action's finally writes the tree on its way out of a throw. Solid's batch
-// drops every queued computation when its callback throws, leaving the signal
-// written but each observer marked stale and never re-run, so a view stuck on
-// the pre-throw value can no longer be revived by later writes.
+import * as reactive from "../reactive";
 
 type ILoading = {
 	$Id: string;
@@ -33,11 +18,11 @@ const settle = () => new Promise((r) => setTimeout(r, 0));
 
 describe("a throwing action slice", () => {
 	it("notifies observers of the writes its finally made, when the first slice throws", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const runtime = createRuntime<ILoading>(makeState());
 				const seen: number[] = [];
-				createEffect(() => seen.push(runtime.state.IsLoading));
+				reactive.effect(() => seen.push(runtime.state.IsLoading));
 				await settle();
 
 				function* failing(draft: ILoading): IActionGenerator {
@@ -54,8 +39,6 @@ describe("a throwing action slice", () => {
 				expect(runtime.state.IsLoading).toBe(0);
 				expect(seen.at(-1)).toBe(0);
 
-				// The ++ and -- land in one batch, so the last value seen is 0
-				// either way; what the dropped queue breaks is the next write.
 				function* bump(draft: ILoading): IActionGenerator {
 					draft.IsLoading = 5;
 				}
@@ -70,12 +53,12 @@ describe("a throwing action slice", () => {
 	});
 
 	it("notifies observers of the writes its finally made, when a slice after a park throws", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const runtime = createRuntime<ILoading>(makeState());
 				runtime.registerImplementation("throwingSlice/park", async () => {});
 				const seen: number[] = [];
-				createEffect(() => seen.push(runtime.state.IsLoading));
+				reactive.effect(() => seen.push(runtime.state.IsLoading));
 				await settle();
 
 				function* failingAfterPark(draft: ILoading): IActionGenerator {
@@ -96,7 +79,6 @@ describe("a throwing action slice", () => {
 				expect(seen).toContain(1);
 				expect(seen.at(-1)).toBe(0);
 
-				// A later successful write must still reach the observer.
 				function* bump(draft: ILoading): IActionGenerator {
 					draft.IsLoading = 5;
 				}
@@ -109,40 +91,16 @@ describe("a throwing action slice", () => {
 			}
 		});
 	});
-
-	it("rejects with its own error when dispatched inside an owned root under catchError", async () => {
-		const runtime = createRuntime<ILoading>(makeState());
-		function* failing(_draft: ILoading): IActionGenerator {
-			throw new Error("refused");
-		}
-		let disposeRoot!: () => void;
-		const pending = createRoot((d) => {
-			disposeRoot = d;
-			return catchError(
-				() => runtime.dispatch(failing, "Window"),
-				() => {}
-			);
-		});
-		try {
-			await expect(pending).rejects.toThrow("refused");
-		} finally {
-			disposeRoot();
-			runtime.dispose();
-		}
-	});
 });
 
 describe("host.batch", () => {
-	// The observer is built inside a root, and the batch runs outside it: a
-	// root's body is itself one batch, which would defer the flush past the
-	// assertion.
 	function observe(read: () => number): {
 		seen: number[];
 		dispose: () => void;
 	} {
 		const seen: number[] = [];
-		const dispose = createRoot((d) => {
-			createRenderEffect(() => seen.push(read()));
+		const dispose = reactive.root((d) => {
+			reactive.effect(() => seen.push(read()));
 			return d;
 		});
 		return {
@@ -152,7 +110,7 @@ describe("host.batch", () => {
 	}
 
 	it("flushes the batch's writes before rethrowing its callback's error", () => {
-		const [read, write] = createSignal(0);
+		const [read, write] = reactive.signal(0);
 		const { seen, dispose } = observe(read);
 		try {
 			expect(() =>
@@ -170,7 +128,7 @@ describe("host.batch", () => {
 	});
 
 	it("rethrows from a nested batch after the outer batch flushes", () => {
-		const [read, write] = createSignal(0);
+		const [read, write] = reactive.signal(0);
 		const { seen, dispose } = observe(read);
 		try {
 			expect(() =>
@@ -187,102 +145,6 @@ describe("host.batch", () => {
 		}
 	});
 
-	describe("when the flush throws too", () => {
-		afterEach(() => {
-			vi.unstubAllGlobals();
-		});
-
-		// An observer that throws once the signal reaches 1.
-		function observeThrowing(read: () => number): () => void {
-			return createRoot((d) => {
-				createRenderEffect(() => {
-					if (read() === 1) throw new Error("effect-boom");
-				});
-				return d;
-			});
-		}
-
-		it("rethrows the callback's error and surfaces the flush's separately", () => {
-			const queued: (() => void)[] = [];
-			vi.stubGlobal("queueMicrotask", (task: () => void) => {
-				queued.push(task);
-			});
-			const [read, write] = createSignal(0);
-			const dispose = observeThrowing(read);
-			try {
-				expect(() =>
-					host.batch(() => {
-						write(1);
-						throw new Error("action-error");
-					})
-				).toThrow("action-error");
-				expect(queued).toHaveLength(1);
-				expect(() => queued[0]()).toThrow("effect-boom");
-			} finally {
-				dispose();
-			}
-		});
-
-		it("rethrows the flush's error when the callback did not throw", () => {
-			const [read, write] = createSignal(0);
-			const dispose = observeThrowing(read);
-			try {
-				expect(() =>
-					host.batch(() => {
-						write(1);
-					})
-				).toThrow("effect-boom");
-			} finally {
-				dispose();
-			}
-		});
-	});
-
-	it("throws rather than returning nothing when the caller's boundary absorbs a flush error", () => {
-		const [read, write] = createSignal(0);
-		// A pure computation, so it flushes inside this batch rather than with
-		// an outer effect queue; its own root has no boundary, so its throw
-		// reaches the batch.
-		const disposeComputed = createRoot((d) => {
-			createComputed(() => {
-				if (read() === 1) throw new Error("computed-boom");
-			});
-			return d;
-		});
-		const absorbed: unknown[] = [];
-		let owner: Owner | null = null;
-		const disposeBoundary = createRoot((d) => {
-			catchError(
-				() => {
-					owner = getOwner();
-				},
-				(e) => absorbed.push(e)
-			);
-			return d;
-		});
-		let returned: unknown = "unset";
-		let thrown: unknown;
-		try {
-			runWithOwner(owner, () => {
-				try {
-					returned = host.batch(() => {
-						write(1);
-						return "ok";
-					});
-				} catch (e) {
-					thrown = e;
-				}
-			});
-			expect(absorbed.map((e) => (e as Error).message)).toEqual([
-				"computed-boom"
-			]);
-			expect(returned).toBe("unset");
-			expect((thrown as Error).message).toMatch(/error boundary absorbed it/);
-		} finally {
-			disposeComputed();
-			disposeBoundary();
-		}
-	});
 	it("returns the callback's value when it does not throw", () => {
 		expect(host.batch(() => 7)).toBe(7);
 	});

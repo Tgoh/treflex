@@ -1,7 +1,7 @@
 import type { IInFlightStub } from "../Runtime/arrivals";
 import type { IEffectImplementation } from "../Runtime/createEffectRegistry";
 import type { IResourceStubs } from "../Runtime/createResourceManager";
-import type { IRuntime } from "../Runtime/createRuntime";
+import type { IRuntime, IRuntimeOptions } from "../Runtime/createRuntime";
 import type { IVerifyIndexMode } from "../Runtime/createWriteGateway";
 import type { IRuntimeInternal } from "../Runtime/internals";
 import type { IErrorHandler } from "../Runtime/processAction";
@@ -43,6 +43,14 @@ export interface ITestRuntimeOptions {
 	inFlight?: IInFlightStub | undefined;
 	/** The resource stubs: method and supply answers, exposed values and statuses, by key. */
 	resources?: IResourceStubs | undefined;
+	/** As `createRuntime`'s: the code the runtime runs, written into a snapshot. See docs/reference/runtime.md#build. */
+	build?: string | undefined;
+	/**
+	 * As `createRuntime`'s. See docs/reference/testing.md#testing-a-resume.
+	 *
+	 * @experimental
+	 */
+	resume?: IRuntimeOptions["resume"];
 }
 
 export type IEffectStub = (e: any, action?: IActionContext) => any;
@@ -82,7 +90,7 @@ export function settled(): Promise<void> {
 }
 
 export interface ITestRuntimeSite {
-	call: "createTestRuntime" | "restoreTestRuntime";
+	call: "createTestRuntime" | "restoreTestRuntime" | "differentialRestore";
 	origin: Error;
 	trimmed: boolean;
 }
@@ -117,7 +125,7 @@ const DOCS = "docs/reference/testing.md#failures-and-diags-fail-the-test";
 function optOut(site: ITestRuntimeSite, option: string, where = ""): string {
 	return site.call === "createTestRuntime"
 		? `pass ${option} in createTestRuntime's options (${DOCS})${where}`
-		: `pass options: { ${option} } to restoreTestRuntime (${DOCS})${where}`;
+		: `pass options: { ${option} } to ${site.call} (${DOCS})${where}`;
 }
 
 const said = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -155,6 +163,10 @@ const UNOWNED = "state/view-write";
 
 // Its failure event, Taken: false, reports the same throw.
 const UNROUTED = "action/unrouted-throw";
+
+const A_DROP = new Set([
+	"resume/never-resumes"
+]);
 
 export function createTestRuntime<T extends object>(
 	initialState: T,
@@ -194,12 +206,14 @@ export function buildTestRuntime<T extends object>(
 		implementations: {
 			generateGuid: refuse("generateGuid"),
 			...effectStubs
-		}
+		},
+		build: options?.build,
+		resume: options?.resume
 	});
 	const allowDiags = options?.allowDiags;
 	const allowed = new Set(allowDiags === true ? [] : allowDiags);
 	runtime.on("diag", (event) => {
-		if (allowDiags === true || allowed.has(event.code) || event.code === UNOWNED || event.code === UNROUTED) {
+		if (allowDiags === true || allowed.has(event.code) || event.code === UNOWNED || event.code === UNROUTED || A_DROP.has(event.code)) {
 			return;
 		}
 		reportAt(

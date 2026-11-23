@@ -1,12 +1,13 @@
 import type { IRuntimeInternal } from "../../src/Runtime/internals";
 import type { IActionGenerator } from "../../src/Types/IAction";
 import type { IRecord } from "../../src/Types/IRecord";
-import { createEffect, createRoot } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createRuntime } from "../../src/Runtime/createRuntime";
 import { NonPlainDataError } from "../../src/Runtime/nonPlainDataError";
 import { createRecordingProxy } from "../../src/Runtime/recordingProxy";
+import { StateAliasError } from "../../src/Runtime/stateAlias";
 import { rawOf, view } from "../../src/Runtime/viewProxy";
+import * as reactive from "../reactive";
 import { captureSurfaced, stepWrite } from "../testHelpers";
 
 function buildWorld(initial: object) {
@@ -147,9 +148,9 @@ describe("a write the engine refuses", () => {
 		prepare(world.raw());
 		const before = JSON.stringify(world.raw());
 		const cells = Object.keys(world.gateway.lookup()).sort();
-		const runs = createRoot((dispose) => {
+		const runs = reactive.root((dispose) => {
 			let count = 0;
-			createEffect(() => {
+			reactive.effect(() => {
 				void world.runtime.state.N.X;
 				void world.runtime.state.N.Y;
 				void world.runtime.state.L.length;
@@ -194,10 +195,10 @@ describe("a write the engine refuses", () => {
 
 	it("keeps the step when the frame's flush throws", async () => {
 		const world = buildWorld(rows());
-		const dispose = createRoot((d) => {
-			createEffect(() => {
+		const dispose = reactive.root((d) => {
+			reactive.effect(() => {
 				if (world.runtime.state.Other === 1) {
-					throw new Error("a view threw");
+					throw new Error("a computation threw");
 				}
 			});
 			return d;
@@ -206,7 +207,7 @@ describe("a write the engine refuses", () => {
 			world.runtime.dispatch(function* write(draft: any): IActionGenerator {
 				draft.Other = 1;
 			}, "root")
-		).rejects.toThrow("a view threw");
+		).rejects.toThrow("a computation threw");
 		expect(world.written().map((change: any) => change.Path.join("."))).toEqual([
 			"Other"
 		]);
@@ -258,16 +259,16 @@ describe("a write the engine refuses", () => {
 		expect(world.drains).toEqual([]);
 	});
 
-	it("keeps the record when a view's flush throws out of the notify", () => {
+	it("keeps the record when a computation in the flush throws out of the notify", () => {
 		const raw: any = {
 			X: 1
 		};
 		const changes: any[] = [];
 		const v: any = view(raw);
-		const dispose = createRoot((d) => {
-			createEffect(() => {
+		const dispose = reactive.root((d) => {
+			reactive.effect(() => {
 				if (v.X === 2) {
-					throw new Error("a view threw");
+					throw new Error("a computation threw");
 				}
 			});
 			return d;
@@ -281,7 +282,7 @@ describe("a write the engine refuses", () => {
 		);
 		expect(() => {
 			draft.X = 2;
-		}).toThrow("a view threw");
+		}).toThrow("a computation threw");
 		expect(raw.X).toBe(2);
 		expect(changes).toEqual([
 			{
@@ -361,6 +362,111 @@ describe("an array operation refused partway", () => {
 		expect(world.written()).toEqual([]);
 	});
 
+	it("a sort whose comparator deletes a key and throws puts the key back in its place, keeping a delete made before the sort", () => {
+		const world = buildWorld({
+			$Id: "root",
+			L: [
+				3,
+				1,
+				2
+			],
+			Box: {
+				a: 1,
+				b: 2,
+				c: 3,
+				d: 4
+			}
+		});
+		let caught: unknown;
+		stepWrite(world.runtime, (s) => {
+			delete s.Box.b;
+			try {
+				s.L.sort(() => {
+					delete s.Box.c;
+					throw new Error("comparator");
+				});
+			} catch (error) {
+				caught = error;
+			}
+			s.Box.e = 5;
+		});
+		expect((caught as Error).message).toBe("comparator");
+		expect(world.raw().L).toEqual([
+			3,
+			1,
+			2
+		]);
+		expect(Object.keys(world.raw().Box)).toEqual([
+			"a",
+			"c",
+			"d",
+			"e"
+		]);
+		expect(world.raw().Box.c).toBe(3);
+	});
+
+	it("a sort refused inside another sort's comparator puts back only its own delete, and the slice's refusal puts back the rest", () => {
+		const world = buildWorld({
+			$Id: "root",
+			L: [
+				2,
+				1
+			],
+			M: [
+				2,
+				1
+			],
+			Box: {
+				a: 1,
+				b: 2,
+				c: 3,
+				d: 4,
+				e: 5
+			},
+			Rows: [
+				{
+					$Id: "r"
+				}
+			]
+		});
+		const before = JSON.stringify(world.raw());
+		let afterSort: string[] = [];
+		let compared = false;
+		expect(() =>
+			stepWrite(world.runtime, (s) => {
+				s.L.sort(() => {
+					if (!compared) {
+						compared = true;
+						delete s.Box.b;
+						try {
+							s.M.sort(() => {
+								delete s.Box.d;
+								throw new Error("inner");
+							});
+						} catch {}
+					}
+					return 0;
+				});
+				afterSort = Object.keys(s.Box);
+				s.Sel = s.Rows[0];
+			})
+		).toThrow(StateAliasError);
+		expect(afterSort).toEqual([
+			"a",
+			"c",
+			"d",
+			"e"
+		]);
+		expect(JSON.stringify(world.raw())).toBe(before);
+		expect(Object.keys(world.raw().Box)).toEqual([
+			"a",
+			"b",
+			"c",
+			"d",
+			"e"
+		]);
+	});
+
 	it("a refusal caught inside the callback leaves no claim on the step", () => {
 		const world = buildWorld(rows());
 		Object.freeze(world.raw().N);
@@ -384,12 +490,12 @@ describe("an array operation refused partway", () => {
 		});
 		let lengthRuns = 0;
 		let slotRuns = 0;
-		const dispose = createRoot((d) => {
-			createEffect(() => {
+		const dispose = reactive.root((d) => {
+			reactive.effect(() => {
 				void world.runtime.state.L.length;
 				lengthRuns++;
 			});
-			createEffect(() => {
+			reactive.effect(() => {
 				void world.runtime.state.L[3];
 				slotRuns++;
 			});

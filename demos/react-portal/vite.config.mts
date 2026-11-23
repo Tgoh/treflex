@@ -1,19 +1,14 @@
 import react from "@vitejs/plugin-react";
 import { defaultClientConditions, defineConfig } from "vite";
+import { buildId } from "../checkout/buildId";
 import { DEV_PORTS } from "../portal/src/shell/builds";
 
-export default defineConfig(({ command }) => ({
+export default defineConfig({
 	base: "./",
 	plugins: [
-		react()
+		react(),
+		buildId()
 	],
-	// A dev server's code changes with every edit, so only a build names its code.
-	define:
-		command === "build"
-			? {
-					"import.meta.env.VITE_BUILD_ID": JSON.stringify(new Date().toISOString())
-				}
-			: {},
 	resolve: {
 		conditions: [
 			"treflex-source",
@@ -24,7 +19,6 @@ export default defineConfig(({ command }) => ({
 		dedupe: [
 			"treflex",
 			"treflex-react",
-			"solid-js",
 			"react",
 			"react-dom"
 		]
@@ -35,12 +29,14 @@ export default defineConfig(({ command }) => ({
 			"treflex-react"
 		]
 	},
-	// The record stream panel shows an unnamed action's function name, which minification would mangle.
-	esbuild: {
-		keepNames: true
-	},
 	build: {
-		target: "esnext"
+		target: "esnext",
+		rolldownOptions: {
+			output: {
+				// The record stream panel shows an unnamed action's function name, which minification would mangle.
+				keepNames: true
+			}
+		}
 	},
 	server: {
 		port: DEV_PORTS.react,
@@ -52,4 +48,4 @@ export default defineConfig(({ command }) => ({
 			]
 		}
 	}
-}));
+});

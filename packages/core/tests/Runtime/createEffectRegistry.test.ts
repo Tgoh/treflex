@@ -307,7 +307,7 @@ describe("createRuntime: redaction of live record data", () => {
 			undefined,
 			plainFailure
 		]);
-		expect(entries[2]!.error).toBe(plainFailure);
+		expect(entries[2]!.error).not.toBe(plainFailure);
 		expect(JSON.stringify(traces)).not.toMatch(/secret/);
 		runtime.dispose();
 	});

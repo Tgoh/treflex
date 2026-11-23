@@ -3,7 +3,6 @@ import type { IVerifyIndexMode } from "../../src/Runtime/createWriteGateway";
 import type { IRuntimeInternal } from "../../src/Runtime/internals";
 import type { ISetState } from "../../src/Runtime/sliceSetState";
 import type { IActionGenerator } from "../../src/Types/IAction";
-import { createMemo, createRoot } from "solid-js";
 import { describe, expect, it } from "vitest";
 import { registerDataSource } from "../../src/Effects/registerDataSource";
 import { startTimer } from "../../src/Effects/startTimer";
@@ -17,6 +16,7 @@ import { seat } from "../../src/Runtime/draftNode";
 import { receiver } from "../../src/Runtime/receiver";
 import { sliceSetState } from "../../src/Runtime/sliceSetState";
 import { rawOf } from "../../src/Runtime/viewProxy";
+import * as reactive from "../reactive";
 import { createTreeState, minted, mountComponent, rootSetState } from "../testHelpers";
 
 function buildGateway<T extends object>(initial: T, journal = createJournal(), verifyIndex?: boolean | IVerifyIndexMode) {
@@ -665,7 +665,7 @@ describe("createWriteGateway", () => {
 		});
 
 		it("point reads subscribe to one $Id's cell only", () => {
-			createRoot((dispose) => {
+			reactive.root((dispose) => {
 				const world = buildGateway<{
 					$Id: string;
 					items: {
@@ -682,7 +682,7 @@ describe("createWriteGateway", () => {
 					]
 				});
 				let runs = 0;
-				const pointRead = createMemo(() => {
+				const pointRead = reactive.memo(() => {
 					runs++;
 					return world.lookup().a?.state;
 				});

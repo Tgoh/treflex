@@ -1,3 +1,5 @@
+import { errorClass } from "../Utility/errorClasses";
+
 export const EMPTY_INDEX = "an empty index";
 
 export const PROMISE_OR_THENABLE = "a promise or thenable";
@@ -34,3 +36,5 @@ export class NonPlainDataError extends Error {
 		this.path = path;
 	}
 }
+
+errorClass("treflex/NonPlainDataError", NonPlainDataError);

@@ -52,12 +52,6 @@ export function registerServices(runtime: IRuntime<object>): void {
 
 ## Rules
 
-### The Solid build
-
-Construction throws `SolidServerBuildError`, in every build, when `solid-js` resolved to its server build, where a memo never re-runs and every selector would keep its first value. Resolve `solid-js` with the `solid` and `browser` conditions: `resolve.conditions: ["solid", "browser"]` in a Vite or vitest config, with `ssr.resolve.conditions` too under vitest, or `node --conditions=browser` for a plain Node process.
-
-`treflex` depends on `solid-js` `^1.9.7`, and a Solid app's components must run on that same copy: on another, a view never updates on the runtime's writes. `TreflexProvider` from `treflex-solid` throws an `Error` that starts `[treflex] Two copies of solid-js are loaded`, in every build, when they differ. Dedupe `solid-js` (`npm dedupe`, `pnpm dedupe`, `yarn dedupe`), and if two copies remain, force one version that `^1.9.7` covers: `overrides` in `package.json` for npm, `pnpm.overrides` for pnpm, `resolutions` for yarn.
-
 ### Options
 
 | Option | |
@@ -69,6 +63,7 @@ Construction throws `SolidServerBuildError`, in every build, when `solid-js` res
 | `pauseResources` | `true` pauses the resource manager for good ([`live-sources.md`](./live-sources.md#restore-and-tests)) |
 | `requireNames` | `true`: every action that can be saved needs a durable name ([below](#requirenames)) |
 | `build` | A non-empty string naming the code the runtime runs, written into a snapshot ([below](#build)) |
+| `resume` | Experimental. `true`, or `{ budget, total }`, and `false` for off: a snapshot carries what a restore needs to bring a [`resumable`](./actions.md#the-resumable-mark) action back to its wait, and a restore into the same `build` does so ([resume](./restart-and-records.md#resume)). Without a `build` it resumes nothing, and raises [`resume/no-build`](./troubleshooting.md#resumeno-build) |
 
 A **development build** is one where `import.meta.env.DEV` is true, or, where that isn't defined, `process.env.NODE_ENV` isn't `"production"`, or, where neither is, always. Several diagnostics run only there ([`troubleshooting.md`](./troubleshooting.md)).
 
@@ -83,7 +78,7 @@ A runtime without it requires nothing, and its unnamed actions record `Name: nul
 
 ### build
 
-**`build` names the code the runtime runs:** a CI commit id, or a time the bundler writes in at build time. Anything but a non-empty string or `undefined` throws `TypeError`. `createSnapshot` writes it into the envelope, and a restore says whether a save is from the same build ([the build and the names](./restart-and-records.md#the-build-and-the-names)). A development server passes none: its code changes with every edit, and a reload after an edit restores into that code, so no id is honest for it, and with none a save is never from the same build.
+**`build` names the code the runtime runs:** a CI commit id, or a time the bundler writes in at build time. Anything but a non-empty string or `undefined` throws `TypeError`. `createSnapshot` writes it into the envelope, and a restore says whether a save is from the same build ([the build and the names](./restart-and-records.md#the-build-and-the-names)). A development server passes none: its code changes with every edit, and a reload after an edit restores into that code, and with none a save is never from the same build.
 
 ### IRuntime
 
@@ -101,7 +96,7 @@ A runtime without it requires nothing, and its unnamed actions record `Name: nul
 | `supplyResource(owner, key, value)` | What `useResource`'s `supply` does, from outside a view |
 | `provideExternal(key, provider)` | Provides an [outside value](./derived-reads.md#providing-a-value) under the key, and returns its handle; providing a key again replaces its provider, with `external/replaced` |
 | `set(key, value)` | Stores a runtime service ([above](#runtime-services)) |
-| `on(event, handler, options?)` | `"record"` taps the record stream, with `{ kinds }` to narrow it ([`restart-and-records.md`](./restart-and-records.md#the-tap)); `"diag"` hears [diagnostics](./troubleshooting.md); `"failure"` hears [caught throws](./failure.md#the-failure-event). Returns the function that unsubscribes |
+| `on(event, handler, options?)` | `"record"` taps the record stream, with `{ kinds }` to narrow it and `landing: true` beside it to ask for a step change's `Landing` ([`restart-and-records.md`](./restart-and-records.md#the-tap)); `"diag"` hears [diagnostics](./troubleshooting.md); `"failure"` hears [caught throws](./failure.md#the-failure-event). Returns the function that unsubscribes |
 | `dispose()` | Stops the timers, the resources and the outside values' subscriptions, then runs the dispose cascade over every entity in all three roots: running actions stop, asks end, rows and registrations go |
 
 Nothing registered can be unregistered: registering again replaces. For fresh registrations, construct a new runtime. Snapshot and restore are not on the runtime: they come from `treflex/snapshot`, and a restored runtime is a new one. The views reach the runtime through `TreflexProvider` ([`views.md`](./views.md#treflexprovider)).
@@ -116,6 +111,7 @@ What it refuses, each a rejected promise, never a synchronous throw, and before 
 - **An `$Id` the tree doesn't hold**, unknown, removed, or a root's that has none: `EntityGoneError`, and [`dispatch/unresolved-entity`](./troubleshooting.md#dispatchunresolved-entity).
 - **A node that isn't the one the tree holds under its `$Id`**: an `Error`, and [`dispatch/node-mismatch`](./troubleshooting.md#dispatchnode-mismatch). It is a node that has left the tree, or a copy, an action's returned value, or another runtime's node. Pass `.$Id` for those.
 - **An action with no durable name,** in a development build of a runtime with [`requireNames`](#requirenames): `UnnamedActionError`.
+- **A dispatch that would wait behind an action a restore resumed, or of a function the restore resumed on that entity,** until the restore releases the held waits: `UnreleasedResumeError` ([the window before the release](./restart-and-records.md#the-window-before-the-release)).
 
 A component dispatches through its feature, or `useDispatch()` for an entity it has no feature for.
 
@@ -123,12 +119,11 @@ A component dispatches through its feature, or `useDispatch()` for an entity it 
 
 A key nothing set throws at the read, naming the key. `set` takes the value itself, not a factory, and `IActionContext` has no `set`, so an implementation can't paper over a missing registration.
 
-**The `runtime/` prefix is reserved.** treflex keeps its own stores under it: `runtime/diag`, `runtime/journal`, `runtime/effects`, `runtime/bindings`, `runtime/receivers`, `runtime/dataSources`, `runtime/timers`, `runtime/timerSchedule`, `runtime/resourceTable`, `runtime/resources`, `runtime/resolveOwner`, `runtime/asks`, `runtime/inFlightStub`, `runtime/inFlightActions`, `runtime/stateIdLookup`, `runtime/externals`, `runtime/writeGateway` and `runtime/build`. Their shapes are internal. Namespace application keys with a prefix of your own.
+**The `runtime/` prefix is reserved.** treflex keeps its own stores under it: `runtime/diag`, `runtime/journal`, `runtime/effects`, `runtime/bindings`, `runtime/receivers`, `runtime/dataSources`, `runtime/timers`, `runtime/timerSchedule`, `runtime/resourceTable`, `runtime/resources`, `runtime/resolveOwner`, `runtime/asks`, `runtime/inFlightStub`, `runtime/inFlightActions`, `runtime/stateIdLookup`, `runtime/externals`, `runtime/writeGateway`, `runtime/build`, `runtime/resume` and `runtime/prefixes`. Their shapes are internal. Namespace application keys with a prefix of your own.
 
 ## Caveats
 
 - **Awaiting the `init` dispatch before the first render** holds the first paint until `init` ends; to show a spinner instead, render first, or have `init` `start` the load.
-- **A `worker` condition picks Solid's server build** even beside `browser`.
 - **An `implementations` entry for `generateGuid`** replaces the built-in without the overwrite warning.
 - **A refused dispatch's rejection recurs on every call;** the diag doesn't ([`troubleshooting.md`](./troubleshooting.md#dispatchunresolved-entity)). Handle the promise, not the diag.
 - **`set` doesn't refuse `runtime/` keys,** and writing one replaces the runtime's own store, so don't.

@@ -1,8 +1,8 @@
-import type { IVersion } from "../Solid/host";
+import type { IVersion } from "../Reactive/host";
 import type { IEntity } from "../Types/IEntity";
 import type { IDiagEmitter } from "../Types/IRuntimeEvent";
 import type { IReadGenerator } from "../Types/ISelector";
-import { host } from "../Solid/host";
+import { host } from "../Reactive/host";
 import { callbackThrew } from "../Types/IRuntimeEvent";
 import { DRAFT_SCOPE, type IDraftScope } from "./recordingProxy";
 import { slotHomes } from "./transient";
@@ -26,6 +26,8 @@ interface IWorkEntry {
 export interface IWork<E extends IWorkEntry = IWorkEntry> {
 	readonly entries: E[];
 	readonly versions: Map<object, IVersion>;
+	/** A reactive scope has read `inFlight` on this key: its versions exist for untracked reads too. */
+	watched?: true;
 }
 
 const workByHome = new WeakMap<object, Map<string, IWork>>();
@@ -36,6 +38,26 @@ export function shareWork(homes: readonly object[], works: Map<string, IWork<any
 	for (const home of homes) {
 		workByHome.set(home, works);
 	}
+}
+
+const watching = new WeakSet<Map<string, IWork>>();
+
+/** From now on, a reactive scope's `inFlight` read marks the work it reads, under the runtime `home` leads to. */
+export function watchWork(home: object): void {
+	const works = workByHome.get(home);
+	if (works) {
+		watching.add(works);
+	}
+}
+
+/** The first entity key whose work a reactive scope has read with `inFlight` since `watchWork`, under the runtime `home` leads to. */
+export function watchedWork(home: object): string | null {
+	for (const [key, work] of workByHome.get(home) ?? []) {
+		if (work.watched) {
+			return key;
+		}
+	}
+	return null;
 }
 
 export function workOf<E extends IWorkEntry>(works: Map<string, IWork<E>>, key: string): IWork<E> {
@@ -164,6 +186,9 @@ export function readInFlight(actions: readonly unknown[], owner: IEntity, stub: 
 	}
 	const works = workByHome.get(home);
 	const work = works && workOf(works, id);
+	if (work && watching.has(works) && host.isTracking()) {
+		work.watched = true;
+	}
 	const stubbed = stub?.(id) ?? [];
 	let any = false;
 	for (const action of actions as (Function | IWorkTag)[]) {

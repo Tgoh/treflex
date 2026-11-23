@@ -3,7 +3,6 @@ import type { IActionGenerator } from "../../src/Types/IAction";
 import type { IAskId } from "../../src/Types/IAskId";
 import type { IEffect } from "../../src/Types/IEffect";
 import type { IRecord } from "../../src/Types/IRecord";
-import { createEffect, createRoot } from "solid-js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { answer } from "../../src/Effects/answer";
 import { ask } from "../../src/Effects/ask";
@@ -24,6 +23,7 @@ import { receiver } from "../../src/Runtime/receiver";
 import { reconcileRows } from "../../src/Runtime/reconcileRows";
 import { wrapSetState } from "../../src/Runtime/sliceSetState";
 import { rawOf, view } from "../../src/Runtime/viewProxy";
+import * as reactive from "../reactive";
 import { captureSurfaced, minted, pendingAsksOf } from "../testHelpers";
 
 interface IKid {
@@ -760,8 +760,8 @@ describe.each([
 				draft.Node.N = 2;
 			}
 			let runs = 0;
-			const dispose = createRoot((dispose) => {
-				createEffect(() => {
+			const dispose = reactive.root((dispose) => {
+				reactive.effect(() => {
 					runs++;
 					void runtime.dispatch(take, "root", runtime.state.Node);
 				});

@@ -1,10 +1,11 @@
-import type { JSX } from "solid-js";
+import type { JSX } from "@solidjs/web";
 import type { IActionGenerator, IEntity, ILocation, IRecord } from "treflex";
-import { createContext, createRoot, For, onCleanup, Show, useContext } from "solid-js";
+import { createContext, For, onCleanup, Show, useContext } from "solid-js";
 import { createRuntime, entity, transient } from "treflex";
 import { describe, expect, it } from "vitest";
 import { createEntityFeature } from "../src/Context/createEntityFeature";
 import { TreflexProvider, useDispatch, useLocate } from "../src/Context/TreflexContext";
+import { mount } from "./mount";
 
 function* nodeAt(draft: any, at: ILocation): IActionGenerator<any> {
 	let node = at.TransientName === undefined ? draft : yield* transient(draft, at.TransientName, {});
@@ -54,7 +55,7 @@ function FormProvider(props: { state: unknown; children: JSX.Element }) {
 			return props.state;
 		}
 	};
-	return <FormContext.Provider value={bindings}>{props.children}</FormContext.Provider>;
+	return <FormContext value={bindings}>{props.children}</FormContext>;
 }
 
 function useFormField() {
@@ -183,15 +184,11 @@ function world(body: (state: IRoot) => JSX.Element) {
 		screen = Screen.use();
 		return body(props.state);
 	});
-	const dispose = createRoot((disposer) => {
-		TreflexProvider({
-			value: runtime,
-			get children() {
-				return <View state={runtime.state} />;
-			}
-		});
-		return disposer;
-	});
+	const { dispose } = mount(() => (
+		<TreflexProvider value={runtime}>
+			<View state={runtime.state} />
+		</TreflexProvider>
+	));
 	return {
 		runtime,
 		records,

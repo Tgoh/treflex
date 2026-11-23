@@ -1,4 +1,5 @@
 import type { IActionGenerator, IEntity, IReceiverId, ISelectorGenerator } from "treflex";
+import type { IRestoreDrop } from "treflex/snapshot";
 import type { IFare } from "../backend/backend";
 import type { IDestinationKey, ILegKind } from "./destinations";
 import type { ILeg } from "./Leg";
@@ -7,8 +8,20 @@ import { entity, mapGen, named, publish, publishToNearest, receiver, someGen, st
 import { now } from "../backend/backend";
 import { money, plural } from "../text";
 import { DESTINATIONS, LEG_KINDS } from "./destinations";
-import { newLeg } from "./Leg";
-import { beginTrip, dot, holdLeftAt, isSearching, legOf, markBack, markLeft, TripReceiver, tripFacts, whatWasLost } from "./Trip";
+import { newLeg, SEARCH_NAME } from "./Leg";
+import {
+	beginTrip,
+	dot,
+	holdLeftAt,
+	isSearching,
+	legOf,
+	markBack,
+	markLeft,
+	searchAgain,
+	TripReceiver,
+	tripFacts,
+	whatTheRestoreFound
+} from "./Trip";
 
 declare module "treflex" {
 	interface IMessageRegistry {
@@ -28,8 +41,9 @@ export interface IRestoredTrip {
 	Providers: number;
 	/** The hold's seconds left at the restore, 0 if it had run out by then, or null if no hold was running when it was saved. */
 	HoldLeft: number | null;
-	Stopped: ILegKind[];
+	CarriedOn: ILegKind[];
 	Unanswered: boolean;
+	AskedAgain: boolean;
 }
 
 export interface IPlannerRestore {
@@ -134,6 +148,16 @@ export function* flourishPlayed(draft: IPlanner): IActionGenerator {
 }
 named(flourishPlayed, "Trips/FlourishPlayed");
 
+/** Starts again each search a restore dropped, from the provider it had reached. `repairRestore` in session.ts dispatches it. */
+export function* carryOn(draft: IPlanner, dropped: IRestoreDrop[]): IActionGenerator {
+	for (const entry of dropped) {
+		if (entry.name !== SEARCH_NAME || entry.state === "stopping") continue;
+		const trip = draft.Trips.find((t) => t.Legs.some((leg) => leg.$Id === entry.entityId));
+		if (trip) yield* start(searchAgain, trip, entry.entityId);
+	}
+}
+named(carryOn, "Trips/CarryOn");
+
 export const actions = {
 	startTrip,
 	openTrip,
@@ -170,7 +194,7 @@ export const PlannerReceiver = receiver<IPlanner>("PlannerReceiver")({
 			Hotels: legOf(trip, "hotel")?.Checked ?? 0,
 			Providers: legOf(trip, "activities")?.Checked ?? 0,
 			HoldLeft: holdLeftAt(trip, at),
-			...whatWasLost(trip, message.DroppedEntityIds)
+			...whatTheRestoreFound(trip, message)
 		}));
 		draft.Restore =
 			trips.length > 0
@@ -179,7 +203,7 @@ export const PlannerReceiver = receiver<IPlanner>("PlannerReceiver")({
 					}
 				: null;
 		yield* publishToNearest(draft, "Portal/RestoreFound", {
-			CutOff: trips.some((t) => t.Stopped.length > 0 || t.Unanswered)
+			CutOff: trips.some((t) => t.Unanswered)
 		});
 	}
 });
@@ -199,13 +223,13 @@ export function* summary(draft: IPlanner): ISelectorGenerator<IPlannerSummary> {
 	const dots = yield* mapGen(draft.Trips, dot);
 	const facts = yield* mapGen(draft.Trips, tripFacts);
 	const finished = draft.Trips.filter((t) => t.Finished).length;
-	const interrupted = draft.Trips.filter((t, i) => !t.Finished && facts[i].Searching.length === 0 && facts[i].Stopped.length > 0).length;
+	const stopped = draft.Trips.filter((t, i) => !t.Finished && facts[i].Searching.length === 0 && facts[i].Stopped.length > 0).length;
 	const parts: string[] = [];
 	const count = (n: number, label: string): void => {
 		if (n > 0) parts.push(parts.length === 0 ? `${plural(n, "trip")} ${label}` : `${n} ${label}`);
 	};
-	count(draft.Trips.length - finished - interrupted, "planning");
-	count(interrupted, "interrupted");
+	count(draft.Trips.length - finished - stopped, "planning");
+	count(stopped, "stopped");
 	count(finished, "ready");
 	const line = parts.join(" · ");
 	const order: ITripDot[] = [

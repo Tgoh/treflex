@@ -1,25 +1,24 @@
 import type { IEntity, IResourceKey, IResourceStatus, IResourceSupplyOf, IResourceSupplyResponseOf, IResourceValueOf } from "treflex";
-import type { IRuntimeInternal } from "treflex/internal";
 import { untrack } from "solid-js";
-import { useTreflexContext } from "../Context/TreflexContext";
+import { runtimeFor } from "../Context/TreflexContext";
 
 export interface IUseResource<K extends IResourceKey> {
-	// The exposed live value, undefined until one is exposed.
+	/** The exposed live value, undefined until one is exposed. */
 	value: () => IResourceValueOf<K> | undefined;
 	status: () => IResourceStatus;
-	// Copy a live value the browser may clear (a FileList) before passing
-	// it. Resolves undefined when nothing could take it.
+	/** Copy a live value the browser may clear (a FileList) before passing it. Resolves undefined when nothing could take it. */
 	supply: (value: IResourceSupplyOf<K>) => Promise<IResourceSupplyResponseOf<K> | undefined>;
 }
 
-// An entity or an id is fixed. An accessor is followed: undefined is no owner.
+/** An entity or an id is fixed. An accessor is followed: undefined is no owner. */
 export type IUseResourceOwner = IEntity | string | (() => IEntity | string | undefined);
 
-// The view's door to the resource `key` of `owner`: the one reader of its
-// live value, and the one supplier of live values to it. See
-// docs/reference/live-sources.md#supply-and-expose.
+/**
+ * The view's door to the resource `key` of `owner`: the one reader of its live value, and the one
+ * supplier of live values to it.
+ */
 export function useResource<K extends IResourceKey>(owner: IUseResourceOwner, key: K): IUseResource<K> {
-	const runtime = useTreflexContext() as IRuntimeInternal<any>;
+	const runtime = runtimeFor("useResource");
 	const resources = runtime.get("runtime/resources");
 	// The accessor's own reads are tracked, so value and status follow it; the
 	// $Id read off the entity it returns is not.

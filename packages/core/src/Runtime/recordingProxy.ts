@@ -1,7 +1,7 @@
-import type { IRecordChange } from "../Types/IRecord";
+import type { IRecordChange, IRecordLanding } from "../Types/IRecord";
 import type { IWriteGateway } from "./createWriteGateway";
 import { clone } from "../Utility/valueCodec";
-import { BIND_WRITE, DETACH_PROBE, DraftDetachedError, refuseIdChange, refuseReceiverWrite, SEAT_WRITE } from "./draftNode";
+import { BIND_WRITE, DETACH_PROBE, DraftDetachedError, entityIdOf, refuseIdChange, refuseReceiverWrite, SEAT_WRITE } from "./draftNode";
 import { isCode, refuseInSyncCall } from "./effectDeclarations";
 import { TreflexRefusal } from "./refusal";
 import { runningStep } from "./runningStep";
@@ -17,11 +17,14 @@ export interface IRecordingContext {
 					Pick<
 						IWriteGateway,
 						| "logWrite"
+						| "keepOrder"
 						| "logMark"
+						| "releaseMark"
 						| "unwindTo"
 						| "noteGap"
 						| "rollbacks"
 						| "pathFrom"
+						| "landingOf"
 						| "enforceWriteOrigin"
 						| "refuseOutsideAction"
 						| "refuseReplacement"
@@ -36,6 +39,7 @@ export interface IRecordingContext {
 	// Whether any tap was attached at dispatch, whatever kinds it takes: the stale-path warnings
 	// are a tap's witness, not change capture's.
 	checkPaths?: boolean;
+	landing?: boolean;
 }
 
 // Read off a recording proxy, answers the draft it belongs to. Symbol.for by the
@@ -89,6 +93,54 @@ function verifyPathDenotesTarget(root: object, segments: PropertyKey[], t: objec
 				`Write through a reference re-derived from the draft (docs/reference/actions.md#caveats).`
 		);
 	}
+}
+
+// Called after the write's observe, which is what puts a transient's first-written slot where the path
+// says.
+function landingOf(ctx: IRecordingContext, root: object, path: PropertyKey[], t: object): IRecordLanding | undefined {
+	const own = entityIdOf(t);
+	if (own !== null) {
+		return {
+			EntityId: own,
+			Path: []
+		};
+	}
+	let node: unknown = root;
+	let entityId: string | null = null;
+	let from = 0;
+	for (let i = 0; i < path.length && node !== null && typeof node === "object"; i++) {
+		const id = entityIdOf(node);
+		if (id !== null) {
+			entityId = id;
+			from = i;
+		}
+		node = rawOf((node as Record<PropertyKey, unknown>)[path[i]!]);
+	}
+	if (node === t) {
+		return entityId === null
+			? undefined
+			: {
+					EntityId: entityId,
+					Path: path.slice(from)
+				};
+	}
+	const found = ctx.gateway?.landingOf?.(t);
+	return (
+		found && {
+			EntityId: found.entityId,
+			Path: found.path
+		}
+	);
+}
+
+function landingAt(base: IRecordLanding, key: PropertyKey): IRecordLanding {
+	return {
+		EntityId: base.EntityId,
+		Path: [
+			...base.Path,
+			key
+		]
+	};
 }
 
 export interface IDraftLease {
@@ -159,27 +211,36 @@ function writeLength(
 				verifyPathDenotesTarget(root, path, t, "write");
 			}
 			if (changes) {
+				const landing = ctx.landing ? landingOf(ctx, root, path, t) : undefined;
 				for (let i = candidates.length - 1; i >= 0; i--) {
 					const slot = candidates[i]!;
 					if (slot >= after) {
-						changes.push({
+						const change: IRecordChange = {
 							Path: [
 								...path,
 								String(slot)
 							],
 							Prev: prevs[i],
 							Deleted: true
-						});
+						};
+						if (landing) {
+							change.Landing = landingAt(landing, String(slot));
+						}
+						changes.push(change);
 					}
 				}
-				changes.push({
+				const change: IRecordChange = {
 					Path: [
 						...path,
 						"length"
 					],
 					Prev: before,
 					Value: after
-				});
+				};
+				if (landing) {
+					change.Landing = landingAt(landing, "length");
+				}
+				changes.push(change);
 			}
 			notifyWrite(t, "length", after !== before, false, false);
 			for (const slot of dropped) {
@@ -225,6 +286,10 @@ for (const name of [
 					changes.length = recorded;
 				}
 				throw error;
+			} finally {
+				if (mark !== undefined) {
+					gateway?.releaseMark?.();
+				}
 			}
 		}
 	}[name] as (...args: unknown[]) => unknown;
@@ -460,14 +525,16 @@ class DraftTraps implements ProxyHandler<any> {
 				change.Created = true;
 			}
 		}
-		const order = written === undefined && !isArray ? Object.keys(t) : undefined;
 		if (written === undefined) {
+			if (!isArray) {
+				ctx.gateway?.keepOrder?.(t);
+			}
 			delete t[key];
 		} else {
 			t[key] = written;
 			freezeAll(walked);
 		}
-		ctx.gateway?.logWrite?.(t, key, had, prev, isArray ? lengthBefore : -1, order);
+		ctx.gateway?.logWrite?.(t, key, had, prev, isArray ? lengthBefore : -1);
 		if (isArray) {
 			const index = arrayIndex(key);
 			if (index > lengthBefore) {
@@ -483,6 +550,10 @@ class DraftTraps implements ProxyHandler<any> {
 		if (change) {
 			if (lengthChanged) {
 				change.GrewFrom = lengthBefore;
+			}
+			const landing = ctx.landing ? landingOf(ctx, this.root, path, t) : undefined;
+			if (landing) {
+				change.Landing = landingAt(landing, key);
 			}
 			journalChanges?.push(change);
 		}
@@ -541,9 +612,11 @@ class DraftTraps implements ProxyHandler<any> {
 				Deleted: true
 			};
 		}
-		const order = Array.isArray(t) ? undefined : Object.keys(t);
+		if (!Array.isArray(t)) {
+			ctx.gateway?.keepOrder?.(t);
+		}
 		delete t[property];
-		ctx.gateway?.logWrite?.(t, property as string, true, prev, -1, order);
+		ctx.gateway?.logWrite?.(t, property as string, true, prev, -1);
 		if (Array.isArray(t)) {
 			const index = arrayIndex(property as string);
 			if (index >= 0) {
@@ -555,6 +628,10 @@ class DraftTraps implements ProxyHandler<any> {
 			verifyPathDenotesTarget(this.root, path, t, "delete");
 		}
 		if (change) {
+			const landing = ctx.landing ? landingOf(ctx, this.root, path, t) : undefined;
+			if (landing) {
+				change.Landing = landingAt(landing, property);
+			}
 			journalChanges?.push(change);
 		}
 		ctx.wrote?.(t, property as string);

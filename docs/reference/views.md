@@ -29,7 +29,7 @@ render(
 
 The root needs an `$Id`: with none, every action a feature dispatches on it rejects ([runtime](./runtime.md#dispatch)). One provider per page is the standard shape.
 
-A runtime can also serve several providers, of either binding, side by side or one after another, such as a React tree unmounted and a Solid tree mounted in its place. Each mount owns its [component state](#component-states-lifetime) and its own view effects, and unmounting ends those, and what the DOM held such as scroll and focus, and nothing else: the rest of the tree, the actions running on it, timers, resources and the records carry on, and the next provider shows them as they stand. Every Solid tree must run on the runtime's copy of `solid-js` ([the Solid build](./runtime.md#the-solid-build)).
+A runtime can also serve several providers, of either binding, side by side or one after another, such as a React tree unmounted and a Solid tree mounted in its place. Each mount owns its [component state](#component-states-lifetime) and its own view effects, and unmounting ends those, and what the DOM held such as scroll and focus, and nothing else: the rest of the tree, the actions running on it, timers, resources and the records carry on, and the next provider shows them as they stand. Every Solid tree must run on `treflex-solid`'s copy of `solid-js` ([one copy of solid-js](#one-copy-of-solid-js)).
 
 ### Features
 
@@ -102,7 +102,7 @@ const saving = useInFlight(save, () => editor.state);
 <For each={editor.state.Rows}>
     {(row) => {
         const busy = useInFlight(saveRow, row);
-        return <li classList={{ busy: busy() }}>{row.Name}</li>;
+        return <li class={{ busy: busy() }}>{row.Name}</li>;
     }}
 </For>;
 ```
@@ -145,16 +145,38 @@ function Counter() {
 
 A root with no `$Id` rejects each dispatch with `TypeError: [treflex] dispatch: the target is not an entity`.
 
-A component's or view effect's throw below the provider never fails an action; it is raised as [a view crash](./failure.md#a-views-throw), so a throw this page names, such as `use()` outside its provider, arrives that way rather than out of `render`.
+A component's or view effect's throw below the provider never fails an action. In Solid it is Solid's: `TreflexProvider` holds no boundary, so an app's own `<Errored>`, above or below the provider, takes it, and with none Solid halts reactivity for the whole page. A throw this page names, such as `use()` outside its provider, comes out of `render` when it is thrown at the app's first mount.
 
-The bindings need the provider. `useComponentState`, `createComponentFeature`, `useInFlight`, `useDispatch` and `useLocate` throw an error that names the missing provider, as every React hook and provider does.
+The bindings need the provider. `useComponentState`, `createComponentFeature`, an entity feature's provider, `useInFlight`, `useResource`, `useDispatch` and `useLocate` throw an error that names the missing provider, as every React hook and provider does.
+
+**A Solid app imports `treflex-solid`,** whose import is what lets Solid views hear the runtime's writes. A component that reads `runtime.state` in an app that never imports it, or imports it only for a name nothing uses, which a bundler may drop, never updates, and nothing reports it.
+
+#### One copy of solid-js
+
+A Solid app's components must run on the copy of `solid-js` that `treflex-solid` imports: on another, a view never updates on the runtime's writes. Two errors report it, in every build:
+
+- **`TreflexProvider` throws** an `Error` that starts `[treflex] TreflexProvider found no Solid owner` when it finds no Solid owner on its copy: the app renders with another copy, or the provider was called outside a render.
+- **A second `treflex-solid` on another copy of `solid-js`** throws an `Error` that starts `[treflex] Two copies of solid-js are loaded` when it is imported.
+
+Dedupe `solid-js` and `@solidjs/signals` (`npm dedupe`, `pnpm dedupe`, `yarn dedupe`), and if two copies remain, force one version that [`treflex-solid`'s peer range](../requirements.md#react-and-solid) covers: `overrides` in `package.json` for npm, `pnpm.overrides` for pnpm, `resolutions` for yarn.
+
+### Solid's timing
+
+The runtime runs on its own reactive engine, and `treflex-solid` gives each key and each selector a Solid computation reads a Solid signal, written at the runtime's write. So a treflex value is synchronous:
+
+- **Solid views catch up at Solid's flush,** a microtask after the write, and during a hold at its landing. Engine-side consumers, such as a record tap and `treflex-react`, hear the write inside the dispatch.
+- **A treflex value never suspends.** A `<Loading>` boundary over plain treflex reads never shows its fallback. `isPending` over a treflex read or a selector is `false` for the write that opens a hold, and `true` for a treflex write made while the hold is open, until the landing, as over a Solid signal. An async Solid derivation of a treflex value suspends as one over a Solid signal does.
+- **A treflex write that an on-screen async derivation reads joins Solid's hold** on it. A view of that value keeps the old value until the async lands, and so does a view of any other value the same step wrote, while the action's own reads, the journal and the records have the write. A dispatch in a later tick that the derivation doesn't read shows at once.
+- **During a hold the screen can tear.** A Solid write elsewhere re-runs a held view that reads the tree, and it shows the new value beside an async answer derived from the old, so two views of one treflex value can disagree until the landing.
+- **A selector that reads a Solid signal or store doesn't re-run when it changes,** since the engine can't see Solid's graph. Outside state reaches a selector through [`external`](./derived-reads.md#outside-values).
+- **Solid's devtools see the bridge's signals as anonymous counters.** Selector values and their dependencies live in the engine, out of the devtools' sight.
 
 ### Busy state
 
-- **Busy is for display.** `useInFlight` catches up with a dispatch late: in Solid a microtask after it, as a selector's memo does, and in React at the re-render after it. So `if (!saving()) editor.save()` lets through a second dispatch in the same turn, and guards nothing dispatched elsewhere. Mark the action [`leading`](./actions.md#arrival-marks), which drops a repeat from any caller.
+- **Busy is for display.** `useInFlight` catches up with a dispatch late: in Solid at [Solid's flush](#solids-timing), as a selector's memo does, and in React at the re-render after it. So `if (!saving()) editor.save()` lets through a second dispatch in the same turn, and guards nothing dispatched elsewhere. Mark the action [`leading`](./actions.md#arrival-marks), which drops a repeat from any caller.
 - **Busy combined with other state is a selector** reading `inFlight`, as in [`inFlight`'s usage](./actions.md#inflight).
 - **A node is fixed, a function is followed.** Pass `() => feature.state` for a feature's own entity, since its provider can come to show another; a row under `<For>` is fixed for its component's life.
-- **The owner is a live node.** A copy or other plain object throws, naming the hook; React reads any owner by its `$Id` ([below](#features-in-react)). A node that leaves the tree reads `false`, and its work again if it comes back. Another runtime's node reads that runtime's work.
+- **The owner is a live node.** A copy or other plain object throws, naming the hook, at the accessor's first read, so a view that reads it takes the throw as its own; React reads any owner by its `$Id` ([below](#features-in-react)). A node that leaves the tree reads `false`, and its work again if it comes back. Another runtime's node reads that runtime's work.
 - **The test runtime's [`inFlight` stub](./testing.md#stubbing-inflight)** answers it, as it answers a selector.
 
 ### Feature types and calls
@@ -173,13 +195,41 @@ The `id`, a string the app picks for each feature, such as `"Features/Cart"`, ke
 - **One id is one factory call.** A second call with the same id overwrites the first's actions and selectors, silently, and the first feature's views then dispatch the second's actions. Give each feature an id no other uses.
 - **Pick the id by hand, not `import.meta.url`.** Two factory calls in one module share its `import.meta.url`, so the second overwrites the first. A URL-shaped id also registers in development only: in a production build `import.meta.url` is the URL of the chunk a module landed in, shared by every module in it, so there each call gets its own context, and a bundle built in development mode gives a chunk's modules one URL, where the ids collide. A hand-picked id registers in every build.
 - **Keep context factories in a `.ts` file that exports no components,** a raw `createContext` included. A component file is re-evaluated on every edit, and a Vite duplicate load evaluates a module twice; a raw context made there gets a new identity each time, and its consumers stop finding it. The registry protects a treflex feature that has an id, and the same habit covers both.
-- **The module that boots the app must not run again.** An edit Vite can't apply in place goes up to the modules importing the edited one, and an entry module that runs again builds a second runtime beside the first. Declare no component in the entry module, so an update that reaches it reloads the page, and have the module that builds the runtime accept updates of the feature modules it imports, with `import.meta.hot?.accept(["./counter/counter"], () => {})`, so an edit to an action or a selector stops there. In Solid, the entry mounts the views through a component declared in a file of its own, as the template's `AppView` does: a view made by `provider(...)` is no solid-refresh boundary, so an entry that mounts one directly reloads the page at every edit. In React, a module that declares a `provider(...)` view is a Fast Refresh boundary itself, so the entry may mount the view directly. An app from `npm create treflex` does all of this ([the quickstart](../quickstart.md#create-the-app)).
+- **The module that boots the app must not run again.** An edit Vite can't apply in place goes up to the modules importing the edited one, and an entry module that runs again builds a second runtime beside the first. Declare no component in the entry module, so an update that reaches it reloads the page, and have the module that builds the runtime accept updates of the feature modules it imports, with `import.meta.hot?.accept(["./counter/counter"], () => {})`, so an edit to an action or a selector stops there. In Solid, the entry mounts the views through a component declared in a file of its own, as the template's `AppView` does: a view made by `provider(...)` is no boundary for Solid's hot refresh, so an entry that mounts one directly reloads the page at every edit. In React, a module that declares a `provider(...)` view is a Fast Refresh boundary itself, so the entry may mount the view directly. An app from `npm create treflex` does all of this ([the quickstart](../quickstart.md#create-the-app)).
 
 Covered by hot reload: editing an action, a selector or a component, and adding an action or selector.
 
 ### Dispatching from a component
 
 A feature's own actions go through its `use()`. For an entity a component holds no provider for, such as [an ask's owner](./conversations.md#rendering-the-open-asks), `useDispatch()` returns `runtime.dispatch`, typed `IDispatch`, which takes the target as an `$Id` or a live node. `useLocate()` returns `runtime.locate`.
+
+#### Where an action starts
+
+**A component never starts main-state work from its lifecycle:** not from `onSettled`, either function of `createEffect` or `createRenderEffect`, `createTrackedEffect`, `createReaction` or `onCleanup`, React's `useEffect` or `useLayoutEffect`, the component's body, or a timer or microtask callback one of them sets. Work started there is tied to the view being mounted:
+
+- **It runs again at every mount:** after a restore, beside the state the restore brought back; when a virtualised list scrolls a row back in; when a `<Show>` toggles; and twice under React's StrictMode.
+- **It never runs in a test without views,** so a test of the model alone misses it.
+
+**The action starts from the event behind it,** in a handler, a receiver, or the action that writes what an effect would watch. The click that opens a thread dispatches its load, and the navigation that opens a screen starts the screen's load ([load a screen's data when its route opens](../patterns.md#load-a-screens-data-when-its-route-opens)). A parent's receiver starts its child's work ([a parent's receiver starts work on the child](../patterns.md#a-parents-receiver-starts-work-on-the-child)), and what the app loads when it opens, the boot dispatches ([load data when the app opens](../patterns.md#load-data-when-the-app-opens)). A poll, or any other main-state work that repeats, is a [timer](./live-sources.md#timers) the opening action starts, not an interval a component sets.
+
+```tsx
+const thread = Thread.use();
+onSettled(() => void thread.load());                  // starts again at every mount
+<button onClick={() => thread.open()}>Open</button>;  // the open starts the load
+```
+
+**Work on state the component owns is allowed:** an action on the entity of `useComponentState` or a `createComponentFeature`, such as a widget loading what it shows. That state goes with the component, so the work starting again with it is right. The lint rule recognises a component feature by its module, the one it is used in or a relative import it can read ([what it reads](../../packages/eslint/README.md#treflexno-main-state-in-lifecycle)); any other takes the disable comment below with a reason.
+
+**A restore decides which state a cause belongs in.** Ask whether a restore should bring back what causes the work. An open thread, an expanded row, a selected view or a draft should, so they are main state, and what they fetch is main state too. An open palette or a rendered row shouldn't, so they are component state, with whatever work they start.
+
+**Work caused by what is on screen is the one exception,** such as marking a thread visited when its completion is shown, or loading the next page when the end of a list scrolls into view. No other event stands behind it, so it starts from the lifecycle, and it must be safe to start at every mount: an action that checks state and does nothing when nothing is left to do. Work that takes no key, such as the visit or the next page, is marked [`leading`](./actions.md#arrival-marks), which drops a repeat. A load keyed on what it loads is marked `latest`, as [a widget's load keyed on a prop](#holds-in-a-widget) is. Where the lint rule reports the call, the call says so with the rule's disable comment and a reason:
+
+```tsx
+// eslint-disable-next-line treflex/no-main-state-in-lifecycle -- the completion on screen is the visit; markVisited checks state and is leading
+onSettled(() => void thread.markVisited());
+```
+
+The rule takes an observer's or a listener's callback for an event, so the next page loaded from an `IntersectionObserver` a mount sets up needs no comment, and gets an unused-directive warning with one. It must still be safe to start at every mount.
 
 #### A form over part of an entity
 
@@ -272,7 +322,7 @@ export const Grid = GridFeature.provider(GridBody, () => ({ Widths: {}, Selected
 
 `treflex-react` runs on React 18.3 and later 18 releases, and on React 19.1 and later: its `react` peer range is `^18.3.0 || ^19.1.0`.
 
-`treflex-react` offers `TreflexProvider`, `createEntityFeature`, `createComponentFeature`, `useComponentState`, `useInFlight`, `useResource`, `useDispatch` and `useLocate`, with Solid's meaning, plus `useEntity` and `useRoot`. The runtime under it is built on Solid's signals, from the `solid-js` that `treflex` depends on, so a React app's build and test configs resolve Solid's browser build ([runtime](./runtime.md#the-solid-build)).
+`treflex-react` offers `TreflexProvider`, `createEntityFeature`, `createComponentFeature`, `useComponentState`, `useInFlight`, `useResource`, `useDispatch` and `useLocate`, with Solid's meaning, plus `useEntity` and `useRoot`.
 
 **The one difference underneath the rest is what a component reads.** A Solid component reads the live tree through a reactive view. A React component reads **entity views**.
 
@@ -331,9 +381,13 @@ A view is a plain copy, so it can't lead to a transient: read it through a selec
 | Keep context factories in a `.ts` file with no components | Nothing |
 | One id is one factory call | Nothing: where the id registers, the second call overwrites the first's actions and selectors |
 | The module that boots the app must not run again | Nothing: a second runtime boots. React logs an error that `createRoot()` was called on a container passed to it before; Solid logs nothing, and can render a second app beside the first |
+| A component never starts main-state work from its lifecycle | The [`treflex/no-main-state-in-lifecycle`](../../packages/eslint/README.md#treflexno-main-state-in-lifecycle) lint rule, in the source; nothing at runtime |
 | A form writes through `locate`: silent for a node that has left, loud for one no dispatch can address | `locate` throws |
 | Busy is for display, and `leading` drops a repeat | Nothing: a click guarded on busy misses a repeat in the same turn, and one dispatched elsewhere |
-| Solid: `useInFlight` takes a live node | `useInFlight` throws |
+| Solid: the app imports `treflex-solid` | Nothing: Solid views never update |
+| Solid: the app's components run on `treflex-solid`'s copy of `solid-js` | `TreflexProvider` throws, and a second `treflex-solid` on another copy throws at import |
+| Solid: `useInFlight` takes a live node | `useInFlight`'s accessor throws at its first read |
+| Solid: component state is read where it is used: `useComponentState`'s `id` and `state`, and a component feature's `use().state` and its selector calls | Solid's development build warns `STRICT_READ_UNTRACKED` for a read in the component body, naming the internal `mountComponentState.mount` signal |
 | Rows a form edits by position are entities | Nothing: a queued write lands on the row that shifted into place |
 | Component state holds only what the view needs | Nothing: it is gone after a restore and absent headless |
 | A component factory holds no `$Id` | `HandWrittenIdError` |
@@ -342,11 +396,10 @@ A view is a plain copy, so it can't lead to a transient: read it through a selec
 
 ## Caveats
 
-- **A Solid provider with no `TreflexProvider` above:** an entity feature's provider, or `useResource`, mounted that way throws a bare `TypeError` that names no provider: in Chrome and Node, `Cannot read properties of undefined (reading 'get')`, and other engines word it differently. Mount a `TreflexProvider` at the root.
 - **`use()` throws "outside the matching provider" with the provider visibly mounted,** in development only, coming and going with edits and cured by a dev-server restart: the context's identity has drifted, and the provider and the consumer hold two different contexts. The causes are a context made in a component file that an edit re-evaluated, and a module the dev server loaded twice under two URLs, which the browser treats as two modules. A treflex feature with an id keeps one context through both; a raw `createContext`, or a factory given no id, doesn't. Move the factory or `createContext` call into a `.ts` file with no components, and use one import specifier per module. The error names the factory's id, which tells you which feature it is.
 - **A feature folder added after startup** isn't covered by hot reload: an app's startup registries don't see it until a full reload.
 - **A dispatch made after the component unmounted,** such as from a blur handler firing as a dialog closes, seats the entity again so the action starts, and the removal a microtask later stops it.
-- **When a provider comes to show another entity,** as an unkeyed provider, `<Show>` or `<Index>` can, the component state entity under it moves under the new owner with its state. If the old owner's removal already took it, a fresh one starts from the factory. Under an owner already gone, nothing is seated: `state` reads the factory's values, and a dispatch rejects.
+- **When a provider comes to show another entity,** as an unkeyed provider, `<Show>` or `<For keyed={false}>` can, the component state entity under it moves under the new owner with its state. If the old owner's removal already took it, a fresh one starts from the factory. Under an owner already gone, nothing is seated: `state` reads the factory's values, and a dispatch rejects.
 - **React: a controlled input targets an entity no long action holds.** If its `onChange` dispatches onto a held entity, React resets the input before the queued action runs, and keystrokes are lost. Keep the text in component state or on a child entity, or put the long action's wait inside `open(...)`.
 - **React: a hand-written `{ $Id }` literal** carries no type and is accepted by a provider.
 - **React: a `Map` or `Set` in a selector result** is passed through unconverted.

@@ -1,6 +1,7 @@
 import type { IRuntimeEventOf } from "../Types/IRuntimeEvent";
 import type { IMarkable, IOnEntity } from "./arrivalPolicy";
 import { DEV } from "../Utility/devMode";
+import { errorClass } from "../Utility/errorClasses";
 import { hasArrived } from "./workTag";
 
 // Symbol.for by the cross-module tag-symbol rule (see REGION_OP in open.ts).
@@ -89,6 +90,8 @@ export class UnnamedActionError extends Error {
 		this.label = label;
 	}
 }
+
+errorClass("treflex/UnnamedActionError", UnnamedActionError);
 
 /** The function a name resolves to on this page: undefined when no function or more than one claims it. */
 export function actionNamed(name: string): Function | undefined {

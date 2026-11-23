@@ -16,7 +16,7 @@ export function* importFeeds(draft: IReader, urls: string[]) {
     progress.Total = urls.length;
     progress.Done = 0;
     for (const url of urls) {
-        const info = yield* open(fetchFeed({ Url: url }));
+        const info = yield* open(loadFeed(url));
         progress.Done++;
         if (info === null || draft.Feeds.some((f) => f.Url === url)) continue;
         const feed = yield* entity<IFeed>({ $Receiver: FeedReceiver.Id, Url: url, Title: info.Title, Articles: [] });
@@ -57,7 +57,7 @@ function save(runtime: IRuntime<IReader>): void {
 }
 ```
 
-The snapshot holds the state tree with every binding in it, data sources, timer rows and resource rows. It doesn't hold transients, component state or open asks, and a restore doesn't resume running actions.
+The snapshot holds the state tree with every binding in it, data sources, timer rows and resource rows. It doesn't hold transients, component state or open asks, and without the [`resume`](../reference/restart-and-records.md#resume) option a restore doesn't resume running actions.
 
 ## Restoring
 

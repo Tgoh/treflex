@@ -1,11 +1,11 @@
 import type { ISetState } from "../../src/Runtime/sliceSetState";
-import { createMemo, createRoot } from "solid-js";
 import { describe, expect, it, vi } from "vitest";
 import { createDataSourceMap } from "../../src/Runtime/createDataSourceMap";
 import { createGetDataCache } from "../../src/Runtime/createGetDataCache";
 import { createJournal } from "../../src/Runtime/createJournal";
 import { createWriteGateway } from "../../src/Runtime/createWriteGateway";
 import { rawOf } from "../../src/Runtime/viewProxy";
+import * as reactive from "../reactive";
 import { createTreeState, minted } from "../testHelpers";
 
 function makeCache() {
@@ -216,12 +216,12 @@ describe("getData exactness over the write-gateway index", () => {
 	});
 
 	it("a path-query consumer does not re-run on unrelated churn (the pathResultsEqual workaround retired)", () => {
-		createRoot((dispose) => {
+		reactive.root((dispose) => {
 			const world = buildWorld();
 			world.dataSources.add("Theme", "root", "source");
 
 			let consumerRuns = 0;
-			const consumer = createMemo(() => {
+			const consumer = reactive.memo(() => {
 				consumerRuns++;
 				return world.dataSources.resolveWithPath("Theme", "consumer", world.lookup());
 			});
@@ -249,12 +249,12 @@ describe("getData exactness over the write-gateway index", () => {
 	});
 
 	it("a consumer in the mutation's flush sees cells for entities the same frame created", () => {
-		createRoot((dispose) => {
+		reactive.root((dispose) => {
 			const world = buildWorld();
 			world.dataSources.add("Theme", "root", "source");
 
 			let consumerRuns = 0;
-			const consumer = createMemo(() =>
+			const consumer = reactive.memo(() =>
 				world.state.other.items.map((item) => {
 					consumerRuns++;
 					return world.cache.resolve("Theme", item.$Id);

@@ -2,7 +2,6 @@ import type { IActionGenerator } from "../../src/Types/IAction";
 import type { IAskId } from "../../src/Types/IAskId";
 import type { IReceiver } from "../../src/Types/IReceiver";
 import type { IRecord, IRecordExtras } from "../../src/Types/IRecord";
-import { createRoot } from "solid-js";
 import { describe, expect, it } from "vitest";
 import { answer } from "../../src/Effects/answer";
 import { ask } from "../../src/Effects/ask";
@@ -17,6 +16,7 @@ import { pendingAsks } from "../../src/Runtime/pendingAsks";
 import { receiver as receiverTyped } from "../../src/Runtime/receiver";
 import { sliceSetState } from "../../src/Runtime/sliceSetState";
 import { settled } from "../../src/Testing/createTestRuntime";
+import * as reactive from "../reactive";
 import { rootSetState } from "../testHelpers";
 
 const publish = publishTyped as unknown as (topic: string) => Generator<any, void, any>;
@@ -244,7 +244,7 @@ const GOLDEN = [
 
 describe("golden trace: the record stream is locked", () => {
 	it("appends the exact ordered record sequence for the scripted scenario", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const runtime = createRuntime<IRoot>(
 					{

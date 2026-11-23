@@ -3,9 +3,12 @@ name: CI
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 jobs:
   check:
+    # The private repo pays for Actions minutes, so there it runs only by hand, before a release.
+    if: github.repository == 'Tgoh/treflex' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -23,6 +26,7 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test
+      - run: npm run test:without-error-globals
       - run: npm run test:react18
       - run: npm run test:pack
       - run: npm run docs:build

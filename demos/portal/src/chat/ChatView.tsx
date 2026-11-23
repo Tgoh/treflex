@@ -1,6 +1,6 @@
 import type { IRestoreProps } from "../shell/RestoreBanner";
 import type { IChatRow } from "./Chat";
-import { createEffect, createSignal, For, Index, on, onCleanup, onMount, Show, untrack } from "solid-js";
+import { createEffect, createSignal, For, onSettled, Show, untrack } from "solid-js";
 import { RestoreBanner } from "../shell/RestoreBanner";
 import { focusChatHalf } from "../shell/responsive";
 import { sendable } from "./Conversation";
@@ -25,21 +25,25 @@ function Row(props: { row: IChatRow; onOpen: () => void }) {
 	return (
 		<button
 			type="button"
-			class="ch"
-			classList={{
-				on: props.row.On,
-				unread: props.row.Bold
-			}}
+			class={[
+				"ch",
+				{
+					on: props.row.On,
+					unread: props.row.Bold
+				}
+			]}
 			onClick={() => props.onOpen()}
 		>
 			<Show
 				when={props.row.Channel}
 				fallback={
 					<span
-						class="pa"
-						classList={{
-							on: props.row.Online
-						}}
+						class={[
+							"pa",
+							{
+								on: props.row.Online
+							}
+						]}
 						style={{
 							background: props.row.Colour
 						}}
@@ -65,19 +69,19 @@ function MessageText(props: { text: string; streaming: boolean; arriving: boolea
 	const seen = untrack(() => (props.arriving ? 0 : props.text.length));
 	const [fading, setFading] = createSignal(untrack(() => props.streaming));
 	createEffect(
-		on(
-			() => props.streaming,
-			(streaming) => {
-				if (streaming || !fading()) return;
-				const timer = setTimeout(() => setFading(false), LETTER_FADE_MS);
-				onCleanup(() => clearTimeout(timer));
-			}
-		)
+		() => props.streaming,
+		(streaming) => {
+			if (streaming || !fading()) return;
+			const timer = setTimeout(() => setFading(false), LETTER_FADE_MS);
+			return () => clearTimeout(timer);
+		}
 	);
 	return (
 		<Show when={fading()} fallback={props.text}>
 			{props.text.slice(0, seen)}
-			<Index each={lettersAfter(props.text, seen)}>{(letter) => <span class="letter">{letter()}</span>}</Index>
+			<For each={lettersAfter(props.text, seen)} keyed={false}>
+				{(letter) => <span class="letter">{letter()}</span>}
+			</For>
 		</Show>
 	);
 }
@@ -94,13 +98,15 @@ const MessageRow = Message.provider<{
 		<>
 			<Show when={props.day}>{(day) => <div class="day">{day()}</div>}</Show>
 			<div
-				class="m"
-				classList={{
-					mine: mine(),
-					streaming: message.state.Streaming,
-					sending: message.sendStatus() === "sending",
-					failed: message.sendStatus() === "failed"
-				}}
+				class={[
+					"m",
+					{
+						mine: mine(),
+						streaming: message.state.Streaming,
+						sending: message.sendStatus() === "sending",
+						failed: message.sendStatus() === "failed"
+					}
+				]}
 			>
 				<Avatar id={message.state.From} />
 				<div>
@@ -118,10 +124,12 @@ const MessageRow = Message.provider<{
 						{(button) => (
 							<button
 								type="button"
-								class="btn voucher"
-								classList={{
-									applied: button().Disabled
-								}}
+								class={[
+									"btn voucher",
+									{
+										applied: button().Disabled
+									}
+								]}
 								disabled={button().Disabled}
 								onClick={() => chat.applyVoucher()}
 							>
@@ -150,7 +158,7 @@ const ConversationPane = Conversation.provider(() => {
 	const conversation = Conversation.use();
 	const [draft, setDraft] = createSignal("");
 	let mounted = false;
-	onMount(() => {
+	onSettled(() => {
 		mounted = true;
 	});
 	const submit = (event: SubmitEvent) => {
@@ -208,21 +216,21 @@ export const ChatView = Chat.provider<{
 	};
 	let shownId = untrack(() => chat.current()?.$Id);
 	createEffect(
-		on(
-			() => chat.current()?.$Id,
-			(id) => {
-				if (id !== undefined && shownId !== undefined && id !== shownId) show(true);
-				shownId = id;
-			}
-		)
+		() => chat.current()?.$Id,
+		(id) => {
+			if (id !== undefined && shownId !== undefined && id !== shownId) show(true);
+			shownId = id;
+		}
 	);
 	return (
 		<div
 			ref={root}
-			class="chat"
-			classList={{
-				"show-pane": showPane()
-			}}
+			class={[
+				"chat",
+				{
+					"show-pane": showPane()
+				}
+			]}
 		>
 			<div class="chans">
 				<div>
@@ -241,7 +249,7 @@ export const ChatView = Chat.provider<{
 							<button type="button" class="pback" aria-label="All conversations" onClick={() => show(false)}>
 								‹
 							</button>
-							<div class="ptitle" tabIndex={-1}>
+							<div class="ptitle" tabindex={-1}>
 								<b>{head().Title}</b>
 								<small>{head().Topic}</small>
 							</div>

@@ -25,10 +25,12 @@ const TripRow = Trip.provider<{
 	return (
 		<button
 			type="button"
-			class="trip"
-			classList={{
-				on: props.open
-			}}
+			class={[
+				"trip",
+				{
+					on: props.open
+				}
+			]}
 			onClick={() => props.onOpen()}
 		>
 			<div>

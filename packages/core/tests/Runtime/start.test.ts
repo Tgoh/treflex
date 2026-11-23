@@ -1,10 +1,10 @@
 import type { IActionGenerator } from "../../src/Types/IAction";
 import type { IEffect } from "../../src/Types/IEffect";
-import { createRoot } from "solid-js";
 import { describe, expect, it, vi } from "vitest";
 import { start } from "../../src/Effects/start";
 import { createRuntime } from "../../src/Runtime/createRuntime";
 import { settled } from "../../src/Testing/createTestRuntime";
+import * as reactive from "../reactive";
 import { rootSetState, treeWrite } from "../testHelpers";
 
 type Child = {
@@ -18,7 +18,7 @@ type Parent = {
 
 describe("start", () => {
 	it("spawns a detached action that runs against the target entity", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const runtime = createRuntime<Parent>({
 					$Id: "parent",
@@ -53,7 +53,7 @@ describe("start", () => {
 	});
 
 	it("starts against the $Id of a target given as a node", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const runtime = createRuntime<Parent>({
 					$Id: "parent",
@@ -98,7 +98,7 @@ describe("start", () => {
 	});
 
 	it("returns immediately — the caller does not await the started action", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const runtime = createRuntime<Parent>({
 					$Id: "parent",
@@ -150,7 +150,7 @@ describe("start", () => {
 	});
 
 	it("cancels the started action when its target leaves the state tree", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const runtime = createRuntime<Parent>(
 					{
@@ -209,7 +209,7 @@ describe("start", () => {
 	});
 
 	it("leaves a started action running when a different entity is disposed", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const runtime = createRuntime<Parent>(
 					{
@@ -269,7 +269,7 @@ describe("start", () => {
 	});
 
 	it("raises a diag and is a no-op when the target $Id is not in the state tree", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 			try {
 				const runtime = createRuntime<Parent>({
@@ -313,7 +313,7 @@ describe("start", () => {
 	});
 
 	it("stamps a started action's start record with StartedBy, and leaves other dispatches unstamped", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const runtime = createRuntime<Parent>(
 					{

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render } from "solid-js/web";
+import { render } from "@solidjs/web";
 import { createTestRuntime, guids, settled } from "treflex";
 import { TreflexProvider } from "treflex-solid";
 import { expect, it } from "vitest";

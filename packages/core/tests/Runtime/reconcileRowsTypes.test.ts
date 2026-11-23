@@ -132,8 +132,8 @@ function* reconciling(draft: IDoc): IActionGenerator {
 		add: () => ({}) as IRow,
 		update: () => {}
 	});
-	// @ts-expect-error add has to make a row
 	yield* reconcileRows(draft.Rows, infos, (row) => row.Id, {
+		// @ts-expect-error add has to make a row
 		add: (item) => item,
 		update: () => {}
 	});

@@ -1,11 +1,10 @@
 import type { IActionGenerator, IEntity } from "treflex";
-import { createRoot } from "solid-js";
 import { createRuntime, EntityReplacedError, entity, HandWrittenIdError, idOf, MoveBetweenRootsError, start, withoutIds } from "treflex";
 import { describe, expect, it } from "vitest";
 import { TreflexProvider } from "../src/Context/TreflexContext";
 import { useComponentState } from "../src/Hooks/useComponentState";
+import { mount } from "./mount";
 import { treeWrite } from "./treeWrite";
-import { unhandledDuring } from "./unhandledDuring";
 
 interface IRow extends IEntity {
 	Name: string;
@@ -53,7 +52,7 @@ describe.each([
 		return runtime;
 	}
 
-	function mount<L>(
+	function mountLocal<L>(
 		runtime: ReturnType<typeof world>,
 		hook: () => L
 	): {
@@ -65,14 +64,11 @@ describe.each([
 			local = hook();
 			return null;
 		};
-		const dispose = createRoot((disposer) => {
-			void (
-				<TreflexProvider value={runtime as any}>
-					<Inner />
-				</TreflexProvider>
-			);
-			return disposer;
-		});
+		const { dispose } = mount(() => (
+			<TreflexProvider value={runtime as any}>
+				<Inner />
+			</TreflexProvider>
+		));
 		return {
 			local,
 			dispose
@@ -85,26 +81,27 @@ describe.each([
 			RowId: idOf(runtime.state.Row)
 		}));
 
-	it("refuses a factory that spreads the row, naming the route, raised uncaught from the provider", async () => {
+	it("refuses a factory that spreads the row, naming the route, thrown from the render that mounts it", () => {
 		const runtime = world();
-		const raised = await unhandledDuring(() =>
-			mount(runtime, () =>
+		let thrown: unknown;
+		try {
+			mountLocal(runtime, () =>
 				useComponentState(() => ({
 					...runtime.state.Row
 				}))
-			)
-		);
-		expect(raised).toEqual([
-			expect.any(HandWrittenIdError)
-		]);
-		expect(String(raised[0])).toMatch(/withoutIds/);
+			);
+		} catch (error) {
+			thrown = error;
+		}
+		expect(thrown).toBeInstanceOf(HandWrittenIdError);
+		expect(String(thrown)).toMatch(/withoutIds/);
 		runtime.dispose();
 	});
 
 	it("stamps its own $Id on a factory seeded from withoutIds, and two mounts share nothing", () => {
 		const runtime = world();
-		const first = mount(runtime, () => fromRow(runtime));
-		const second = mount(runtime, () => fromRow(runtime));
+		const first = mountLocal(runtime, () => fromRow(runtime));
+		const second = mountLocal(runtime, () => fromRow(runtime));
 		expect(first.local.state.$Id).not.toBe(second.local.state.$Id);
 		expect(first.local.state).toMatchObject({
 			RowId: "row-1",
@@ -120,7 +117,7 @@ describe.each([
 
 	it("edits the copy without touching the row, and writes the edit back through the row's address", async () => {
 		const runtime = world();
-		const { local, dispose } = mount(runtime, () => fromRow(runtime));
+		const { local, dispose } = mountLocal(runtime, () => fromRow(runtime));
 		await local.dispatch(function* rename(draft: ILocal): IActionGenerator {
 			draft.Name = "edited";
 		});
@@ -166,7 +163,7 @@ describe.each([
 		]
 	])("refuses a live node crossing in by reference, as %s", async (_shape, live) => {
 		const runtime = world();
-		const { local, dispose } = mount(runtime, () => fromRow(runtime));
+		const { local, dispose } = mountLocal(runtime, () => fromRow(runtime));
 		await expect(
 			local.dispatch(function* editing(draft: ILocal): IActionGenerator {
 				draft.Editing = live(runtime);
@@ -180,7 +177,7 @@ describe.each([
 
 	it("refuses a component state node crossing out to the tree by reference", async () => {
 		const runtime = world();
-		const { local, dispose } = mount(runtime, () => fromRow(runtime));
+		const { local, dispose } = mountLocal(runtime, () => fromRow(runtime));
 		await expect(
 			runtime.dispatch(function* taking(draft: any): IActionGenerator {
 				draft.Taken = local.state.Kids[0];
@@ -193,7 +190,7 @@ describe.each([
 
 	it("refuses a copy from an action on an entity nested in component state", async () => {
 		const runtime = world();
-		const { local, dispose } = mount(runtime, () => fromRow(runtime));
+		const { local, dispose } = mountLocal(runtime, () => fromRow(runtime));
 		await local.dispatch(function* nest(draft: ILocal): IActionGenerator {
 			draft.Nested = yield* entity({
 				Name: "nested"
@@ -212,7 +209,7 @@ describe.each([
 		const runtime = world();
 		const codes: string[] = [];
 		runtime.on("diag", (event) => codes.push(event.code));
-		const { local, dispose } = mount(runtime, () => fromRow(runtime));
+		const { local, dispose } = mountLocal(runtime, () => fromRow(runtime));
 		let ran = false;
 		function* init(): IActionGenerator {
 			ran = true;
@@ -232,7 +229,7 @@ describe.each([
 
 	it("runs a nested entity's work through the component's own yield*, or a start on the component entity", async () => {
 		const runtime = world();
-		const { local, dispose } = mount(runtime, () => fromRow(runtime));
+		const { local, dispose } = mountLocal(runtime, () => fromRow(runtime));
 		function* initKid(draft: any): IActionGenerator {
 			draft.Ready = true;
 		}
@@ -257,7 +254,7 @@ describe.each([
 
 	it("refuses a copy carrying the row's $Id from an action, where the domain tree refuses it too", async () => {
 		const runtime = world();
-		const { local, dispose } = mount(runtime, () => fromRow(runtime));
+		const { local, dispose } = mountLocal(runtime, () => fromRow(runtime));
 		const copy = (): IRow => JSON.parse(JSON.stringify(runtime.state.Row));
 		await expect(
 			local.dispatch(function* editing(draft: ILocal): IActionGenerator {
@@ -276,7 +273,7 @@ describe.each([
 
 	it("takes a copy without its ids from an action", async () => {
 		const runtime = world();
-		const { local, dispose } = mount(runtime, () => fromRow(runtime));
+		const { local, dispose } = mountLocal(runtime, () => fromRow(runtime));
 		await local.dispatch(function* editing(draft: ILocal): IActionGenerator {
 			draft.Editing = withoutIds(runtime.state.Row);
 		});
@@ -296,7 +293,7 @@ describe.each([
 
 	it("refuses a hand-written $Id in component state, nested or on the root", async () => {
 		const runtime = world();
-		const { local, dispose } = mount(runtime, () => fromRow(runtime));
+		const { local, dispose } = mountLocal(runtime, () => fromRow(runtime));
 		const typed = () => ({
 			$Id: "typed"
 		});
@@ -320,7 +317,7 @@ describe.each([
 
 	it("takes a nested entity the component's action makes with entity()", async () => {
 		const runtime = world();
-		const { local, dispose } = mount(runtime, () => fromRow(runtime));
+		const { local, dispose } = mountLocal(runtime, () => fromRow(runtime));
 		await local.dispatch(function* nest(draft: ILocal): IActionGenerator {
 			draft.Nested = yield* entity({
 				Name: "nested"
@@ -346,14 +343,11 @@ describe("component state and a disposed runtime", () => {
 			}));
 			return null;
 		};
-		const unmount = createRoot((disposer) => {
-			void (
-				<TreflexProvider value={runtime as any}>
-					<Inner />
-				</TreflexProvider>
-			);
-			return disposer;
-		});
+		const { dispose: unmount } = mount(() => (
+			<TreflexProvider value={runtime as any}>
+				<Inner />
+			</TreflexProvider>
+		));
 		return {
 			runtime,
 			unmount
@@ -392,14 +386,11 @@ describe("component state and a disposed runtime", () => {
 		};
 		let unmount!: () => void;
 		expect(() => {
-			unmount = createRoot((disposer) => {
-				void (
-					<TreflexProvider value={runtime as any}>
-						<Inner />
-					</TreflexProvider>
-				);
-				return disposer;
-			});
+			unmount = mount(() => (
+				<TreflexProvider value={runtime as any}>
+					<Inner />
+				</TreflexProvider>
+			)).dispose;
 		}).not.toThrow();
 		expect(local.state.Count).toBe(3);
 		await expect(local.dispatch(function* (): IActionGenerator {})).rejects.toThrow();

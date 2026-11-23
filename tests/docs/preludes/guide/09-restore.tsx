@@ -3,8 +3,9 @@ import { defineEffect, type IActionGenerator, type IEffect, type IEntity, implem
 interface IFeedInfo {
 	Title: string;
 }
-const fetchFeed = defineEffect<IEffect & { Type: "Reader/FetchFeed"; Url: string }, IFeedInfo | null>("Reader/FetchFeed");
-const fetchFeedImpl = implementation(fetchFeed, async () => null);
+const fetchFeed = defineEffect<IEffect & { Type: "Reader/FetchFeed"; Url: string }, { Info: IFeedInfo | null }>("Reader/FetchFeed");
+const fetchFeedImpl = implementation(fetchFeed, async () => ({ Info: null }));
+declare function loadFeed(url: string): IActionGenerator<IFeedInfo | null>;
 
 interface IFeed extends IEntity {
 	Url: string;

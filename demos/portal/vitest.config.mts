@@ -1,26 +1,26 @@
+import solid from "@solidjs/vite-plugin";
 import { defineConfig } from "vite";
-import solidPlugin from "vite-plugin-solid";
+import { buildId } from "../checkout/buildId";
+
+const conditions = [
+	"treflex-source",
+	"development",
+	"browser"
+];
 
 export default defineConfig({
 	plugins: [
-		solidPlugin({
-			hot: false
-		})
+		solid({
+			refresh: false
+		}),
+		buildId()
 	],
 	resolve: {
-		conditions: [
-			"treflex-source",
-			"development",
-			"browser"
-		]
+		conditions
 	},
 	ssr: {
 		resolve: {
-			conditions: [
-				"treflex-source",
-				"development",
-				"browser"
-			]
+			conditions
 		}
 	},
 	test: {

@@ -71,7 +71,7 @@ describe("one copy of treflex", () => {
 		}
 	});
 
-	it("is the only copy in the production bundle, with one solid-js and one React, both their production builds", async () => {
+	it("is the only copy in the production bundle, with no solid-js and one React, its production build", async () => {
 		const modules = await productionModules(configFile, app);
 
 		// A second copy would be the same file under another path, so it would show as a second module with the same tail.
@@ -87,11 +87,7 @@ describe("one copy of treflex", () => {
 		expect(modules.filter((id) => /\/packages\/[^/]+\/dist\/|\/node_modules\/treflex/.test(id))).toEqual([]);
 
 		const nodeModules = slashed(join(repo, "node_modules"));
-		expect(packageFiles(modules, "solid-js")).toEqual({
-			[`${nodeModules}/solid-js`]: [
-				"dist/solid.js"
-			]
-		});
+		expect(packageFiles(modules, "solid-js")).toEqual({});
 		expect(Object.keys(packageFiles(modules, "react"))).toEqual([
 			`${nodeModules}/react`
 		]);

@@ -66,7 +66,7 @@ export function resolveFeatureEntry(
 		return existing;
 	}
 	const entry: IHmrRegistryEntry = {
-		context: createContext(),
+		context: createContext(null),
 		actionsRef: {
 			current: actions
 		},

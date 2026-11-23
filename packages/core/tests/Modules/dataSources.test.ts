@@ -1,11 +1,11 @@
 import type { IActionGenerator } from "../../src/Types/IAction";
-import { createRoot } from "solid-js";
 import { describe, expect, it, vi } from "vitest";
 import { registerDataSource } from "../../src/Effects/registerDataSource";
 import { unregisterDataSource } from "../../src/Effects/unregisterDataSource";
 import { getData, getDataGlobal } from "../../src/Reads/getData";
 import { createRuntime } from "../../src/Runtime/createRuntime";
 import { seat } from "../../src/Runtime/draftNode";
+import * as reactive from "../reactive";
 import { rootSetState, treeWrite } from "../testHelpers";
 
 const registerDS = registerDataSource as unknown as (
@@ -35,7 +35,7 @@ async function withRuntime<T extends object>(
 	initial: T,
 	body: (runtime: ReturnType<typeof createRuntime<T>>) => Promise<void>
 ): Promise<void> {
-	await createRoot(async (dispose) => {
+	await reactive.root(async (dispose) => {
 		try {
 			await body(createRuntime(initial));
 		} finally {
@@ -44,7 +44,6 @@ async function withRuntime<T extends object>(
 	});
 }
 
-// data omitted → self-registration (owner is also the data).
 async function register(
 	runtime: any,
 	owner: {
@@ -179,8 +178,6 @@ describe("dataSources", () => {
 		});
 	});
 
-	// Inside an action a read result is a plain-data clone of the resolution
-	// at the yield: it never tracks later store changes, and it is frozen.
 	describe("value snapshots (the read ruling)", () => {
 		it("an action-side getData result is detached — later writes do not reach it; a re-yield does", async () => {
 			await withRuntime(
@@ -205,7 +202,6 @@ describe("dataSources", () => {
 						seen.push(held.Hue);
 						draft.Theme.Hue = 2;
 						seen.push(held.Hue);
-						// Re-deriving is how an action reads the present.
 						const fresh = yield* getDSGlobal("Theme");
 						seen.push(fresh.Hue);
 					}
@@ -258,7 +254,6 @@ describe("dataSources", () => {
 						() => "Platform"
 					);
 					expect(thrown).toBeInstanceOf(TypeError);
-					// The store never saw the write — the snapshot is detached.
 					expect((runtime.state as any).Theme.Hue).toBe(1);
 				}
 			);
@@ -281,7 +276,6 @@ describe("dataSources", () => {
 					}
 				},
 				async (runtime) => {
-					// D self-registers "X"; A is D's parent. D is not on A's path.
 					await register(
 						runtime,
 						{
@@ -315,8 +309,6 @@ describe("dataSources", () => {
 					}
 				},
 				async (runtime) => {
-					// Provider self-registers; Consumer is its sibling under Branch.
-					// Provider is a cousin of Consumer, not an ancestor.
 					await register(
 						runtime,
 						{
@@ -336,9 +328,6 @@ describe("dataSources", () => {
 	});
 
 	describe("owner and data distinct", () => {
-		// The headline pattern: Platform owns "Theme"; the data lives in a
-		// child. Consumers resolve via the owner and never need to know where
-		// the data physically sits.
 		const buildState = () => ({
 			$Id: "Platform",
 			ThemeData: {
@@ -405,7 +394,6 @@ describe("dataSources", () => {
 						$Id: "WorkspaceThemeData"
 					}
 				);
-				// Page is inside Workspace → the Workspace owner wins.
 				const inside = await read(runtime, "Theme", {
 					from: {
 						$Id: "Page"
@@ -414,7 +402,6 @@ describe("dataSources", () => {
 				expect(inside).toMatchObject({
 					Marker: "workspace-theme"
 				});
-				// Outside is a sibling of Workspace → only Platform is on its path.
 				const outside = await read(runtime, "Theme", {
 					from: {
 						$Id: "Outside"
@@ -751,7 +738,6 @@ describe("dataSources", () => {
 						Marker: "d"
 					});
 
-					// Remove the owner. The dispose cascade drops its registration.
 					treeWrite(runtime, (s: any) => {
 						s.Scopes.splice(0, 1);
 					});
@@ -772,7 +758,6 @@ describe("dataSources", () => {
 					]
 				},
 				async (runtime) => {
-					// Platform (owner) outlives the data; the data lives at Slot.
 					await register(
 						runtime,
 						{
@@ -787,15 +772,11 @@ describe("dataSources", () => {
 						Marker: "v1"
 					});
 
-					// Data leaves, owner stays. The registration survives;
-					// resolution is undefined while the data id is absent.
 					treeWrite(runtime, (s: any) => {
 						s.Slots.splice(0, 1);
 					});
 					expect(await read(runtime, "Theme")).toBeUndefined();
 
-					// Data returns under the same $Id — the registration
-					// reconnects with no re-registration.
 					treeWrite(runtime, (s: any) => {
 						seat(s.Slots, s.Slots.length, {
 							$Id: "Slot",
@@ -887,7 +868,6 @@ describe("dataSources", () => {
 							$Id: "WorkspaceTheme"
 						}
 					);
-					// Page resolves to the nearer owner.
 					expect(
 						await read(runtime, "Theme", {
 							from: {
@@ -898,7 +878,6 @@ describe("dataSources", () => {
 						Marker: "workspace"
 					});
 
-					// Clear the Workspace registration — Page heals up to Platform.
 					await unregister(
 						runtime,
 						{

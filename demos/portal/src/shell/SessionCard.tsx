@@ -1,30 +1,31 @@
 import type { IPortalHost, IRendererSwap } from "./host";
-import { createSignal, Index, onCleanup, Show } from "solid-js";
+import { createSignal, For, onCleanup, Show, untrack } from "solid-js";
 import { wallClock } from "../portal/clock";
 import { sessionStatus } from "../portal/sessionStatus";
 import { otherBuild, swapButtons } from "./builds";
 import { CheckIcon } from "./icons";
 
 function SwapSegment(props: { swap: IRendererSwap }) {
-	const [pending, setPending] = createSignal(props.swap.pending());
-	onCleanup(props.swap.onPendingChange(setPending));
+	const swap = untrack(() => props.swap);
+	const [pending, setPending] = createSignal(swap.pending());
+	onCleanup(swap.onPendingChange(setPending));
 	return (
 		<fieldset class="seg" aria-label="Renderer">
-			<Index each={swapButtons("solid", pending())}>
+			<For each={swapButtons("solid", pending())} keyed={false}>
 				{(button) => (
 					<button
 						type="button"
-						classList={{
+						class={{
 							on: button().Pressed
 						}}
-						aria-pressed={button().Pressed}
-						aria-busy={button().Busy}
-						onClick={() => props.swap.switchTo(button().Build)}
+						aria-pressed={button().Pressed ? "true" : "false"}
+						aria-busy={button().Busy ? "true" : "false"}
+						onClick={() => swap.switchTo(button().Build)}
 					>
 						{button().Label}
 					</button>
 				)}
-			</Index>
+			</For>
 		</fieldset>
 	);
 }
@@ -79,13 +80,15 @@ export function SessionCard(props: { host: IPortalHost; recordsOpen: boolean; on
 			>
 				{(swap) => <SwapSegment swap={swap().swap} />}
 			</Show>
-			<button type="button" class="toggle" onClick={() => props.onToggleRecords()} aria-pressed={props.recordsOpen}>
+			<button type="button" class="toggle" onClick={() => props.onToggleRecords()} aria-pressed={props.recordsOpen ? "true" : "false"}>
 				<span>Record stream</span>
 				<span
-					class="sw"
-					classList={{
-						on: props.recordsOpen
-					}}
+					class={[
+						"sw",
+						{
+							on: props.recordsOpen
+						}
+					]}
 				/>
 			</button>
 		</div>

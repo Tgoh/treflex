@@ -3,7 +3,6 @@ import type { IRuntimeInternal } from "../../src/Runtime/internals";
 import type { ISetState } from "../../src/Runtime/sliceSetState";
 import type { IActionGenerator } from "../../src/Types/IAction";
 import type { IRecord } from "../../src/Types/IRecord";
-import { createEffect, createRoot, onCleanup } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getDataGlobal } from "../../src/Reads/getData";
 import { createGetDataCache } from "../../src/Runtime/createGetDataCache";
@@ -13,6 +12,7 @@ import { createWriteGateway } from "../../src/Runtime/createWriteGateway";
 import { DraftDetachedError } from "../../src/Runtime/draftNode";
 import { rawOf } from "../../src/Runtime/viewProxy";
 import { consoleDiag } from "../../src/Types/IRuntimeEvent";
+import * as reactive from "../reactive";
 import { createTreeState, treeWrite } from "../testHelpers";
 
 declare module "../../src/Registries/IExternalRegistry" {
@@ -409,8 +409,8 @@ describe("a throwing dispose callback", () => {
 			const boom = new Error("cleanup failed");
 			throwOn(world.gateway, "first", boom);
 			const seen: number[] = [];
-			const dispose = createRoot((d) => {
-				createEffect(() => seen.push(world.state.Slot));
+			const dispose = reactive.root((d) => {
+				reactive.effect(() => seen.push(world.state.Slot));
 				return d;
 			});
 
@@ -487,14 +487,14 @@ describe("a throwing selector cleanup with a sibling memo behind it", () => {
 		}[shape];
 		const boom = new Error("memo cleanup failed");
 		function* thrower(draft: any): any {
-			onCleanup(() => {
+			reactive.onCleanup(() => {
 				throw boom;
 			});
 			return draft.V;
 		}
 		let siblingCleanups = 0;
 		function* sibling(draft: any): any {
-			onCleanup(() => {
+			reactive.onCleanup(() => {
 				siblingCleanups++;
 			});
 			return draft.V;
@@ -502,8 +502,8 @@ describe("a throwing selector cleanup with a sibling memo behind it", () => {
 		runtime.runSelector(thrower, getState);
 		runtime.runSelector(sibling, getState);
 		const seen: number[] = [];
-		const disposeRoot = createRoot((d) => {
-			createEffect(() => seen.push(runtime.state.Slot));
+		const disposeRoot = reactive.root((d) => {
+			reactive.effect(() => seen.push(runtime.state.Slot));
 			return d;
 		});
 		return {
@@ -737,7 +737,7 @@ describe("a throwing memo cleanup in the data cache", () => {
 		const boom = new Error("memo cleanup failed");
 		const cleaned: string[] = [];
 		const cleanup = (entry: string) => {
-			onCleanup(() => {
+			reactive.onCleanup(() => {
 				cleaned.push(entry);
 				if (entry === "scoped:thrower") {
 					throw boom;

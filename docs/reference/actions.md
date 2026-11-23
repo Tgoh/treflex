@@ -114,6 +114,30 @@ The name keys the action's records, its entry in a snapshot, and a restore's `dr
 
 A runtime created with [`requireNames`](./runtime.md#requirenames) refuses, in development, an action that would be saved and has no name.
 
+### The resumable mark
+
+`resumable(action)` says a restore may bring the action back to the wait a snapshot caught it at, for every caller, and returns the action. It is experimental, and does nothing on a runtime without the [`resume`](./runtime.md#options) option. It needs the action's durable name, and throws when `named` hasn't marked the function yet, whether or not the runtime sets `requireNames`. What the mark promises, and what a restore does with it, is in [resume](./restart-and-records.md#resume).
+
+### The redactArgs mark
+
+`redactArgs(action)` keeps an action's arguments out of the record stream and the snapshot, for every caller, and returns the action. The action still receives them. It is for a secret no handle can stand in for, such as the password a sign-in form dispatches:
+
+```ts
+export function* logIn(draft: ISession, user: string, password: string): IActionGenerator {
+    draft.User = yield* signIn(user, password);
+}
+named(logIn, "Session/LogIn");
+redactArgs(logIn);
+```
+
+Here `signIn` is a [redacted](./effects.md#options) effect, so neither the arguments nor the effect's payload is recorded.
+
+- **It covers the arguments only.** What the action writes to state is in its `step` records, and what it passes to an effect or an operation is recorded as [redaction](./effects.md#options) says.
+- A field bound to [`useComponentState`](./views.md#usecomponentstate) writes each keystroke, and those writes are in `step` records before the action runs.
+- **It excludes `resumable`.** A restore resumes an action with its saved arguments, which this mark keeps out of the save. Each mark throws on a function that carries the other.
+- **A receiver's handle can't take it,** and `redactArgs` throws on one: a message is recorded where it was sent. Send a handle, and have the case fetch the secret.
+- **Mark it like the others,** in the module that defines it, once: marking it again throws, and in development so does marking a function that has already been dispatched or delivered, since the records made before carry its arguments.
+
 ### inFlight
 
 `yield* inFlight(action, owner)` is whether a dispatch of `action`, or a delivery whose receiver case is `action`, has arrived on `owner` and not ended: running, waiting inside `open(...)`, or queued. It is a [read](./derived-reads.md#the-reads), so it gives up no turn and a selector reacts to it. A view reads it with [`useInFlight`](./views.md#useinflight), from `treflex-solid` or `treflex-react`, on a node it holds:
@@ -270,6 +294,7 @@ A hold with work queued behind it for over a second reports **`action/long-hold`
 - **An id no entity holds** reports `dispatch/unresolved-entity`, and the start does nothing.
 - **It arrives like any dispatch:** on a free entity, its first step runs during the yield; on a held one it queues. A start to the starter's own entity queues behind the starter, so it starts at the starter's first wait inside `open(...)`, or once the starter has ended.
 - **Its arguments cross as frozen copies;** one with no plain form throws `NonPlainDataError` at the yield, in the starter.
+- **A function a restore resumed on the target** throws `UnreleasedResumeError` at the yield, in the starter, until the restore releases its held waits ([the window before the release](./restart-and-records.md#the-window-before-the-release)).
 - **The target owns it,** so the target's removal ends it.
 - **Its `action:start` record** names the starter as `StartedBy`.
 
@@ -282,6 +307,7 @@ Work beside the rest of the action on its own entity is a `parallel` branch arou
 - **Dispatches read the mark: a dispatch, a feature method and a `start`.** A `yield*` call doesn't, and neither does a message: a receiver case, timer tick or resource delivery reaching a marked case queues and runs.
 - **Mark it in the module that defines it,** with a statement after the declaration. A function takes one mark, once; marking it again throws. Prefer the declaration form: a `const` doesn't exist until its line runs, so an import cycle that reaches it earlier fails at load.
 - **The types** take only an action whose draft is an entity.
+- **`resumable` follows the same rules,** after `named`, and is none of the others: a function can be `leading` or `latest`, named, tagged and resumable at once. A resumed action counts as running for `leading` and `latest`, and `inFlight` and work tags see it from the moment the restore brings it back.
 
 ### What inFlight counts
 
@@ -358,4 +384,4 @@ Held draft references and lookup results age in opposite directions. The draft i
 - **In Node, `console.log` and `util.inspect`** read a gone reference's values without throwing.
 - **A stopped fiber's `finally` blocks are exempt from `DraftDetachedError`:** they serve the nodes the fiber last held, a write through a gone reference there lands on the detached node, which nothing reads, and `isAttached` answers `true`.
 - **A node removed and then written back** is live again for new work, and references to it work again, from the step after. An action dispatched on it stays stopped.
-- **Two writes no throw catches,** which the console reports while a record tap is on, once per node. A write through a reference to a node the same step removed lands on the detached node: `draft/orphaned-write`. A write through a reference held across a move lands on the node, but its record names the path the reference was taken at, where another node may now sit: `draft/stale-path-write`. Write through a reference re-derived from the draft.
+- **Two writes no throw catches,** which the console reports while a record tap is on, once per node. A write through a reference to a node the same step removed lands on the detached node: `draft/orphaned-write`. A write through a reference held across a move lands on the node, but its record's `Path` names the path the reference was taken at, where another node may now sit: `draft/stale-path-write`. Write through a reference re-derived from the draft.

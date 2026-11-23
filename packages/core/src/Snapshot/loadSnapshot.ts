@@ -1,9 +1,12 @@
+import type { ISnapshotHistory } from "../Resume/history";
+import type { IDropReason as IKnownDropReason } from "../Resume/plan";
 import type { IResourceRow } from "../Runtime/createResourceTable";
 import type { IRuntimeStoreReader } from "../Runtime/processAction";
 import type { IDiagEmitter } from "../Types/IRuntimeEvent";
-import type { ISnapshot, ISnapshotInFlightEntryV7 } from "./ISnapshot";
+import type { ISnapshot, ISnapshotInFlightEntry, ISnapshotInFlightEntryV7, ISnapshotInFlightState } from "./ISnapshot";
+import { host } from "../Reactive/host";
 import { copySeed } from "../Runtime/viewProxy";
-import { host } from "../Solid/host";
+import { errorClass } from "../Utility/errorClasses";
 import { MAX_TREE_DEPTH, nestsDeeperThanBound } from "./depth";
 import { PREVIOUS_SNAPSHOT_FORMAT_VERSION, SNAPSHOT_FORMAT_VERSION } from "./ISnapshot";
 
@@ -21,6 +24,16 @@ export class SnapshotRejectedError extends Error {
 	}
 }
 
+errorClass("treflex/SnapshotRejectedError", SnapshotRejectedError);
+
+/**
+ * Why a restore dropped an action rather than resuming it: a key to match on. The set is open, and a
+ * new reason can arrive in a minor version. See docs/reference/restart-and-records.md#what-a-restore-reports.
+ *
+ * @experimental
+ */
+export type IDropReason = IKnownDropReason | (string & {});
+
 export interface IRestoreDrop {
 	actionId: string;
 	/** The action's durable name, or null. */
@@ -29,7 +42,51 @@ export interface IRestoreDrop {
 	label: string | null;
 	/** Present for a delivery: its receiver's id. */
 	receiver?: string;
+	/** The entity the action was gated on. */
 	entityId: string;
+	/** What the action was doing at the cut. Absent on the entries of a format 7 envelope, or of one treflex 0.2.0 wrote. */
+	state?: ISnapshotInFlightState;
+	/** On `"queued"` and `"regaining"` entries only: the place in its entity's line, from 0. */
+	place?: number;
+	/**
+	 * Why it was dropped: `"resume-off"` on a runtime without the `resume` option.
+	 *
+	 * @experimental
+	 */
+	reason: IDropReason;
+	/**
+	 * What caused the drop, as text for a log. Nothing should match on it.
+	 *
+	 * @experimental
+	 */
+	detail?: string;
+	/**
+	 * On `"not-idempotent"`: the `Type` of the wait the snapshot caught the action at.
+	 *
+	 * @experimental
+	 */
+	wait?: string;
+}
+
+/**
+ * An in-flight action a restore brought back to the wait the snapshot caught it at, or put back in
+ * its entity's line. See docs/reference/restart-and-records.md#what-a-restore-reports.
+ *
+ * @experimental
+ */
+export interface IRestoreResumed {
+	/** Its id in the save. The restored runtime gives it a new one, which its `action:start` record pairs with this as `ResumedFrom`. */
+	actionId: string;
+	/** Its durable name. */
+	name: string;
+	entityId: string;
+	/** The `Type` of the wait it is parked on, sent when the restore releases it. Absent for a queued action put back. */
+	wait?: string;
+	/** The resources with a delivery in flight on its entity, above it or below it when the save was written, each once: for a log. */
+	resourceWork: {
+		key: string;
+		ownerId: string;
+	}[];
 }
 
 export interface IRestoreUnresolvedRow {
@@ -40,6 +97,13 @@ export interface IRestoreUnresolvedRow {
 }
 
 export interface IRestoreResult {
+	/**
+	 * The in-flight actions that came back. Empty on a runtime without `resume`. An in-flight action is
+	 * in exactly one of `resumed` and `dropped`.
+	 *
+	 * @experimental
+	 */
+	resumed: IRestoreResumed[];
 	dropped: IRestoreDrop[];
 	unresolved: IRestoreUnresolvedRow[];
 	sweptOrphanedRows: number;
@@ -139,6 +203,22 @@ function seedCopy(tree: unknown): unknown {
 	}
 }
 
+function isPlaced(row: ISnapshotInFlightEntry): boolean {
+	switch (row.State as unknown) {
+		case undefined:
+			return row.Place === undefined;
+		case "queued":
+		case "regaining":
+			return Number.isInteger(row.Place) && row.Place! >= 0;
+		case "holding":
+		case "open":
+		case "stopping":
+			return row.Place === undefined;
+		default:
+			return false;
+	}
+}
+
 function sanitizeSnapshot(snapshot: ISnapshot, emitDiag: IDiagEmitter): void {
 	let droppedRows = 0;
 	const rowFilter = <T>(rows: T[]): T[] => {
@@ -152,9 +232,21 @@ function sanitizeSnapshot(snapshot: ISnapshot, emitDiag: IDiagEmitter): void {
 	snapshot.Resources = resources.filter(isResourceRow);
 	droppedRows += resources.length - snapshot.Resources.length;
 	const inFlight = snapshot.InFlight;
-	snapshot.InFlight = inFlight.filter(
-		(row) => row !== null && typeof row === "object" && typeof row.ActionId === "string" && typeof row.EntityId === "string"
-	);
+	const placed = snapshot.Version === SNAPSHOT_FORMAT_VERSION;
+	const ids = new Set<string>();
+	snapshot.InFlight = inFlight.filter((row) => {
+		const wellFormed =
+			row !== null &&
+			typeof row === "object" &&
+			typeof row.ActionId === "string" &&
+			typeof row.EntityId === "string" &&
+			(!placed || isPlaced(row)) &&
+			!ids.has(row.ActionId);
+		if (wellFormed) {
+			ids.add(row.ActionId);
+		}
+		return wellFormed;
+	});
 	droppedRows += inFlight.length - snapshot.InFlight.length;
 	if (droppedRows > 0) {
 		emitDiag({
@@ -257,7 +349,10 @@ export function reportUnresolved(rows: readonly IRestoreUnresolvedRow[], emitDia
 
 const stringOrNull = (value: unknown): string | null => (typeof value === "string" ? value : null);
 
-export function droppedActions(snapshot: ISnapshot): IRestoreDrop[] {
+/** An in-flight row as the result lists it, before the restore says what became of it. */
+export type IInFlightListing = Omit<IRestoreDrop, "reason" | "detail" | "wait">;
+
+export function listedInFlight(snapshot: ISnapshot): IInFlightListing[] {
 	if (snapshot.Version === PREVIOUS_SNAPSHOT_FORMAT_VERSION) {
 		return (snapshot.InFlight as unknown as ISnapshotInFlightEntryV7[]).map((entry) => ({
 			actionId: entry.ActionId,
@@ -277,11 +372,157 @@ export function droppedActions(snapshot: ISnapshot): IRestoreDrop[] {
 						receiver
 					}
 				: {}),
-			entityId: entry.EntityId
+			entityId: entry.EntityId,
+			...(entry.State !== undefined
+				? {
+						state: entry.State
+					}
+				: {}),
+			...(entry.Place !== undefined
+				? {
+						place: entry.Place
+					}
+				: {})
 		};
 	});
 }
 
 export function savedBuildOf(snapshot: ISnapshot): string | null {
 	return snapshot.Version === PREVIOUS_SNAPSHOT_FORMAT_VERSION ? null : stringOrNull(snapshot.Build);
+}
+
+const isObject = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
+
+const isKey = (value: unknown): boolean =>
+	typeof value === "string" || (typeof value === "number" && Number.isInteger(value) && value >= 0);
+
+const isPath = (value: unknown): boolean => Array.isArray(value) && value.every(isKey);
+
+const optional = (value: unknown, check: (value: unknown) => boolean): boolean => value === undefined || check(value);
+
+const isTrue = (value: unknown): boolean => value === true;
+
+function isChange(value: unknown): boolean {
+	return (
+		isObject(value) &&
+		isPath(value.Path) &&
+		optional(value.Deleted, isTrue) &&
+		optional(value.Created, isTrue) &&
+		optional(value.GrewFrom, (n) => typeof n === "number" && Number.isInteger(n) && n >= 0) &&
+		optional(value.Landing, (landing) => isObject(landing) && typeof landing.EntityId === "string" && isPath(landing.Path))
+	);
+}
+
+function isThrowForm(value: unknown): boolean {
+	if (!isObject(value)) {
+		return false;
+	}
+	switch (value.Thrown) {
+		case "value":
+			return true;
+		case "error":
+			return (
+				typeof value.Name === "string" &&
+				typeof value.Message === "string" &&
+				optional(value.Stack, (s) => typeof s === "string") &&
+				optional(value.Fields, isObject) &&
+				optional(value.Native, (s) => typeof s === "string") &&
+				optional(value.Class, (s) => typeof s === "string") &&
+				optional(value.Cause, isThrowForm) &&
+				optional(value.Error, isThrowForm) &&
+				optional(value.Suppressed, isThrowForm) &&
+				optional(value.Errors, (errors) => Array.isArray(errors) && errors.every(isThrowForm))
+			);
+		default:
+			return false;
+	}
+}
+
+function isEntry(value: unknown): boolean {
+	if (!isObject(value)) {
+		return false;
+	}
+	const seq = (n: unknown) => typeof n === "number" && Number.isSafeInteger(n);
+	switch (value.Kind) {
+		case "step":
+			return (
+				Array.isArray(value.Changes) &&
+				value.Changes.every(isChange) &&
+				optional(value.InFlightAnswers, (answers) => Array.isArray(answers) && answers.every((a) => typeof a === "boolean")) &&
+				optional(
+					value.ExternalAnswers,
+					(answers) =>
+						Array.isArray(answers) && answers.every((a) => isObject(a) && typeof a.Key === "string" && optional(a.Redacted, isTrue))
+				)
+			);
+		case "effect":
+			return seq(value.Seq) && Object.hasOwn(value, "Descriptor");
+		case "response":
+			return (
+				seq(value.ForSeq) &&
+				optional(value.Sync, isTrue) &&
+				optional(value.Error, (error) => (isObject(error) && error.Thrown === "redacted") || isThrowForm(error))
+			);
+		case "other":
+			return isChange(value.Change);
+		default:
+			return false;
+	}
+}
+
+const UNUSABLE = new Set([
+	"not-whole",
+	"over-budget",
+	"too-deep"
+]);
+
+function isHistory(value: Record<string, unknown>): boolean {
+	if (Object.hasOwn(value, "Unusable")) {
+		return typeof value.Unusable === "string" && UNUSABLE.has(value.Unusable);
+	}
+	return Array.isArray(value.Args) && typeof value.ArgsExact === "boolean" && Array.isArray(value.Entries) && value.Entries.every(isEntry);
+}
+
+/**
+ * The envelope's `Histories`, without the entries that can't be trusted. A kept entry's `Unlisted`,
+ * `UnlistedLineage` and `Deliveries` are not checked here: `planResume` in `Resume/plan.ts` reads a
+ * malformed one as work it can't name.
+ */
+export function historiesOf(snapshot: ISnapshot): {
+	histories: ISnapshotHistory[];
+	/** The `ActionId`s of the entries left out. */
+	malformed: ReadonlySet<string>;
+	/** The section is there and was left out whole. */
+	unreadable: boolean;
+} {
+	const section: unknown = (
+		snapshot as {
+			Histories?: unknown;
+		}
+	).Histories;
+	const malformed = new Set<string>();
+	const unreadable = section !== undefined && (!Array.isArray(section) || nestsDeeperThanBound(section));
+	const entries = section === undefined || unreadable ? [] : (section as unknown[]);
+	const seen = new Map<string, number>();
+	for (const entry of entries) {
+		if (isObject(entry) && typeof entry.ActionId === "string") {
+			seen.set(entry.ActionId, (seen.get(entry.ActionId) ?? 0) + 1);
+		}
+	}
+	const histories: ISnapshotHistory[] = [];
+	for (const entry of entries) {
+		if (!isObject(entry) || typeof entry.ActionId !== "string") {
+			continue;
+		}
+		if (seen.get(entry.ActionId) === 1 && isHistory(entry)) {
+			histories.push(entry as unknown as ISnapshotHistory);
+		} else {
+			malformed.add(entry.ActionId);
+		}
+	}
+	return {
+		histories,
+		malformed,
+		unreadable
+	};
 }

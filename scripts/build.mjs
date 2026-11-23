@@ -11,8 +11,7 @@
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { transformAsync } from "@babel/core";
-import solidPreset from "babel-preset-solid";
+import { transformAsync } from "@solidjs/compiler";
 import ts from "typescript6";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -130,16 +129,7 @@ async function compileSolidJsx(dist) {
 		}
 		const result = await transformAsync(readFileSync(file, "utf8"), {
 			filename: file,
-			babelrc: false,
-			configFile: false,
-			presets: [
-				[
-					solidPreset,
-					{
-						generate: "dom"
-					}
-				]
-			]
+			generate: "dom"
 		});
 		writeFileSync(file.replace(/\.jsx$/, ".js"), result.code);
 		rmSync(file);

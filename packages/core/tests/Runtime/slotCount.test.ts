@@ -1,6 +1,5 @@
 import type { IAction, IActionGenerator } from "../../src/Types/IAction";
 import type { IEntity } from "../../src/Types/IEntity";
-import { createEffect, createRoot } from "solid-js";
 import { describe, expect, it } from "vitest";
 import { generateGuid } from "../../src/Effects/generateGuid";
 import { parallel } from "../../src/Effects/parallel";
@@ -11,6 +10,7 @@ import { open } from "../../src/Runtime/open";
 import { transient } from "../../src/Runtime/transient";
 import { createSnapshot } from "../../src/Snapshot/createSnapshot";
 import { restoreRuntime } from "../../src/Snapshot/index";
+import * as reactive from "../reactive";
 
 const loading = (draft: IEntity) =>
 	transient(draft, "loading", {
@@ -112,9 +112,9 @@ function* addPanel(draft: IWorld): IActionGenerator {
 describe("a count kept in a slot and taken down in a finally", () => {
 	it("lands a slot write in the same flush as the draft writes of its step", async () => {
 		const h = build();
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			const seen: string[] = [];
-			createEffect(() => {
+			reactive.effect(() => {
 				seen.push(`${countOf(h.runtime, h.panel())}/${h.panel().Loaded ?? ""}`);
 			});
 			await settle();
@@ -140,9 +140,9 @@ describe("a count kept in a slot and taken down in a finally", () => {
 
 	it("lands a draft write made before the slot's yield ahead of the slot write, since the yield ends the step", async () => {
 		const h = build();
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			const seen: string[] = [];
-			createEffect(() => {
+			reactive.effect(() => {
 				seen.push(`${countOf(h.runtime, h.panel())}/${h.panel().Loaded ?? ""}`);
 			});
 			await settle();

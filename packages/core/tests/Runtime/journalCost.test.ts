@@ -1,19 +1,17 @@
 import type { IRuntime } from "../../src/Runtime/createRuntime";
 import type { IRuntimeInternal } from "../../src/Runtime/internals";
 import type { IActionGenerator } from "../../src/Types/IAction";
-import { createRoot } from "solid-js";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { select } from "../../src/Reads/select";
 import { createRuntime } from "../../src/Runtime/createRuntime";
 import { open } from "../../src/Runtime/open";
 import { reconcileRows } from "../../src/Runtime/reconcileRows";
+import { rawOf } from "../../src/Runtime/viewProxy";
 // tests/Runtime is not snapshot-free: a core-only CI filter keys on
 // src/index.ts's import closure (importClosure.test.ts), never on this folder.
 import { createSnapshot } from "../../src/Snapshot/createSnapshot";
+import * as reactive from "../reactive";
 import { minted, rootSetState } from "../testHelpers";
-
-// The cost bounds below are deliberately loose, so wall-clock jitter cannot
-// flake the suite; the reported numbers are the deliverable.
 
 type TestState = {
 	$Id: string;
@@ -29,7 +27,7 @@ const initialState = (): TestState => ({
 
 describe("journal cost", () => {
 	it("keeps the journal bounded under a long-running daemon", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			const runtime = createRuntime<TestState>(initialState()) as IRuntimeInternal<TestState>;
 			const inFlight = runtime.get("runtime/inFlightActions");
 
@@ -111,7 +109,7 @@ describe("journal cost", () => {
 		}
 
 		async function timeRun(journalOn: boolean): Promise<number> {
-			return createRoot(async (dispose) => {
+			return reactive.root(async (dispose) => {
 				const runtime = createRuntime<TestState>(initialState());
 				if (journalOn) {
 					runtime.on("record", () => {});
@@ -182,7 +180,7 @@ describe("journal cost", () => {
 		}
 
 		async function timeRun(action: (draft: TestState) => IActionGenerator): Promise<number> {
-			return createRoot(async (dispose) => {
+			return reactive.root(async (dispose) => {
 				const runtime = createRuntime<TestState>(initialState());
 				const start = performance.now();
 				for (let i = 0; i < N; i++) {
@@ -270,7 +268,7 @@ describe("journal cost at scale", () => {
 		action: (draft: T, i: number) => IActionGenerator,
 		setup?: (runtime: IRuntime<T>) => void
 	): Promise<number> {
-		return createRoot(async (dispose) => {
+		return reactive.root(async (dispose) => {
 			const runtime = createRuntime<T>(initial, {
 				// The suite arms the O(tree) consistency walk, which would
 				// swamp what these measure.
@@ -433,8 +431,6 @@ describe("journal cost at scale", () => {
 				`[journal cost] reconcileRows N=${n}: off=${perOff.toFixed(1)}µs/action, on=${perOn.toFixed(1)}µs/action, ` +
 					`ratio=${ratio.toFixed(2)}×, delta=${(perOn - perOff).toFixed(1)}µs/action`
 			);
-			// Not calibrated to the measurements on purpose: tightening them
-			// would trade a real guard for a flaky one.
 			expect(ratio).toBeLessThan(20);
 			expect(perOn).toBeLessThan(5_000 + n * 1_000);
 		}
@@ -456,7 +452,7 @@ describe("journal cost at scale", () => {
 		iterations: number,
 		action: (draft: T, i: number) => IActionGenerator
 	): Promise<number> {
-		return createRoot(async (dispose) => {
+		return reactive.root(async (dispose) => {
 			const runtime = createRuntime<T>(initial, {
 				verifyIndex: false
 			});
@@ -581,14 +577,12 @@ describe("journal cost at scale", () => {
 				`[journal cost] settlement (${name}): off=${perOff.toFixed(1)}µs/action, on=${perOn.toFixed(1)}µs/action, ` +
 					`ratio=${ratio.toFixed(2)}×, delta=${(perOn - perOff).toFixed(1)}µs/action`
 			);
-			// No ratio bound: the off path is a few µs, so the ratio is huge by
-			// construction and too jittery to guard on.
 			expect(perOn).toBeLessThan(20_000);
 		}
 	});
 
 	it("reports createSnapshot wall time with an N=1000 tree", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			const runtime = createRuntime<IChurnState>(churnState(1000));
 			await runtime.processAction(
 				churn,
@@ -631,7 +625,7 @@ describe("journal cost at scale", () => {
 		// through all of them would scale with the variable and read as
 		// per-reference work at the boundary. The writeAll arm shows that.
 		async function timeWaits(held: number, writeAll: boolean): Promise<number> {
-			return createRoot(async (dispose) => {
+			return reactive.root(async (dispose) => {
 				const runtime = createRuntime<IWaitState>(waitState(1000), {
 					verifyIndex: false
 				});
@@ -671,14 +665,109 @@ describe("journal cost at scale", () => {
 		await timeWaits(1, false);
 		const one = new Map<number, number>();
 		const all = new Map<number, number>();
-		for (const held of counts) {
-			one.set(held, ((await timeWaits(held, false)) / waits) * 1000);
-			all.set(held, ((await timeWaits(held, true)) / waits) * 1000);
+		const best = (m: Map<number, number>, held: number, elapsed: number) =>
+			m.set(held, Math.min(m.get(held) ?? Number.POSITIVE_INFINITY, (elapsed / waits) * 1000));
+		for (let round = 0; round < 5; round++) {
+			for (const held of counts) {
+				best(one, held, await timeWaits(held, false));
+				best(all, held, await timeWaits(held, true));
+			}
 		}
 		const line = (m: Map<number, number>) => counts.map((held) => `${held} held=${m.get(held)!.toFixed(1)}µs/wait`).join(", ");
 		console.info(`[journal cost] wait boundary, one write per step: ${line(one)}`);
 		console.info(`[journal cost] wait boundary, a write per reference: ${line(all)}`);
 		// Against the one-held arm: the zero-held arm writes nothing, so it can't be the baseline.
 		expect(one.get(50)!).toBeLessThan(one.get(1)! * 2 + 20);
+	});
+});
+
+describe("delete cost", () => {
+	type IBook = {
+		$Id: string;
+		ById: Record<string, number>;
+		Ids: string[];
+		Rows: {
+			$Id: string;
+		}[];
+		Sel?: unknown;
+	};
+
+	const N = 2000;
+
+	const book = (): IBook => {
+		const ById: Record<string, number> = {};
+		const Ids: string[] = [];
+		for (let i = 0; i < N; i++) {
+			ById[`k${i}`] = i;
+			Ids.push(`k${i}`);
+		}
+		return {
+			$Id: "root",
+			ById,
+			Ids,
+			Rows: [
+				{
+					$Id: "row"
+				}
+			]
+		};
+	};
+
+	async function keyCopies(write: (draft: IBook) => void): Promise<{
+		copies: number;
+		state: IBook;
+	}> {
+		const runtime = createRuntime<IBook>(book(), {
+			verifyIndex: false,
+			onError: () => {}
+		});
+		const record = (rawOf(runtime.state) as IBook).ById;
+		const keys = vi.spyOn(Object, "keys");
+		function* action(draft: IBook): IActionGenerator {
+			write(draft);
+		}
+		await runtime.dispatch(action, "root").catch(() => {});
+		const copies = keys.mock.calls.filter(([target]) => target === record).length;
+		keys.mockRestore();
+		const state = rawOf(runtime.state) as IBook;
+		runtime.dispose();
+		return {
+			copies,
+			state
+		};
+	}
+
+	it("reads a record's keys a fixed number of times for a frame that deletes half of them", async () => {
+		const { copies, state } = await keyCopies((draft) => {
+			for (let i = 0; i < N; i += 2) {
+				delete draft.ById[`k${i}`];
+			}
+		});
+		expect(Object.keys(state.ById)).toHaveLength(N / 2);
+		expect(copies).toBeLessThan(5);
+	});
+
+	it("reads them a fixed number of times when each delete is followed by a splice", async () => {
+		const { copies, state } = await keyCopies((draft) => {
+			for (let i = N - 1; i >= N / 2; i--) {
+				delete draft.ById[draft.Ids[i]!];
+				draft.Ids.splice(i, 1);
+			}
+		});
+		expect(state.Ids).toHaveLength(N / 2);
+		expect(Object.keys(state.ById)).toEqual(state.Ids);
+		expect(copies).toBeLessThan(5);
+	});
+
+	it("reads them a fixed number of times when the frame is rolled back, and puts every key back in its place", async () => {
+		const { copies, state } = await keyCopies((draft) => {
+			for (let i = 0; i < N; i += 2) {
+				draft.ById[`k${i}`] = undefined as never;
+			}
+			draft.Sel = draft.Rows[0];
+		});
+		expect(state.Sel).toBeUndefined();
+		expect(Object.keys(state.ById)).toEqual(book().Ids);
+		expect(copies).toBeLessThan(5);
 	});
 });

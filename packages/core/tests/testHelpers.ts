@@ -16,6 +16,8 @@ import { inFlight } from "../src/Runtime/arrivals";
 import { pendingAsks } from "../src/Runtime/pendingAsks";
 import { wrapSetState } from "../src/Runtime/sliceSetState";
 import { copySeed, rawOf, view } from "../src/Runtime/viewProxy";
+import { jsonEquals } from "../src/Utility/jsonEquals";
+import { cloneStrict } from "../src/Utility/valueCodec";
 
 const realQueueMicrotask = globalThis.queueMicrotask;
 
@@ -264,4 +266,95 @@ export function intrinsicChanges(before: IIntrinsicPrint, after: IIntrinsicPrint
 		}
 	}
 	return changes;
+}
+
+/** A chain of `depth` objects, each holding the next in `next`, ending at 1. */
+export function nest(depth: number): unknown {
+	let value: unknown = 1;
+	for (let i = 0; i < depth; i++) {
+		value = {
+			next: value
+		};
+	}
+	return value;
+}
+
+/** How many objects deep `value` is through `next`; 0 for anything that isn't an object. */
+export function depthOf(value: unknown): number {
+	let depth = 0;
+	while (value !== null && typeof value === "object") {
+		value = (
+			value as {
+				next: unknown;
+			}
+		).next;
+		depth++;
+	}
+	return depth;
+}
+
+const DEEPEST_SEARCHED = 2 ** 20;
+
+function succeeds(run: () => unknown): boolean {
+	try {
+		run();
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+function firstFailingDepth(works: (depth: number) => boolean): number | undefined {
+	let low = 1;
+	let high = 2;
+	while (works(high)) {
+		if (high >= DEEPEST_SEARCHED) {
+			return undefined;
+		}
+		low = high;
+		high *= 2;
+	}
+	while (high - low > 1) {
+		const middle = Math.floor((low + high) / 2);
+		if (works(middle)) {
+			low = middle;
+		} else {
+			high = middle;
+		}
+	}
+	return high;
+}
+
+const jsonCarries = (depth: number): boolean => succeeds(() => JSON.parse(JSON.stringify(nest(depth))));
+
+const compares = (depth: number): boolean =>
+	succeeds(() => {
+		const value = nest(depth);
+		cloneStrict(value);
+		jsonEquals(value, nest(depth));
+	});
+
+export interface IDeepNesting {
+	/**
+	 * A depth of `nest` that this engine's JSON round trip carries and whose comparison overflows, with
+	 * a margin either way for the deeper stack the runtime reads it on; undefined where there is none.
+	 */
+	readonly carried: number | undefined;
+	/** A depth of `nest` that this engine's JSON can't carry; undefined where it carries every depth searched. */
+	readonly uncarried: number | undefined;
+}
+
+let deepNesting: IDeepNesting | undefined;
+
+/** Searched on the engine running the test, once per file. */
+export function deepNestingDepths(): IDeepNesting {
+	if (deepNesting === undefined) {
+		const comparedTooDeep = firstFailingDepth(compares);
+		const jsonTooDeep = firstFailingDepth(jsonCarries);
+		deepNesting = {
+			carried: comparedTooDeep !== undefined && jsonCarries(4 * comparedTooDeep) ? 2 * comparedTooDeep : undefined,
+			uncarried: jsonTooDeep === undefined ? undefined : 2 * jsonTooDeep
+		};
+	}
+	return deepNesting;
 }

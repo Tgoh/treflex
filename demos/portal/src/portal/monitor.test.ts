@@ -3,8 +3,8 @@ import type { ICheckProvider } from "../backend/backend";
 import type { IPortal } from "./Portal";
 import { createRuntime, createTestRuntime, guids, settled } from "treflex";
 import { afterEach, expect, it } from "vitest";
-import { ProviderError } from "../backend/backend";
 import { providerAnswer } from "../backend/fakeBackend";
+import { search } from "../trips/Leg";
 import { startTrip } from "../trips/Planner";
 import { createMonitor } from "./monitor";
 import { getDefaultState } from "./Portal";
@@ -17,20 +17,22 @@ afterEach(() => {
 });
 
 it("names each line by the entity it ran on, and shows a provider failure and the question", async () => {
-	const runtime = createTestRuntime<IPortal>(getDefaultState(), {
-		generateGuid: guids("m"),
-		"Backend/CheckProvider": (effect: ICheckProvider) => {
-			if (effect.Kind === "hotel" && effect.Index === 0 && effect.Attempt === 0)
-				throw new ProviderError("Casa do Largo", "provider timeout");
-			if (effect.Kind !== "flights" && effect.Index > 0) return new Promise(() => {});
-			return Promise.resolve(
-				providerAnswer({
-					...effect,
-					Attempt: 1
-				})
-			);
+	const runtime = createTestRuntime<IPortal>(
+		getDefaultState(),
+		{
+			generateGuid: guids("m"),
+			"Backend/CheckProvider": (effect: ICheckProvider) => {
+				if (effect.Kind === "hotel" && effect.Index === 0) throw new Error("provider timeout");
+				if (effect.Kind !== "flights" && effect.Index > 0) return new Promise(() => {});
+				return Promise.resolve(providerAnswer(effect, 1));
+			}
+		},
+		{
+			allowFailures: [
+				search
+			]
 		}
-	});
+	);
 	registerReceivers(runtime);
 	runtimes.push(runtime);
 	const monitor = createMonitor(runtime, {

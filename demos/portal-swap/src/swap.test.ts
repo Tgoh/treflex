@@ -1,5 +1,6 @@
 import type { IBuild } from "../../portal/src/shell/builds";
 import type { IRendererModule, ISwappedPortal } from "./swap";
+import { settled } from "treflex";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { openApp, ROOT_ID } from "../../portal/src/portal/Portal";
 import { CARD_TICK_MS } from "../../portal/src/trips/flourish";
@@ -14,7 +15,6 @@ async function until(check: () => boolean, tries = 1000): Promise<void> {
 	}
 }
 
-/** Counts the listeners added to `target` and not yet removed, until `restore`. */
 function countListeners(target: EventTarget): {
 	count(): number;
 	restore(): void;
@@ -121,7 +121,6 @@ async function swapTo(swapped: ISwappedPortal, renderer: IBuild) {
 	return view(swapped);
 }
 
-/** RENDERERS, counting each renderer's mounts, with React's load held until `gate` settles. */
 function counted(gate?: Promise<void>) {
 	const mounts = {
 		solid: 0,
@@ -227,14 +226,16 @@ describe("the renderer swap", () => {
 		const swapped = await start(renderers);
 
 		segmentButton("React")!.click();
+		await settled();
 		expect(segmentButton("React")!.getAttribute("aria-busy")).toBe("true");
 		await new Promise((resolve) => setTimeout(resolve, 20));
 		segmentButton("Solid")!.click();
+		await settled();
 		expect(segmentButton("React")!.getAttribute("aria-busy")).toBe("false");
 		segmentButton("React")!.click();
-		const settled = swapped.switchTo("solid");
+		const switched = swapped.switchTo("solid");
 		release();
-		await settled;
+		await switched;
 		expect(mounts).toEqual({
 			solid: 1,
 			react: 0
@@ -407,14 +408,14 @@ describe("the renderer swap", () => {
 		await swapTo(swapped, "solid");
 		calls.length = 0;
 
-		const settled = swapped.switchTo("react");
+		const switched = swapped.switchTo("react");
 		expect(calls.length).toBeGreaterThan(0);
 		expect(new Set(calls)).toEqual(
 			new Set([
 				3
 			])
 		);
-		await settled;
+		await switched;
 	}, 30_000);
 
 	it.each([
@@ -484,6 +485,7 @@ describe("the renderer swap", () => {
 			value: ""
 		});
 		cards.dispatchEvent(end);
+		await settled();
 		expect(cards.classList.contains("vdrop")).toBe(false);
 
 		await runtime.dispatch(openApp, ROOT_ID, "chat");

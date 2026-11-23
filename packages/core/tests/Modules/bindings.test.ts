@@ -3,7 +3,6 @@ import type { IRuntimeInternal } from "../../src/Runtime/internals";
 import type { IActionGenerator } from "../../src/Types/IAction";
 import type { IEntity } from "../../src/Types/IEntity";
 import type { IReceiverId } from "../../src/Types/IReceiver";
-import { createRoot } from "solid-js";
 import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 import { entity, withoutIds } from "../../src/Effects/entity";
 import { publish } from "../../src/Effects/publish";
@@ -13,6 +12,7 @@ import { createRuntime } from "../../src/Runtime/createRuntime";
 import { receiver } from "../../src/Runtime/receiver";
 import { createSnapshot } from "../../src/Snapshot/createSnapshot";
 import { restoreRuntime, SnapshotRejectedError } from "../../src/Snapshot/index";
+import * as reactive from "../reactive";
 import { minted, rootSetState } from "../testHelpers";
 
 declare module "../../src/Registries/IMessageRegistry" {
@@ -96,7 +96,7 @@ function* ping(): IActionGenerator {
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 async function withRuntime(body: (runtime: IRuntime<IShell>) => Promise<void>, initial: IShell = seed()): Promise<void> {
-	await createRoot(async (dispose) => {
+	await reactive.root(async (dispose) => {
 		const runtime = createRuntime(initial, {
 			onError: () => {}
 		});

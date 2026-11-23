@@ -1,5 +1,4 @@
 import type { IActionGenerator } from "../../src/Types/IAction";
-import { createRoot } from "solid-js";
 import { describe, expect, it } from "vitest";
 import { entity } from "../../src/Effects/entity";
 import { createJournal } from "../../src/Runtime/createJournal";
@@ -9,6 +8,7 @@ import { DraftDetachedError, isAttached } from "../../src/Runtime/draftNode";
 import { open } from "../../src/Runtime/open";
 import { sliceSetState } from "../../src/Runtime/sliceSetState";
 import { rawOf } from "../../src/Runtime/viewProxy";
+import * as reactive from "../reactive";
 import { createTreeState, minted, rootSetState } from "../testHelpers";
 
 type IRow = {
@@ -119,7 +119,7 @@ describe("held references", () => {
 	});
 
 	it("keeps working across a move, and names the node's last place after a removal", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			const moved = makeHarness();
 			const movedOut: unknown[] = [];
 			const parkedMoved = moved.dispatch(holdThen(movedOut, (ref) => ref.Name));
@@ -148,7 +148,7 @@ describe("held references", () => {
 	});
 
 	it("detaches the node a replacement vacated, and not the replacement", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			const h = makeHarness();
 			const out: unknown[] = [];
 			const parked = h.dispatch(
@@ -179,7 +179,7 @@ describe("held references", () => {
 	});
 
 	it("throws through every trap, and answers the probe channels without throwing", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			const h = makeHarness();
 			const out: unknown[] = [];
 			function* probe(draft: IWorld) {
@@ -274,7 +274,7 @@ describe("held references", () => {
 	});
 
 	it("does not throw for a replacement inside the same slice: the mark lands at frame close", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			const h = makeHarness();
 			const out: unknown[] = [];
 			function* replaceThenWrite(draft: IWorld): IActionGenerator {
@@ -305,7 +305,7 @@ describe("held references", () => {
 	});
 
 	it("re-attaches the node when a held reference is assigned back into the draft", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			const h = makeHarness();
 			const out: unknown[] = [];
 			function* restore(draft: IWorld) {
@@ -345,7 +345,7 @@ describe("held references", () => {
 	});
 
 	it("goes live again when a later action re-attaches the raw node", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			const h = makeHarness();
 			const out: unknown[] = [];
 			function* readdRow1(draft: IWorld): IActionGenerator {
@@ -384,7 +384,7 @@ describe("held references", () => {
 	});
 
 	it("exempts a cancelled branch's close, and detaches again after it", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			const runtime = createRuntime<IWorld>(world(), {
 				onError: () => {}
 			});

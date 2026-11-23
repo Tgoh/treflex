@@ -1,13 +1,13 @@
 import type { IRuntimeInternal } from "../../src/Runtime/internals";
 import type { IActionGenerator } from "../../src/Types/IAction";
 import type { IEntity } from "../../src/Types/IEntity";
-import { createEffect, createRoot } from "solid-js";
 import { describe, expect, it } from "vitest";
 import { parallel } from "../../src/Effects/parallel";
 import { latest, leading } from "../../src/Runtime/arrivalPolicy";
 import { createRuntime } from "../../src/Runtime/createRuntime";
 import { open } from "../../src/Runtime/open";
 import { settled } from "../../src/Testing/createTestRuntime";
+import * as reactive from "../reactive";
 import { inFlightOf } from "../testHelpers";
 
 interface IDoc extends IEntity {
@@ -214,9 +214,9 @@ describe("the record of running work, at each move through the gate", () => {
 				yield* parallel(wait("forever"));
 			}
 		});
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			const seen: boolean[] = [];
-			createEffect(() => {
+			reactive.effect(() => {
 				seen.push(inFlightOf(h.runtime, act, h.doc()));
 			});
 			await settled();

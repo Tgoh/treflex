@@ -1,8 +1,7 @@
-import type { IReactiveHost, IVersion } from "../Solid/host";
+import type { IReactiveHost, IVersion } from "../Reactive/host";
 import type { IExternalAnswer } from "../Types/IRecord";
 import { callbackThrew, type IDiagEmitter } from "../Types/IRuntimeEvent";
 import { DEV } from "../Utility/devMode";
-import { jsonExact } from "../Utility/jsonExact";
 import { cloneStrict } from "../Utility/valueCodec";
 import { NonPlainDataError } from "./nonPlainDataError";
 
@@ -204,17 +203,7 @@ export function createExternalTable(host: IReactiveHost, report: IDiagEmitter): 
 			entry.value = first;
 			entry.version.bump();
 		});
-		const changed = (): void => {
-			if (!provision.live) {
-				return;
-			}
-			// A change made while a computation runs could be lost to it or re-enter it.
-			if (host.isTracking()) {
-				queueMicrotask(() => apply(provision));
-				return;
-			}
-			apply(provision);
-		};
+		const changed = (): void => apply(provision);
 		const subscribe = provider.subscribe;
 		if (subscribe) {
 			const stop = host.untrack(() => host.runUnowned(() => subscribe.call(provider, changed)));
@@ -277,14 +266,8 @@ export function externalAnswer(read: IExternalRead): IExternalAnswer {
 			Key: read.key
 		};
 	}
-	return jsonExact(read.value)
-		? {
-				Key: read.key,
-				Value: read.value
-			}
-		: {
-				Key: read.key,
-				Value: read.value,
-				Lossy: true
-			};
+	return {
+		Key: read.key,
+		Value: read.value
+	};
 }

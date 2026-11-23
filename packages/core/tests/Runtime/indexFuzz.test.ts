@@ -1,10 +1,10 @@
 import type { IRuntimeInternal } from "../../src/Runtime/internals";
 import type { IActionGenerator } from "../../src/Types/IAction";
-import { createRoot } from "solid-js";
 import { describe, expect, it } from "vitest";
 import { createRuntime } from "../../src/Runtime/createRuntime";
 import { mintedId } from "../../src/Runtime/draftNode";
 import { rawOf } from "../../src/Runtime/viewProxy";
+import * as reactive from "../reactive";
 import { rootSetState } from "../testHelpers";
 
 function rng(seed: number): () => number {
@@ -19,10 +19,6 @@ function rng(seed: number): () => number {
 
 type IAny = Record<string, any>;
 
-// Ids are unique by construction. Duplicates and aliasing are doctrine
-// violations with deliberately special semantics, so they belong to the
-// hand-written suite rather than to a generator that would report them as
-// index divergences.
 let serial = 0;
 const freshId = (): string => mintedId(`e${serial++}`);
 
@@ -62,9 +58,6 @@ function makeTree(r: () => number, depth: number): IAny {
 	return node;
 }
 
-// A move must not land a node inside its own subtree. State is a tree by
-// doctrine, so a cycle is a generator bug that would present as a runaway
-// walk rather than as an index divergence.
 function contains(root: IAny, needle: IAny): boolean {
 	if (root === needle) {
 		return true;
@@ -305,7 +298,7 @@ function applyOp(d: IAny, op: string, r: () => number): void {
 
 function runSeed(seed: number): string | null {
 	const r = rng(seed);
-	return createRoot((dispose) => {
+	return reactive.root((dispose) => {
 		const rt = createRuntime<IAny>(makeTree(r, 3), {
 			verifyIndex: true
 		});

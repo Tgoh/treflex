@@ -1,7 +1,7 @@
 import { createRuntime, generateGuid, type IActionGenerator, type IEntity, type ISelectorGenerator } from "treflex";
 import { createEntityFeature, TreflexProvider } from "treflex-solid";
 import { For } from "solid-js";
-import { render } from "solid-js/web";
+import { render } from "@solidjs/web";
 
 interface ITodo {
 	Id: string;

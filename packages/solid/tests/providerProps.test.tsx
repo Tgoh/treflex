@@ -1,4 +1,4 @@
-import type { JSX } from "solid-js";
+import type { JSX } from "@solidjs/web";
 import type { IActionGenerator, IEntity } from "treflex";
 import { describe, expect, it } from "vitest";
 import { createComponentFeature } from "../src/Context/createComponentFeature";

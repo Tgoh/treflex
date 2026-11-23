@@ -180,7 +180,7 @@ export const ChatReceiver = receiver<IChat>("ChatReceiver")({
 			draft.Restore = null;
 			return;
 		}
-		const dropped = new Set(message.DroppedEntityIds);
+		const dropped = new Set(message.Dropped.map((work) => work.EntityId));
 		const streams = draft.Conversations.map(streamOf).filter((s): s is IReplyStream => s !== null);
 		const unsent = draft.Conversations.flatMap((c) =>
 			c.Messages.filter((m) => !m.Sent && dropped.has(m.$Id)).map(() => conversationLabel(c.Key))

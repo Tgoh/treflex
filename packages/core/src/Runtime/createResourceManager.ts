@@ -1,4 +1,4 @@
-import type { IVersion } from "../Solid/host";
+import type { IVersion } from "../Reactive/host";
 import type { IOpenGenerator } from "../Types/IAction";
 import type { IRecordRoot } from "../Types/IRecord";
 import type {
@@ -15,12 +15,17 @@ import type { IReceiverRegistry } from "./createReceiverRegistry";
 import type { IResourceRow, IResourceTable } from "./createResourceTable";
 import type { IInternalDispatch } from "./processAction";
 import type { ISetState } from "./sliceSetState";
-import { host } from "../Solid/host";
+import { host } from "../Reactive/host";
 import { callbackThrew } from "../Types/IRuntimeEvent";
 import { jsonEquals } from "../Utility/jsonEquals";
 import { serializeThrow } from "../Utility/serializeThrow";
 import { clone, cloneStrict, copyFrozen, copyFrozenList } from "../Utility/valueCodec";
 import { NonPlainDataError } from "./nonPlainDataError";
+import { crossRejection } from "./rebuildThrow";
+
+const CROSSING = {
+	dropZeroSign: true
+};
 
 declare module "../Registries/IRuntimeServiceRegistry" {
 	interface IRuntimeServiceRegistry {
@@ -1094,7 +1099,7 @@ export function createResourceManager(deps: {
 	}
 
 	function plainResult(value: unknown, what: string): unknown {
-		const checked = cloneStrict(value);
+		const checked = cloneStrict(value, CROSSING);
 		if (!checked.ok) {
 			throw new NonPlainDataError(`${what}: the result`, checked.kind, checked.path);
 		}
@@ -1141,15 +1146,18 @@ export function createResourceManager(deps: {
 						`resources: { methods: { "${key}": { ${method}: (ctx, ...args) => ... } } } to createTestRuntime.`
 				);
 			}
-			return plainResult(
-				await stub(
+			let answered: unknown;
+			try {
+				answered = await stub(
 					{
 						ownerId
 					},
 					...(args.value as unknown[])
-				),
-				`the stub for ${what} on "${key}"`
-			);
+				);
+			} catch (error) {
+				throw crossMethodRejection(error, key, method);
+			}
+			return plainResult(answered, `the stub for ${what} on "${key}"`);
 		}
 		const ck = cellKey(key, ownerId);
 		let cell = cells.get(ck);
@@ -1214,12 +1222,26 @@ export function createResourceManager(deps: {
 			if (instance.retired) {
 				return undefined;
 			}
-			throw error;
+			throw crossMethodRejection(error, key, method);
 		}
 		if (instance.retired) {
 			return undefined;
 		}
 		return plainResult(result, `${what} on resource "${key}"`);
+	}
+
+	function crossMethodRejection(error: unknown, key: string, method: string): unknown {
+		return crossRejection(
+			error,
+			{
+				where: `method "${method}" on resource "${key}"`,
+				data: {
+					key,
+					method
+				}
+			},
+			() => diag
+		);
 	}
 
 	function supplyDropped(key: string, ownerId: string, reason: string): undefined {

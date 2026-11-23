@@ -84,7 +84,7 @@ class StrictFailure {
 	}
 }
 
-// A member is frozen and plain at every node, so a further crossing can share it
+// A member is frozen, plain and free of -0 at every node, so a further crossing can share it
 // rather than copy it. An object copy's fields are members too.
 const frozenCopies = new WeakSet<object>();
 
@@ -94,6 +94,14 @@ export interface ICopyOptions {
 	walked?: object[] | undefined;
 	made?: Set<object> | undefined;
 	copies?:
+		| {
+				count: number;
+		  }
+		| undefined;
+	/** A `-0` copies as `0`, as a JSON record gives it back. A frozen copy always does. */
+	dropZeroSign?: boolean | undefined;
+	/** Counts each `-0` the copy meets, whether or not it keeps the sign. */
+	negativeZeros?:
 		| {
 				count: number;
 		  }
@@ -118,7 +126,10 @@ function strictWalk(value: unknown, walk: IStrictWalk): unknown {
 		if (!Number.isFinite(value)) {
 			throw new StrictFailure(walk.path, String(value));
 		}
-		return value;
+		if (walk.negativeZeros !== undefined && Object.is(value, -0)) {
+			walk.negativeZeros.count++;
+		}
+		return walk.dropZeroSign && value === 0 ? 0 : value;
 	}
 	if (type !== "object") {
 		throw new StrictFailure(walk.path, type);
@@ -227,7 +238,8 @@ export function copyFrozen(value: unknown, options?: ICopyOptions): IStrictClone
 		...options,
 		path: [],
 		ancestors: [],
-		freeze: true
+		freeze: true,
+		dropZeroSign: true
 	});
 	if (copy.ok && copy.value !== value && copy.value !== null && typeof copy.value === "object") {
 		frozenCopies.add(copy.value);

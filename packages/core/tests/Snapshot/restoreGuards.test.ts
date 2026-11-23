@@ -539,6 +539,7 @@ describe("the gate's rejection contract", () => {
 
 		expect(runtime.state.N).toBe(42);
 		expect(result).toStrictEqual({
+			resumed: [],
 			dropped: [],
 			unresolved: [],
 			sweptOrphanedRows: 0,
@@ -557,20 +558,24 @@ describe("the gate's rejection contract", () => {
 			{
 				ActionId: 5,
 				Name: "numberId",
-				EntityId: "Root"
+				EntityId: "Root",
+				State: "holding"
 			},
 			{
 				ActionId: "action-2",
 				Name: "objectEntity",
-				EntityId: {}
+				EntityId: {},
+				State: "holding"
 			},
 			{
-				Name: "noIds"
+				Name: "noIds",
+				State: "holding"
 			},
 			{
 				ActionId: "action-4",
 				Name: "kept",
-				EntityId: "Root"
+				EntityId: "Root",
+				State: "holding"
 			}
 		];
 		const malformed: unknown[] = [];
@@ -590,7 +595,9 @@ describe("the gate's rejection contract", () => {
 				actionId: "action-4",
 				name: "kept",
 				label: null,
-				entityId: "Root"
+				entityId: "Root",
+				state: "holding",
+				reason: "resume-off"
 			}
 		]);
 		expect(malformed).toStrictEqual([
@@ -609,20 +616,23 @@ describe("the gate's rejection contract", () => {
 				Name: 5,
 				Label: {},
 				Receiver: 7,
-				EntityId: "Root"
+				EntityId: "Root",
+				State: "holding"
 			},
 			{
 				ActionId: "action-2",
 				Name: "Ticker/Tick",
 				Label: "t",
-				EntityId: "Root"
+				EntityId: "Root",
+				State: "holding"
 			},
 			{
 				ActionId: "action-3",
 				Name: null,
 				Label: "TickReceiver",
 				Receiver: "TickReceiver",
-				EntityId: "Root"
+				EntityId: "Root",
+				State: "holding"
 			}
 		];
 		const { runtime, result } = await restoreRuntime<IRootState>(JSON.stringify(parsed), boot);
@@ -631,20 +641,153 @@ describe("the gate's rejection contract", () => {
 				actionId: "action-1",
 				name: null,
 				label: null,
-				entityId: "Root"
+				entityId: "Root",
+				state: "holding",
+				reason: "resume-off"
 			},
 			{
 				actionId: "action-2",
 				name: "Ticker/Tick",
 				label: "t",
-				entityId: "Root"
+				entityId: "Root",
+				state: "holding",
+				reason: "resume-off"
 			},
 			{
 				actionId: "action-3",
 				name: null,
 				label: "TickReceiver",
 				receiver: "TickReceiver",
-				entityId: "Root"
+				entityId: "Root",
+				state: "holding",
+				reason: "resume-off"
+			}
+		]);
+		runtime.dispose();
+	});
+
+	it.each([
+		[
+			"a Place without State",
+			{
+				Place: 0
+			}
+		],
+		[
+			"a null State",
+			{
+				State: null
+			}
+		],
+		[
+			"an unknown State",
+			{
+				State: "running"
+			}
+		],
+		[
+			"a State that isn't a string",
+			{
+				State: 1
+			}
+		],
+		[
+			"a Place on a holding entry",
+			{
+				State: "holding",
+				Place: 0
+			}
+		],
+		[
+			"a null Place on an open entry",
+			{
+				State: "open",
+				Place: null
+			}
+		],
+		[
+			"a Place on a stopping entry",
+			{
+				State: "stopping",
+				Place: 2
+			}
+		],
+		[
+			"no Place on a queued entry",
+			{
+				State: "queued"
+			}
+		],
+		[
+			"no Place on a regaining entry",
+			{
+				State: "regaining"
+			}
+		],
+		[
+			"a negative Place",
+			{
+				State: "queued",
+				Place: -1
+			}
+		],
+		[
+			"a fractional Place",
+			{
+				State: "regaining",
+				Place: 0.5
+			}
+		],
+		[
+			"a string Place",
+			{
+				State: "queued",
+				Place: "0"
+			}
+		]
+	])("drops a version 8 in-flight row with %s, counted as malformed", async (_name, shape) => {
+		const parsed = JSON.parse(await saved(setUp)) as any;
+		parsed.InFlight = [
+			{
+				ActionId: "action-1",
+				Name: "bad",
+				EntityId: "Root",
+				...shape
+			},
+			{
+				ActionId: "action-2",
+				Name: "kept",
+				EntityId: "Root",
+				State: "queued",
+				Place: 0
+			}
+		];
+		const malformed: unknown[] = [];
+		const { runtime, result } = await restoreRuntime<IRootState>(JSON.stringify(parsed), {
+			...boot,
+			setup: (runtime) => {
+				boot.setup(runtime);
+				runtime.on("diag", (event) => {
+					if (event.code === "restore/malformed-rows") {
+						malformed.push(event.data);
+					}
+				});
+			}
+		});
+		expect(result.dropped).toStrictEqual([
+			{
+				actionId: "action-2",
+				name: "kept",
+				label: null,
+				entityId: "Root",
+				state: "queued",
+				place: 0,
+				reason: "resume-off"
+			}
+		]);
+		expect(malformed).toStrictEqual([
+			{
+				droppedRows: 1
 			}
 		]);
 		runtime.dispose();
@@ -679,19 +822,22 @@ describe("the gate's rejection contract", () => {
 				actionId: "action-1",
 				name: null,
 				label: null,
-				entityId: "Root"
+				entityId: "Root",
+				reason: "resume-off"
 			},
 			{
 				actionId: "action-2",
 				name: null,
 				label: null,
-				entityId: "Root"
+				entityId: "Root",
+				reason: "resume-off"
 			},
 			{
 				actionId: "action-3",
 				name: null,
 				label: "legacyName",
-				entityId: "Root"
+				entityId: "Root",
+				reason: "resume-off"
 			}
 		]);
 		expect(result.savedBuild).toBeNull();

@@ -1,5 +1,5 @@
 import type { IWriteGateway } from "./createWriteGateway";
-import { host } from "../Solid/host";
+import { host } from "../Reactive/host";
 import { createRecordingProxy, type IRecordingContext } from "./recordingProxy";
 
 type SetStateParam<T, Y> = (x: Y) => T;

@@ -3,12 +3,14 @@
 // declarations, the same open sync call and the same code results, or sync
 // types quietly suspend again and redaction quietly switches off.
 
+import { errorClass } from "../Utility/errorClasses";
 import { TreflexRefusal } from "./refusal";
 
 export interface IEffectDeclaration {
 	readonly settles?: "sync" | undefined;
 	readonly redact: boolean;
 	readonly returns?: "module" | undefined;
+	readonly idempotent?: boolean | undefined;
 }
 
 export class SyncEffectPromiseError extends TreflexRefusal {
@@ -35,6 +37,9 @@ export class SyncEffectWorkError extends TreflexRefusal {
 		this.effectType = effectType;
 	}
 }
+
+errorClass("treflex/SyncEffectPromiseError", SyncEffectPromiseError);
+errorClass("treflex/SyncEffectWorkError", SyncEffectWorkError);
 
 export interface ISyncCall {
 	readonly effectType: string;
@@ -78,8 +83,12 @@ export function isRedacted(type: string): boolean {
 	return shared.declarations.get(type)?.redact === true;
 }
 
+export function isIdempotent(type: string): boolean {
+	return shared.declarations.get(type)?.idempotent === true;
+}
+
 function sameDeclaration(a: IEffectDeclaration, b: IEffectDeclaration): boolean {
-	return a.settles === b.settles && a.redact === b.redact && a.returns === b.returns;
+	return a.settles === b.settles && a.redact === b.redact && a.returns === b.returns && a.idempotent === b.idempotent;
 }
 
 export function declare(type: string, declaration: IEffectDeclaration): void {

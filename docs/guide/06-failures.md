@@ -4,10 +4,14 @@ A refresh can fail: the server is down, or answers with an error. This page send
 
 ## Failing on purpose
 
-The implementation turns what can go wrong with a request into one error class, so an action can tell an outage from a bug in its own code:
+What can go wrong with a request becomes part of the effect's answer, and a helper beside the effect throws it as one error class, so an action can tell an outage from a bug in its own code:
 
 ```ts
-import { implementation } from "treflex";
+import { defineEffect, type IActionGenerator, implementation } from "treflex";
+
+export type IFeedAnswer = { Info: IFeedInfo | null } | { Status: number; Message: string };
+
+export const fetchFeed = defineEffect<IFetchFeed, IFeedAnswer>("Reader/FetchFeed");
 
 export class FeedError extends Error {
     readonly Status: number;
@@ -19,17 +23,24 @@ export class FeedError extends Error {
     }
 }
 
+export function* loadFeed(url: string): IActionGenerator<IFeedInfo | null> {
+    const answer = yield* fetchFeed({ Url: url });
+    if ("Info" in answer) return answer.Info;
+    throw new FeedError(answer.Status, answer.Message);
+}
+
 export const fetchFeedImpl = implementation(fetchFeed, async (effect, action) => {
-    const response = await fetch(effect.Url, { signal: action?.signal }).catch(() => {
-        throw new FeedError(0, "The feed couldn't be reached.");
-    });
-    if (response.status === 410) return null;
-    if (!response.ok) throw new FeedError(response.status, `The feed answered ${response.status}.`);
-    return (await response.json()) as IFeedInfo;
+    const response = await fetch(effect.Url, { signal: action?.signal }).catch(() => null);
+    if (response === null) return { Status: 0, Message: "The feed couldn't be reached." };
+    if (response.status === 410) return { Info: null };
+    if (!response.ok) return { Status: response.status, Message: `The feed answered ${response.status}.` };
+    return { Info: (await response.json()) as IFeedInfo };
 });
 ```
 
-An implementation's throw rejects the yield, so it is thrown in the action at its `yield*`. `refresh` doesn't catch it, so the refresh fails.
+`refresh` and `addFeed` call `yield* loadFeed(url)` where they yielded `fetchFeed`. `refresh` doesn't catch the `FeedError`, so the refresh fails.
+
+The implementation answers with data and throws only what it didn't expect. What it throws reaches the action as a copy of its native error type, so a `FeedError` thrown there would arrive as a plain `Error` that no `instanceof FeedError` matches ([effects](../reference/effects.md#a-rejection-crosses-as-a-copy)).
 
 ## The route
 
@@ -69,7 +80,7 @@ export function* addFeed(draft: IReader) {
     if (url === "") return;
     let info: IFeedInfo | null;
     try {
-        info = yield* open(fetchFeed({ Url: url }));
+        info = yield* open(loadFeed(url));
     } catch (error) {
         if (!(error instanceof FeedError)) throw error;
         draft.Notice = `Couldn't add ${url}: ${error.message}`;

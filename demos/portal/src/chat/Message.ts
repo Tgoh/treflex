@@ -1,7 +1,7 @@
 import type { IActionGenerator, IEntity, ISelectorGenerator } from "treflex";
 import type { IChatDay } from "../backend/backend";
 import { inFlight, leading, named, publishToNearest, start } from "treflex";
-import { postMessage, SendError } from "../backend/backend";
+import { SendError, sendMessage } from "../backend/backend";
 
 declare module "treflex" {
 	interface IMessageRegistry {
@@ -50,7 +50,7 @@ export function* deliver(draft: IMessage): IActionGenerator {
 	const attempt = draft.Attempts;
 	draft.Attempts++;
 	try {
-		yield* postMessage({
+		yield* sendMessage({
 			Conversation: draft.Conversation,
 			Text: draft.Text,
 			Number: draft.Number,

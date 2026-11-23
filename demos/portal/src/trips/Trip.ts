@@ -1,5 +1,6 @@
 import type { IActionGenerator, IAskEntry, IAskId, IEntity, IReceiverId, ISelectorGenerator } from "treflex";
 import type { IFare } from "../backend/backend";
+import type { IRestoredWork } from "../portal/topics";
 import type { IDestinationKey, ILegKind } from "./destinations";
 import type { ILeg, ILegStatus } from "./Leg";
 import {
@@ -12,6 +13,7 @@ import {
 	pendingAsks,
 	publish,
 	receiver,
+	resumable,
 	someGen,
 	start,
 	startTimer,
@@ -112,7 +114,6 @@ export function* isSearching(trip: ITrip) {
 	return yield* someGen(trip.Legs, (leg) => inFlight(search, leg));
 }
 
-// A transient, not a field: a restore stops the searches, so it must not bring back "left while it ran".
 export const awayMark = (trip: ITrip) =>
 	transient(trip, "Trip/Away", {
 		Away: false
@@ -177,8 +178,10 @@ export function* chooseFlight(draft: ITrip) {
 	yield* publish("Trip/Answered");
 	yield* wrapUp(draft);
 }
-named(chooseFlight, "Trips/ChooseFlight");
+export const CHOOSE_FLIGHT_NAME = "Trips/ChooseFlight";
+named(chooseFlight, CHOOSE_FLIGHT_NAME);
 leading(chooseFlight);
+resumable(chooseFlight);
 
 function* holdFor(draft: ITrip, line: string): IActionGenerator {
 	const at = yield* now();
@@ -277,37 +280,47 @@ export const TripReceiver = receiver<ITrip>("TripReceiver")({
 		yield* wrapUp(draft);
 	},
 	*"Portal/Restored"(draft, message) {
-		const lost = whatWasLost(draft, message.DroppedEntityIds);
-		if (lost.Stopped.length === 0 && !lost.Unanswered) return;
+		const found = whatTheRestoreFound(draft, message);
+		if (found.CarriedOn.length === 0 && !found.Unanswered) return;
 		say(draft, `Page reloaded at ${clock(draft.Elapsed)}`, {
 			Divider: true
 		});
-		const stopped = lost.Stopped.map((kind) => SEARCH_NOUNS[kind]);
 		const parts = [
 			"Back."
 		];
 		const left = holdLeftAt(draft, yield* now());
 		if (left !== null && left > 0) parts.push(`The hold had ${clock(left)} left.`);
-		if (stopped.length > 0) {
-			const one = stopped.length === 1;
-			parts.push(`The ${listed(stopped)} ${one ? "search" : "searches"} stopped, so restart ${one ? "it" : "them"} when you're ready.`);
-		}
-		if (lost.Unanswered) parts.push("The flight question closed, so choose a flight when you're ready.");
+		if (found.CarriedOn.length > 0) parts.push(`The ${searchesOf(found.CarriedOn)} ${carriesOn(found.CarriedOn)}.`);
+		if (found.Unanswered) parts.push("The flight question closed, so choose a flight when you're ready.");
 		say(draft, parts.join(" "));
 	}
 });
 
-export interface ILost {
-	Stopped: ILegKind[];
+export interface IRestoreFound {
+	/** The searches the restore dropped, which its repair starts again. */
+	CarriedOn: ILegKind[];
+	/** The restore dropped the open flight question. */
 	Unanswered: boolean;
+	/** The restore resumed the open flight question, which is asked again. */
+	AskedAgain: boolean;
 }
 
-export function whatWasLost(trip: ITrip, droppedEntityIds: readonly string[]): ILost {
-	const dropped = new Set(droppedEntityIds);
+export function whatTheRestoreFound(
+	trip: ITrip,
+	{
+		Resumed,
+		Dropped
+	}: {
+		Resumed: readonly IRestoredWork[];
+		Dropped: readonly IRestoredWork[];
+	}
+): IRestoreFound {
+	const dropped = new Set(Dropped.map((work) => work.EntityId));
+	const asker = (work: IRestoredWork): boolean => work.Name === CHOOSE_FLIGHT_NAME && work.EntityId === trip.$Id;
 	return {
-		Stopped: trip.Legs.filter((leg) => dropped.has(leg.$Id) && !leg.Done).map((leg) => leg.Kind),
-		// The asker, chooseFlight, runs on the trip itself, so a dropped trip action awaiting a choice is the open question.
-		Unanswered: dropped.has(trip.$Id) && awaitingChoice(trip)
+		CarriedOn: trip.Legs.filter((leg) => dropped.has(leg.$Id) && !leg.Done).map((leg) => leg.Kind),
+		Unanswered: Dropped.some(asker) && awaitingChoice(trip),
+		AskedAgain: Resumed.some(asker)
 	};
 }
 
@@ -316,10 +329,9 @@ export type ITripDot = "amber" | "blue" | "rose" | "green" | "";
 export interface ITripFacts {
 	Statuses: Record<ILegKind, ILegStatus>;
 	Running: number;
-	Interrupted: number;
+	Failed: number;
 	Searching: ILegKind[];
 	Stopped: ILegKind[];
-	FlightsStopped: boolean;
 	QuestionOpen: boolean;
 	NeedsChoice: boolean;
 	/** The hold's seconds left, worked out from its deadline as of its last measurement. */
@@ -337,6 +349,10 @@ export function keepGoing(kinds: readonly ILegKind[]): string {
 	return `The ${searchesOf(kinds)} ${kinds.length === 1 ? "keeps" : "keep"} going`;
 }
 
+export function carriesOn(kinds: readonly ILegKind[]): string {
+	return kinds.length === 1 ? "carries on where it left off" : "carry on where they left off";
+}
+
 export function* tripFacts(draft: ITrip): ISelectorGenerator<ITripFacts> {
 	const statuses = {} as Record<ILegKind, ILegStatus>;
 	for (const kind of LEG_KINDS) {
@@ -351,14 +367,13 @@ export function* tripFacts(draft: ITrip): ISelectorGenerator<ITripFacts> {
 	const checked = draft.Legs.reduce((n, leg) => n + leg.Checked, 0);
 	const total = draft.Legs.reduce((n, leg) => n + leg.Total, 0);
 	const searching = LEG_KINDS.filter((kind) => statuses[kind] === "searching");
-	const stopped = LEG_KINDS.filter((kind) => statuses[kind] === "interrupted" || statuses[kind] === "waiting");
+	const stopped = LEG_KINDS.filter((kind) => statuses[kind] === "failed" || statuses[kind] === "waiting");
 	return {
 		Statuses: statuses,
 		Running: searching.length,
-		Interrupted: kinds.filter((s) => s === "interrupted").length,
+		Failed: kinds.filter((s) => s === "failed").length,
 		Searching: searching,
 		Stopped: stopped,
-		FlightsStopped: stopped.includes("flights") && draft.Choice === null,
 		QuestionOpen: questionOpen,
 		NeedsChoice: needsChoice,
 		HoldLeft: holdLeft(draft),
@@ -374,7 +389,7 @@ export function* headline(draft: ITrip): ISelectorGenerator<string> {
 	if (draft.Finished) return `Ready · planned in ${time}`;
 	if (f.QuestionOpen || f.NeedsChoice) return `Waiting on you · ${time}`;
 	if (f.Running > 0) return `Planning · ${time}`;
-	if (f.Interrupted > 0) return `Interrupted · ${time}`;
+	if (f.Failed > 0) return `Stopped · ${time}`;
 	return `Paused · ${time}`;
 }
 
@@ -384,7 +399,7 @@ export function* statusLine(draft: ITrip): ISelectorGenerator<string> {
 	const running = f.Running > 0 ? ` · ${f.Running} running` : "";
 	if (f.QuestionOpen) return `Waiting on you${running}`;
 	if (f.NeedsChoice) return `Choose a flight${running}`;
-	if (f.Interrupted > 0 && f.Running === 0) return `${plural(f.Interrupted, "search", "searches")} interrupted`;
+	if (f.Failed > 0 && f.Running === 0) return `${plural(f.Failed, "search", "searches")} failed`;
 	if (f.Running > 0) {
 		const done = LEG_KINDS.filter((kind) => kind !== "flights" && f.Statuses[kind] === "done");
 		if (done.length === 1) return `${LEG_NAMES[done[0]]} search done${running}`;
@@ -397,7 +412,7 @@ export function* dot(draft: ITrip): ISelectorGenerator<ITripDot> {
 	const f = yield* tripFacts(draft);
 	if (f.QuestionOpen || f.NeedsChoice) return "blue";
 	if (f.Running > 0) return "amber";
-	if (f.Interrupted > 0) return "rose";
+	if (f.Failed > 0) return "rose";
 	if (draft.Finished) return "green";
 	return "";
 }
@@ -409,7 +424,7 @@ export function* agentStatus(draft: ITrip): ISelectorGenerator<string> {
 	if (f.Statuses.flights === "searching") return "Comparing fares…";
 	if (f.Statuses.activities === "searching") return "Checking day trips…";
 	if (f.QuestionOpen || f.NeedsChoice) return "Waiting for your call";
-	if (f.Interrupted > 0) return "Idle · waiting for you to restart a search";
+	if (f.Failed > 0) return "Idle · waiting for you to restart a search";
 	return "Idle";
 }
 
@@ -515,10 +530,10 @@ function legView(trip: ITrip, leg: ILeg, f: ITripFacts): ILegView {
 							Tone: "work",
 							Label: "Searching"
 						}
-					: status === "interrupted"
+					: status === "failed"
 						? {
 								Tone: "stop",
-								Label: "Interrupted"
+								Label: "Failed"
 							}
 						: status === "done"
 							? {
@@ -544,15 +559,15 @@ function legView(trip: ITrip, leg: ILeg, f: ITripFacts): ILegView {
 			Action: "chooseFlight",
 			Label: "Choose a flight"
 		};
-	} else if (status === "interrupted") {
+	} else if (status === "failed") {
 		note = {
 			Tone: "stop",
 			Text:
 				leg.Kind === "activities"
-					? `Stopped at ${leg.Checked} of ${leg.Total} providers.`
+					? `Failed at provider ${leg.Checked + 1} of ${leg.Total}.`
 					: leg.Checked > 0
-						? `The reload stopped this search. Its ${flights ? "fares" : "quotes"} are kept.`
-						: "The reload stopped this search.",
+						? `This search failed. Its ${flights ? "fares" : "quotes"} are kept.`
+						: "This search failed.",
 			Action: "searchAgain",
 			Label: "Search again"
 		};
@@ -566,7 +581,7 @@ function legView(trip: ITrip, leg: ILeg, f: ITripFacts): ILegView {
 	}
 	return {
 		Badge: badge,
-		Bar: asking ? "ask" : status === "interrupted" ? "stop" : status === "done" ? "done" : "",
+		Bar: asking ? "ask" : status === "failed" ? "stop" : status === "done" ? "done" : "",
 		Progress: leg.Total === 0 ? 0 : leg.Checked / leg.Total,
 		Counted: counted(leg),
 		Kept: kept(leg),
@@ -696,14 +711,18 @@ export function* tip(draft: ITrip): ISelectorGenerator<ITripTip> {
 	}
 	if (f.Stopped.length > 0) {
 		const found = f.Stopped.some((kind) => (legOf(draft, kind)?.Checked ?? 0) > 0);
-		const kept = found ? ` and kept what ${f.Stopped.length === 1 ? "it" : "they"} found` : "";
 		return tipOf(
 			"Why:",
-			`a search is work in flight, and a snapshot holds data, so the reload stopped the ${searchesOf(f.Stopped)}${kept}.`
+			found
+				? `each provider's answer is written to its leg as it arrives, so the ${searchesOf(f.Stopped)} kept what ${f.Stopped.length === 1 ? "it" : "they"} found, and searching again starts at the next provider.`
+				: `no provider had answered the ${searchesOf(f.Stopped)}, so searching again starts at the first.`
 		);
 	}
 	if (f.NeedsChoice) {
-		return tipOf("Why:", "a question is work in flight, and a snapshot holds data, so the reload closed the question and kept its fares.");
+		return tipOf(
+			"Why:",
+			"a reload asks an open question again only when it can bring back the action that asked it. This time it couldn't, as happens with a save from another build of the page, so it closed the question and kept its fares."
+		);
 	}
 	if (draft.Finished && f.Holding) {
 		return tipOf("Try this:", "reload the page. The hold's deadline is in state, so time with the page closed counts too.");

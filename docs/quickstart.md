@@ -47,10 +47,17 @@ npm install treflex treflex-react
 ```sh
 npm create vite@latest counter -- --template solid-ts --no-interactive
 cd counter
-npm install treflex treflex-solid solid-js
+npm uninstall vite-plugin-solid
+npm install treflex treflex-solid solid-js@^2.0.3 @solidjs/web@^2.0.3
+npm install -D @solidjs/vite-plugin
 ```
 
 <!-- /tabs -->
+
+In the Solid app, two edits move it onto Solid 2. React needs neither.
+
+1. In `vite.config.ts`, import `solid` from `@solidjs/vite-plugin` in place of `vite-plugin-solid`: `import solid from "@solidjs/vite-plugin";`.
+2. In `tsconfig.app.json`, set `"jsxImportSource"` to `"@solidjs/web"`.
 
 [Requirements](./requirements.md) has what an app's build and tests need.
 
@@ -113,7 +120,7 @@ createRoot(document.getElementById("root")!).render(
 **Solid**
 
 ```tsx
-import { render } from "solid-js/web";
+import { render } from "@solidjs/web";
 import { createRuntime, defineEffect, type IActionGenerator, type IEffect, type IEntity, implementation } from "treflex";
 import { createEntityFeature, TreflexProvider, useInFlight } from "treflex-solid";
 

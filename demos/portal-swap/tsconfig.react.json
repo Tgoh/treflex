@@ -9,6 +9,7 @@
 		"./robust/*.ts",
 		"./robust/react",
 		"../react-portal/src",
-		"../portal/src/env.d.ts"
+		"../portal/src/env.d.ts",
+		"../portal/src/buildId.ts"
 	]
 }

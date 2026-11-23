@@ -26,7 +26,7 @@ export function FlightQuestion(props: { options: ISelected<IFlightOptions>; high
 			<div className="opts">
 				{options.Options.map((option, at) => (
 					<div
-						// biome-ignore lint/suspicious/noArrayIndexKey: by position, as Solid's <Index> keys the Solid build's options
+						// biome-ignore lint/suspicious/noArrayIndexKey: the options are keyed by position
 						key={at}
 						className={cx("opt", {
 							pick: option.Cheaper

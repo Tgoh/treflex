@@ -155,6 +155,28 @@ A value goes into the tree, through a [resource](./live-sources.md#choosing-a-re
 
 A value only a view uses, such as a media query for layout, stays in the view. A value fixed for the runtime's life and the same for every runtime in the process, such as the page's host name, can be read directly.
 
+**A clock that only views and selectors read is an outside value,** such as the "5 minutes ago" beside a row or a list grouped into today and yesterday. Its `read` rounds to the resolution the views need, so a selector over it re-runs only when the rounded value moves, however often `subscribe` calls `changed`:
+
+```ts
+declare module "treflex" {
+    interface IExternalRegistry {
+        Minute: number;
+    }
+}
+
+export function provideMinute(runtime: IRuntime<IInbox>): void {
+    runtime.provideExternal("Minute", {
+        read: () => Math.floor(Date.now() / 60_000) * 60_000,
+        subscribe: (changed) => {
+            const id = setInterval(changed, 1_000);
+            return () => clearInterval(id);
+        }
+    });
+}
+```
+
+Writing the time into state on a timer instead costs an action, a step and a write each tick, for a value no work starts from. A time that must start work, such as an expiry, is a deadline in state with a timer ([measure elapsed time with a deadline](./live-sources.md#timers)), and an action reads the time through a sync clock effect.
+
 #### Providing a value
 
 ```ts
@@ -184,9 +206,9 @@ export function setup(runtime: IRuntime<IInbox>): void {
 
 `read` and `subscribe` are the pair React's `useSyncExternalStore` takes, so a store an app binds that way provides unchanged. `provideExternal` returns a handle whose `changed()` does what `subscribe`'s callback does, for a provider that pushes. Provide in `setup`, the function a fresh boot and a [restore](./restart-and-records.md#the-restore-in-order) both call.
 
-- **The runtime keeps the last value `read` gave,** one per key. On `changed` it calls `read` again, compares with `equals`, and re-runs the key's readers only on a difference. Every reader in one flush sees the same value.
-- **A value is plain data, treated as immutable.** In development a value that isn't plain throws `NonPlainDataError` from `provideExternal`, which then provides nothing, or from the change that read it, which keeps the value before it: from `changed`, or from the microtask a deferred `changed` runs in. The runtime doesn't freeze a provider's value.
-- **`read`, `subscribe` and the comparison run untracked,** so a provide or a change inside a reactive scope subscribes it to nothing. A `changed` called where a scope is tracking, in the body of a Solid effect or memo or of a selector, takes effect a microtask later. Anywhere else it takes effect at once, an untracked stretch inside such a body included, such as a dispatch.
+- **The runtime keeps the last value `read` gave,** one per key. On `changed` it calls `read` again, compares with `equals`, and re-runs the key's readers only on a difference. Every reader reads the one value the last change read.
+- **A value is plain data, treated as immutable.** In development a value that isn't plain throws `NonPlainDataError` from `provideExternal`, which then provides nothing, or from the `changed` that read it, which keeps the value before it. The runtime doesn't freeze a provider's value.
+- **`read`, `subscribe` and the comparison run untracked,** so a provide or a change inside a reactive scope subscribes it to nothing. A `changed` takes effect at once wherever it is called. One that keeps changing a key it reads stops the flush, and the write that started the flush throws `[treflex] Potential infinite loop`: a dispatch whose step set it off rejects with it, and its record ends `Status: "errored"` though its step committed.
 - **Providing a key again** stops the first provider's subscription, leaves its handle doing nothing, reads the new provider and re-runs the readers, with an `external/replaced` warning. Nothing is unprovided.
 - **`runtime.dispose()`** stops each subscription in provide order. A throw from one reports `runtime/callback-threw`. A `changed` after it does nothing, and `provideExternal` on a disposed runtime throws.
 
@@ -208,7 +230,6 @@ An action reads an outside value as it reads anything: `yield* external(key)`, o
 | Entry | When |
 |---|---|
 | `{ Key, Value }` | `Value` is the copy the read answered, the same object the action or its `select`'s selector got |
-| `{ Key, Value, Lossy: true }` | `Value`'s JSON form doesn't give back exactly what the action got: it is or holds a `-0` |
 | `{ Key, Redacted: true }` | The provider declares `redact: true`, for a value no record may hold |
 | `{ Key }` | Nothing provides the key, or the action got `undefined` |
 

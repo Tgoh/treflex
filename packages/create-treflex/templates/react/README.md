@@ -16,7 +16,8 @@ A React app on [treflex](https://tgoh.github.io/treflex/docs/): an `App` root en
   - [`counter.test.ts`](./src/counter/counter.test.ts): tests on `createTestRuntime`, with `delay` stubbed.
   - [`CounterView.test.tsx`](./src/counter/CounterView.test.tsx): a component test with Testing Library.
 - [`vitest.config.ts`](./vitest.config.ts): runs tests in Node unless a file selects jsdom, and loads `treflex/vitest`, so that when the test runtime catches a failure or a diag, the test that caused it is the one that fails.
-- [`biome.json`](./biome.json): Biome, which formats and lints, with treflex's two lint plugins.
+- [`biome.json`](./biome.json): Biome, which formats and lints, with treflex's two lint plugins and this app's own.
+- [`lifecycle.grit`](./lifecycle.grit): this app's Biome plugin, which has each lifecycle callback say why it stays, in a `biome-ignore` reason. It is the template's policy, not treflex's. It matches names, not imports: it misses an aliased import, and reports a local function or a member of any object of the same name, such as `props.useEffect()`. To turn it off, remove its entry from `biome.json` and the `AGENTS.md` lines that have agents write the suppressions.
 - [`eslint.config.js`](./eslint.config.js): ESLint with `treflex-eslint`'s rules and no others. They read types, so they report a generator the app's own code creates and drops, such as `delay({ Ms: 1000 })` without `yield*`, which Biome's plugins don't see. [Lint setup](https://tgoh.github.io/treflex/docs/reference/effects.html#lint-setup) says what each covers.
 
 ## Commands

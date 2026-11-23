@@ -1,5 +1,4 @@
 import type { IActionGenerator } from "../../src/Types/IAction";
-import { createRoot } from "solid-js";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { publish } from "../../src/Effects/publish";
 import { registerDataSource } from "../../src/Effects/registerDataSource";
@@ -7,6 +6,7 @@ import { startTimer } from "../../src/Effects/startTimer";
 import { getDataGlobal } from "../../src/Reads/getData";
 import { bind } from "../../src/Runtime/bind";
 import { createRuntime } from "../../src/Runtime/createRuntime";
+import * as reactive from "../reactive";
 import { intrinsicChanges, minted, printIntrinsics, rawReceiver, treeWrite } from "../testHelpers";
 
 const POISON = [
@@ -17,14 +17,6 @@ const POISON = [
 	"valueOf"
 ];
 
-// The sharpest symptom is not a wrong answer but a silent write onto a
-// shared intrinsic: `table["constructor"]` resolves to the `Object`
-// function, and the "create the bucket if absent" branch then writes the
-// row onto it, for the life of the process. Several of the cases below
-// returned the right value while doing exactly that, so the guard watches
-// the intrinsics by descriptor slot rather than only checking results —
-// a replacement (an entity whose $Id is "keys" clobbering `Object.keys`
-// through a poisoned bucket) leaves the own-property NAMES identical.
 let intrinsics = printIntrinsics();
 
 beforeEach(() => {
@@ -71,7 +63,7 @@ interface IWorld {
 }
 
 async function withRuntime(name: string, body: (runtime: ReturnType<typeof createRuntime<IWorld>>) => Promise<void>): Promise<void> {
-	await createRoot(async (dispose) => {
+	await reactive.root(async (dispose) => {
 		const runtime = createRuntime<IWorld>(
 			{
 				$Id: "Root",

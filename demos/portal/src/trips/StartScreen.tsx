@@ -26,10 +26,12 @@ export function StartScreen(props: { highlight: boolean; restore: IRestoreProps 
 			</div>
 			<RestoreBanner restore={props.restore} />
 			<div
-				class="cards"
-				classList={{
-					vdrop: flourish()
-				}}
+				class={[
+					"cards",
+					{
+						vdrop: flourish()
+					}
+				]}
 				onAnimationEnd={(event) => {
 					if (endsFlourish(event)) endFlourish();
 				}}
@@ -41,10 +43,12 @@ export function StartScreen(props: { highlight: boolean; restore: IRestoreProps 
 						const price = () => priced(destination.Budget, planner.voucher());
 						return (
 							<div
-								class="card"
-								classList={{
-									hot: props.highlight && first()
-								}}
+								class={[
+									"card",
+									{
+										hot: props.highlight && first()
+									}
+								]}
 								style={{
 									"--i": String(i())
 								}}
@@ -72,10 +76,12 @@ export function StartScreen(props: { highlight: boolean; restore: IRestoreProps 
 										<span>From {destination.From}</span>
 										<button
 											type="button"
-											class="btn"
-											classList={{
-												teal: first()
-											}}
+											class={[
+												"btn",
+												{
+													teal: first()
+												}
+											]}
 											onClick={() => planner.startTrip(key)}
 										>
 											Start planning →

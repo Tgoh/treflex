@@ -3,6 +3,7 @@ import type { IPortal } from "./Portal";
 import type { IAutosave, ISessionStore } from "./session";
 import { createTestRuntime, guids, settled } from "treflex";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { legStatus } from "../trips/Leg";
 import { startTrip } from "../trips/Planner";
 import { getDefaultState } from "./Portal";
 import { APP_VERSION, boot, createAutosave as createAutosaveFor, registerReceivers, watchTabs, wrap } from "./session";
@@ -61,7 +62,7 @@ describe("the session", () => {
 		]);
 	});
 
-	it("restores a saved session and tells the apps what was running", async () => {
+	it("restores a saved session, tells the apps what was running and starts the trip's searches again", async () => {
 		const before = running();
 		await before.dispatch(startTrip, "Trips", "lisbon");
 		await settled();
@@ -73,7 +74,12 @@ describe("the session", () => {
 		expect(restored?.dropped.length).toBeGreaterThan(0);
 		expect(runtime.state.Trips.Trips).toHaveLength(1);
 		expect(runtime.state.Tour.Reloaded).toBe(false);
-		expect(runtime.state.Trips.Restore?.Trips[0].Stopped).toHaveLength(3);
+		expect(runtime.state.Trips.Restore?.Trips[0].CarriedOn).toHaveLength(3);
+		expect(runtime.state.Trips.Trips[0].Legs.map((leg) => runtime.processSelector(legStatus, () => leg))).toEqual([
+			"searching",
+			"searching",
+			"searching"
+		]);
 	});
 
 	it("discards a session another app version wrote", async () => {

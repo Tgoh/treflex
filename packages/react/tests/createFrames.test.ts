@@ -147,6 +147,26 @@ describe("frames", () => {
 		warn.mockRestore();
 	});
 
+	it("notifies a store listener when the step's frame ends, before a tap hears the step's record", async () => {
+		const w = world();
+		const heard: string[] = [];
+		w.frames.subscribe(() => {
+			heard.push(`store ${w.root().Title}`);
+		});
+		w.runtime.on("record", (record) => {
+			if (record.Kind === "step") {
+				heard.push("step");
+			}
+		});
+		await w.runtime.dispatch(function* rename(draft: IRoot): IActionGenerator {
+			draft.Title = "renamed";
+		}, "root");
+		expect(heard).toEqual([
+			"store renamed",
+			"step"
+		]);
+	});
+
 	it("keeps every frame and notifies no subscriber when a slice is refused and undone", async () => {
 		const w = world();
 		const before = w.root();

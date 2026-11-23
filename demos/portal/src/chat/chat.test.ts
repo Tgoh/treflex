@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { registerFakeBackend, replyLetters, replyText, sendFails } from "../backend/fakeBackend";
 import { followToast, getDefaultState, openApp, ROOT_ID, toast } from "../portal/Portal";
 import { restoreBanner } from "../portal/restoreBanner";
-import { announceDropped, registerReceivers } from "../portal/session";
+import { registerReceivers, repairRestore } from "../portal/session";
 import { tourHint } from "../portal/tourHints";
 import { currentStep } from "../tour/Tour";
 import { ChatReceiver, init, openConversation, rows, summary } from "./Chat";
@@ -102,7 +102,7 @@ async function reload(before: IRuntime<IPortal>, wait: IChatWait): Promise<IRunt
 			pauseTimers: true
 		},
 		setup: setup(wait),
-		repair: announceDropped
+		repair: repairRestore
 	});
 	runtimes.push(runtime);
 	await flush();

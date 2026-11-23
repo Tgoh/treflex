@@ -1,6 +1,6 @@
-import type { JSX } from "solid-js";
+import type { JSX } from "@solidjs/web";
 import type { IAppIcon } from "../portal/apps";
-import { Dynamic } from "solid-js/web";
+import { Dynamic } from "@solidjs/web";
 
 export const PlaneIcon = () => (
 	<svg viewBox="0 0 24 24" aria-hidden="true">

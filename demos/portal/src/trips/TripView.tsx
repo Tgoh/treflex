@@ -57,10 +57,12 @@ export const TripView = Trip.provider<{
 
 			<div class="tscroll">
 				<section
-					class="hero"
-					classList={{
-						burst: flourish()
-					}}
+					class={[
+						"hero",
+						{
+							burst: flourish()
+						}
+					]}
 				>
 					<svg preserveAspectRatio="none" aria-hidden="true">
 						<rect width="100%" height="100%" fill={`url(#hero-${trip.state.Destination})`} />
@@ -80,11 +82,13 @@ export const TripView = Trip.provider<{
 						</p>
 					</div>
 					<div
-						class="total"
-						classList={{
-							over: total().Amount > destination().Budget,
-							vdrop: flourish()
-						}}
+						class={[
+							"total",
+							{
+								over: total().Amount > destination().Budget,
+								vdrop: flourish()
+							}
+						]}
 						onAnimationEnd={(event) => {
 							if (endsFlourish(event)) endFlourish();
 						}}
@@ -120,10 +124,12 @@ export const TripView = Trip.provider<{
 					<aside class="rail">
 						<div class="agent">
 							<div
-								class="av"
-								classList={{
-									busy: busy()
-								}}
+								class={[
+									"av",
+									{
+										busy: busy()
+									}
+								]}
 							>
 								P
 							</div>

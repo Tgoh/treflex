@@ -1,4 +1,4 @@
-import type { IEffect } from "treflex";
+import type { IEffect, IEffectPayload } from "treflex";
 import type { IDestinationKey, ILegKind } from "../trips/destinations";
 import { defineEffect } from "treflex";
 
@@ -34,7 +34,8 @@ export interface ICheckProvider extends IEffect {
 	Destination: IDestinationKey;
 	Kind: ILegKind;
 	Index: number;
-	Attempt: number;
+	/** How many more times to ask after the provider fails with a `ProviderError`. */
+	Retries: number;
 }
 
 export const checkProvider = defineEffect<ICheckProvider, IProviderResult>("Backend/CheckProvider");
@@ -117,13 +118,29 @@ export interface IPostMessage extends IEffect {
 	Attempt: number;
 }
 
-export const postMessage = defineEffect<IPostMessage, void>("Backend/PostMessage");
+/** Whether the server took the message, and if not, why. */
+export type IPostAnswer =
+	| {
+			Sent: true;
+	  }
+	| {
+			Sent: false;
+			Message: string;
+	  };
+
+export const postMessage = defineEffect<IPostMessage, IPostAnswer>("Backend/PostMessage");
 
 export class SendError extends Error {
 	constructor(message: string) {
 		super(message);
 		this.name = "SendError";
 	}
+}
+
+/** Posts a message, and throws `SendError` when the server didn't take it. */
+export function* sendMessage(message: IEffectPayload<IPostMessage>) {
+	const answer = yield* postMessage(message);
+	if (!answer.Sent) throw new SendError(answer.Message);
 }
 
 export interface IReplyChunk {

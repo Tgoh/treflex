@@ -1,4 +1,4 @@
-import { host } from "../Solid/host";
+import { host } from "../Reactive/host";
 
 export function watch(read: () => void, onChange: () => void): () => void {
 	let armed = false;

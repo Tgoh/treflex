@@ -211,7 +211,15 @@ describe("action/unrouted-throw", () => {
 					}
 				).load();
 			}
-			await expect(h.runtime.dispatch(calls, "dialog")).rejects.toBe(boom);
+			const copy = await h.runtime.dispatch(calls, "dialog").then(
+				() => undefined,
+				(error: unknown) => error
+			);
+			expect(copy).not.toBe(boom);
+			expect(Object.getPrototypeOf(copy)).toBe(Error.prototype);
+			expect((copy as Error).name).toBe("Error");
+			expect((copy as Error).message).toBe("run failed");
+			expect(Object.keys(copy as Error)).toEqual([]);
 			await settled();
 			expect(
 				failures.map((failure) => [

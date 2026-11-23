@@ -1,10 +1,13 @@
 import type { IRuntime } from "../Runtime/createRuntime";
 import type { IRuntimeInternal } from "../Runtime/internals";
 import type { IDiagEmitter } from "../Types/IRuntimeEvent";
-import type { IRestoreResult } from "./loadSnapshot";
+import type { IInFlightListing, IRestoreResult } from "./loadSnapshot";
+import { host } from "../Reactive/host";
+import { resumeAtRestore } from "../Resume/restoreStage";
+import { errorClass } from "../Utility/errorClasses";
 import {
-	droppedActions,
 	gateSnapshot,
+	listedInFlight,
 	loadTables,
 	reportUnresolved,
 	SnapshotRejectedError,
@@ -48,6 +51,8 @@ export class AsyncSetupError extends Error {
 	}
 }
 
+errorClass("treflex/AsyncSetupError", AsyncSetupError);
+
 const isThenable = (value: unknown): value is PromiseLike<unknown> =>
 	typeof (value as PromiseLike<unknown> | null | undefined)?.then === "function";
 
@@ -83,7 +88,7 @@ export async function restoreWith<T extends object>(
 			`[treflex] restore: the snapshot's root is "${rootId}", and this app's is "${boot.rootId}". Discard the snapshot and boot fresh.`
 		);
 	}
-	const runtime = build(snapshot.AppState as T) as IRuntimeInternal<T>;
+	let runtime: IRuntimeInternal<T> | undefined;
 	// Held back until setup has run, so a diag listener it attaches hears the load's.
 	const loadDiags: Parameters<IDiagEmitter>[0][] = [];
 	let emitted = false;
@@ -93,22 +98,28 @@ export async function restoreWith<T extends object>(
 		}
 		emitted = true;
 		for (const event of loadDiags) {
-			runtime.emitDiag(event);
+			runtime!.emitDiag(event);
 		}
 	};
 	let restored = false;
 	try {
-		const outcome = await restoreInto(runtime, snapshot, boot, loadDiags, emitLoadDiags);
+		const outcome = await host.untrack(() => {
+			const built = build(snapshot.AppState as T) as IRuntimeInternal<T>;
+			runtime = built;
+			return restoreInto(built, snapshot, boot, loadDiags, emitLoadDiags);
+		});
 		restored = true;
 		return outcome;
 	} catch (error) {
-		try {
-			emitLoadDiags();
-		} catch {}
+		if (runtime !== undefined) {
+			try {
+				emitLoadDiags();
+			} catch {}
+		}
 		throw error;
 	} finally {
 		if (!restored) {
-			runtime.dispose();
+			runtime?.dispose();
 		}
 	}
 }
@@ -129,18 +140,29 @@ async function restoreInto<T extends object>(
 	} catch (error) {
 		throw rejected(error);
 	}
+	const resuming = runtime.get("runtime/resume") !== null;
+	const loaded = new Map<string, string>();
+	if (resuming) {
+		const gateway = runtime.get("runtime/writeGateway");
+		for (const row of snapshot.InFlight) {
+			if (!loaded.has(row.EntityId)) {
+				loaded.set(row.EntityId, JSON.stringify(gateway.cellOf(row.EntityId)));
+			}
+		}
+	}
 	const returned: unknown = boot.setup?.(runtime);
 	if (isThenable(returned)) {
 		returned.then(undefined, () => {});
 		throw new AsyncSetupError();
 	}
 	emitLoadDiags();
-	let result: IRestoreResult;
+	let listed: IInFlightListing[];
+	let base: Omit<IRestoreResult, "resumed" | "dropped">;
 	try {
 		const savedBuild = savedBuildOf(snapshot);
 		const runtimeBuild = runtime.get("runtime/build");
-		result = {
-			dropped: droppedActions(snapshot),
+		listed = listedInFlight(snapshot);
+		base = {
 			unresolved: unresolvedReceivers(runtime.get),
 			sweptOrphanedRows,
 			savedBuild,
@@ -149,9 +171,21 @@ async function restoreInto<T extends object>(
 	} catch (error) {
 		throw rejected(error);
 	}
-	reportUnresolved(result.unresolved, runtime.emitDiag);
+	reportUnresolved(base.unresolved, runtime.emitDiag);
+	const stage = resuming ? resumeAtRestore(runtime, snapshot, listed, base.sameBuild, loaded) : null;
+	const result: IRestoreResult = {
+		resumed: stage?.resumed ?? [],
+		dropped:
+			stage?.dropped ??
+			listed.map((row) => ({
+				...row,
+				reason: "resume-off"
+			})),
+		...base
+	};
 	const repair = boot.repair;
 	if (!repair) {
+		stage?.release();
 		return {
 			runtime,
 			result
@@ -184,6 +218,7 @@ async function restoreInto<T extends object>(
 	} finally {
 		clearTimeout(stillPaused);
 	}
+	stage?.release();
 	resources.resume();
 	await resources.drained();
 	return {

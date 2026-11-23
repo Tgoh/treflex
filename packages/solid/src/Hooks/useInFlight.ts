@@ -9,8 +9,8 @@ export type IUseInFlightOwner = IEntity | undefined | (() => IEntity | undefined
 
 /**
  * Whether work `inFlight` reads, an action, a work tag or a list of them, is in flight on `owner`,
- * as an accessor. For display: it catches up with a dispatch a microtask later, so a repeat is
- * dropped by `leading`, not by a check of this before dispatching.
+ * as an accessor. For display: a repeat is dropped by `leading`, not by a check of this before
+ * dispatching.
  */
 export function useInFlight(reading: Parameters<typeof inFlight>[0], owner: IUseInFlightOwner): () => boolean {
 	const runtime = runtimeFor("useInFlight");

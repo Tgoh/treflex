@@ -7,7 +7,7 @@ A Solid app on [treflex](https://tgoh.github.io/treflex/docs/): an `App` root en
 - [`src/app.ts`](./src/app.ts): `IApp`, the root entity, with a field for each feature's entity, and `seed()`, the state a fresh start begins from.
 - [`src/AppView.tsx`](./src/AppView.tsx): the root's view, which mounts each feature's view on its entity.
 - [`src/boot.ts`](./src/boot.ts): builds the runtime, saves it on `pagehide`, and restores the save at the next load. When a reload cut an increment short, the restore tells the counter, and the view says so.
-- [`src/index.tsx`](./src/index.tsx): renders once the boot resolves.
+- [`src/index.tsx`](./src/index.tsx): renders once the boot resolves, inside an `<Errored>` that shows a view's throw. Keep a boundary at the root: a throw that reaches none halts every Solid update on the page, as [a view's throw](https://tgoh.github.io/treflex/docs/reference/failure.html#a-views-throw) says.
 - [`src/counter/`](./src/counter/): the counter feature.
   - [`counter.ts`](./src/counter/counter.ts): the counter entity, the `increment` action, the `clicks` selector, and the feature that gives a view all of them. `named(increment, "Counter/Increment")` gives the action the name a save records it by, which the restore in `boot.ts` matches on. `leading(increment)` drops a second `increment` dispatched while one runs, which the test shows.
   - [`effects.ts`](./src/counter/effects.ts): the `delay` effect that `increment` yields.
@@ -16,7 +16,8 @@ A Solid app on [treflex](https://tgoh.github.io/treflex/docs/): an `App` root en
   - [`counter.test.ts`](./src/counter/counter.test.ts): tests on `createTestRuntime`, with `delay` stubbed.
   - [`CounterView.test.tsx`](./src/counter/CounterView.test.tsx): a component test, as [testing a Solid component](https://tgoh.github.io/treflex/docs/reference/testing.html#testing-a-solid-component) describes.
 - [`vitest.config.ts`](./vitest.config.ts): runs tests in Node unless a file selects jsdom, and loads `treflex/vitest`, so that when the test runtime catches a failure or a diag, the test that caused it is the one that fails.
-- [`biome.json`](./biome.json): Biome, which formats and lints, with treflex's two lint plugins.
+- [`biome.json`](./biome.json): Biome, which formats and lints, with treflex's two lint plugins and this app's own.
+- [`lifecycle.grit`](./lifecycle.grit): this app's Biome plugin, which has each lifecycle callback say why it stays, in a `biome-ignore` reason. It is the template's policy, not treflex's. It matches names, not imports: it misses an aliased import, and reports a local function or a member of any object of the same name, such as `props.onMount()`, and an `onSettled` called in an event handler, which isn't lifecycle; give it a reason such as `runs when the save settles`. To turn it off, remove its entry from `biome.json` and the `AGENTS.md` lines that have agents write the suppressions.
 - [`eslint.config.js`](./eslint.config.js): ESLint with `treflex-eslint`'s rules and no others. They read types, so they report a generator the app's own code creates and drops, such as `delay({ Ms: 1000 })` without `yield*`, which Biome's plugins don't see. [Lint setup](https://tgoh.github.io/treflex/docs/reference/effects.html#lint-setup) says what each covers.
 
 ## Commands

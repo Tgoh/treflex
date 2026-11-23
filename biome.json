@@ -92,6 +92,10 @@
 				"!packages/core/tests/Runtime/journal.test.ts",
 				"!packages/core/tests/Runtime/journalCost.test.ts",
 				"!packages/core/tests/Runtime/resourceCost.test.ts",
+				"!packages/core/tests/Resume/resumeCost.test.ts",
+				"!packages/core/tests/Resume/differentialGenerated.test.ts",
+				"!demos/checkout/src/shop/restorePoints.test.ts",
+				"!demos/portal/src/trips/restorePoints.test.ts",
 				"!demos/portal/src/portal/clock.ts"
 			],
 			"plugins": ["./packages/core/biome/no-nondeterminism.grit"]
@@ -117,6 +121,8 @@
 			"demos/portal-swap/src/**/*.tsx",
 			"demos/portal-swap/robust/**/*.ts",
 			"demos/portal-swap/robust/**/*.tsx",
+			"demos/checkout/src/**/*.ts",
+			"demos/checkout/src/**/*.tsx",
 			"scripts/**/*.mjs",
 			"docs/.vitepress/*.ts",
 			"docs/.vitepress/*.mts",
@@ -124,7 +130,6 @@
 			"!scripts/test-pack/**",
 			"!!packages/create-treflex/templates",
 			"!packages/eslint/tests/fixture/**",
-			"!packages/core/tests/SideBySide/baseline",
 			"!tests/docs/preludes/**"
 		]
 	}

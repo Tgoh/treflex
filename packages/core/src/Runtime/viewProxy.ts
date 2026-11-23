@@ -1,5 +1,5 @@
 import type { IDiagEmitter } from "../Types/IRuntimeEvent";
-import { host } from "../Solid/host";
+import { host } from "../Reactive/host";
 import { consoleDiag } from "../Types/IRuntimeEvent";
 import { globalWeakMap } from "../Utility/globalWeakMap";
 import { cloneStrict } from "../Utility/valueCodec";

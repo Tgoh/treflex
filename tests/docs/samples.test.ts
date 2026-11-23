@@ -317,7 +317,7 @@ const options: ts.CompilerOptions = {
 	incremental: false,
 	noEmit: true,
 	jsx: ts.JsxEmit.Preserve,
-	jsxImportSource: "solid-js"
+	jsxImportSource: "@solidjs/web"
 };
 const host = ts.createCompilerHost(options);
 const cached = new Map<string, ts.SourceFile | undefined>();

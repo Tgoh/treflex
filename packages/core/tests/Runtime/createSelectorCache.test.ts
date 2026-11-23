@@ -2,14 +2,14 @@ import type { IRuntimeInternal } from "../../src/Runtime/internals";
 import type { IReadHandler } from "../../src/Runtime/processSelector";
 import type { IActionGenerator } from "../../src/Types/IAction";
 import type { ISelector, ISelectorGenerator } from "../../src/Types/ISelector";
-import { createMemo, createRoot } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { host } from "../../src/Reactive/host";
 import { select } from "../../src/Reads/select";
 import { createDiagService } from "../../src/Runtime/createDiagService";
 import { createRuntime } from "../../src/Runtime/createRuntime";
 import { createSelectorCache } from "../../src/Runtime/createSelectorCache";
 import { processSelector } from "../../src/Runtime/processSelector";
-import { host } from "../../src/Solid/host";
+import * as reactive from "../reactive";
 
 function stubRead(): IReadHandler {
 	return () => {
@@ -207,9 +207,9 @@ describe("a selector memo through the runtime", () => {
 	it("gives each entity its own value after a reorder moves a positional reader to another entity", async () => {
 		const runtime = build();
 		const byId = (id: string) => () => runtime.state.Rows.find((row) => row.$Id === id);
-		await createRoot(async (dispose) => {
-			const positional = createMemo(() => runtime.runSelector(doubled, () => runtime.state.Rows[0]));
-			const ofA = createMemo(() => runtime.runSelector(doubled, byId("a")));
+		await reactive.root(async (dispose) => {
+			const positional = reactive.memo(() => runtime.runSelector(doubled, () => runtime.state.Rows[0]));
+			const ofA = reactive.memo(() => runtime.runSelector(doubled, byId("a")));
 			expect(positional()).toBe(2);
 			expect(ofA()).toBe(2);
 
@@ -231,9 +231,9 @@ describe("a selector memo through the runtime", () => {
 		function* selected(draft: IList): ISelectorGenerator<number> {
 			return yield* select(doubled, (list: IList) => list.Rows[list.Selected]!);
 		}
-		await createRoot(async (dispose) => {
-			const viaSelection = createMemo(() => runtime.runSelector(selected, () => runtime.state));
-			const ofA = createMemo(() => runtime.runSelector(doubled, () => runtime.state.Rows.find((row) => row.$Id === "a")));
+		await reactive.root(async (dispose) => {
+			const viaSelection = reactive.memo(() => runtime.runSelector(selected, () => runtime.state));
+			const ofA = reactive.memo(() => runtime.runSelector(doubled, () => runtime.state.Rows.find((row) => row.$Id === "a")));
 			expect(viaSelection()).toBe(2);
 			await runtime.dispatch(moveFirstToEnd, "list");
 			expect(viaSelection()).toBe(4);
@@ -246,9 +246,9 @@ describe("a selector memo through the runtime", () => {
 		const runtime = build();
 		const { times1, times100 } = sameNamed();
 		const a = () => runtime.state.Rows[0];
-		await createRoot(async (dispose) => {
-			const first = createMemo(() => runtime.runSelector(times1, a));
-			const second = createMemo(() => runtime.runSelector(times100, a));
+		await reactive.root(async (dispose) => {
+			const first = reactive.memo(() => runtime.runSelector(times1, a));
+			const second = reactive.memo(() => runtime.runSelector(times100, a));
 			expect([
 				first(),
 				second()
@@ -307,8 +307,8 @@ describe("a selector memo through the runtime", () => {
 			const row = () => list.Rows[0]!;
 			return list.Selected % 2 ? yield* select(times1, row) : yield* select(times100, row);
 		}
-		await createRoot(async (dispose) => {
-			const view = createMemo(() => runtime.runSelector(outer, () => runtime.state));
+		await reactive.root(async (dispose) => {
+			const view = reactive.memo(() => runtime.runSelector(outer, () => runtime.state));
 			const seen = [
 				view()
 			];
@@ -340,8 +340,8 @@ describe("a selector memo through the runtime", () => {
 			const row = () => list.Rows[0]!;
 			return list.Selected * 1000 + (yield* select(times1, row)) + (yield* select(times100, row));
 		}
-		await createRoot(async (dispose) => {
-			const view = createMemo(() => runtime.runSelector(outer, () => runtime.state));
+		await reactive.root(async (dispose) => {
+			const view = reactive.memo(() => runtime.runSelector(outer, () => runtime.state));
 			expect(view()).toBe(101);
 			for (let i = 1; i <= 6; i++) {
 				await runtime.dispatch(toggle, "list");
@@ -374,8 +374,8 @@ describe("a selector memo through the runtime", () => {
 				}
 			};
 		});
-		await createRoot(async (dispose) => {
-			const view = createMemo(() => runtime.runSelector(outer, () => runtime.state.Rows[0]));
+		await reactive.root(async (dispose) => {
+			const view = reactive.memo(() => runtime.runSelector(outer, () => runtime.state.Rows[0]));
 			expect(view()).toBe(1);
 			for (let n = 2; n <= 21; n++) {
 				await runtime.dispatch(setN, "list", "a", n);
@@ -418,8 +418,8 @@ describe("a selector memo through the runtime", () => {
 			runs++;
 			return row.N;
 		}
-		await createRoot(async (dispose) => {
-			const view = createMemo(() => runtime.runSelector(counted, () => runtime.state.Rows[0]));
+		await reactive.root(async (dispose) => {
+			const view = reactive.memo(() => runtime.runSelector(counted, () => runtime.state.Rows[0]));
 			expect(view()).toBe(1);
 			expect(runs).toBe(1);
 			const seen = await runtime.dispatch(function* (): IActionGenerator<number> {

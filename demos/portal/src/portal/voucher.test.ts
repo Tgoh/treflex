@@ -12,7 +12,7 @@ import { callsForFlourish } from "../trips/flourish";
 import { flourishPlayed, priced, startTrip, tickerText, voucher } from "../trips/Planner";
 import { soFar } from "../trips/Trip";
 import { applyToastVoucher, getDefaultState, openApp, ROOT_ID, toast, toastVoucher } from "./Portal";
-import { announceDropped, registerReceivers } from "./session";
+import { registerReceivers, repairRestore } from "./session";
 
 const instant = () => Promise.resolve();
 
@@ -57,7 +57,7 @@ async function reload(before: IRuntime<IPortal>): Promise<IRuntime<IPortal>> {
 			pauseTimers: true
 		},
 		setup,
-		repair: announceDropped
+		repair: repairRestore
 	});
 	runtimes.push(runtime);
 	await flush();

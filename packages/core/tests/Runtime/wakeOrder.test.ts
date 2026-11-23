@@ -1172,7 +1172,11 @@ describe("a caught value whose symbol reads throw reaches the code that catches 
 						yield* wait("x");
 					}
 				} catch (error) {
-					h.log.push(`caught the thrown value: ${error === thrown}`);
+					h.log.push(
+						where === "thrown by a parallel branch after a wait"
+							? `caught the thrown value: ${error === thrown}`
+							: `caught a copy: ${error !== thrown && (error as Error).message === "exotic"}`
+					);
 				}
 			}
 			function* after(): IActionGenerator {
@@ -1190,7 +1194,7 @@ describe("a caught value whose symbol reads throw reaches the code that catches 
 			await h.flush();
 			h.log.push(`act ${await a}`, `after ${await b}`);
 			expect(h.log).toEqual([
-				"caught the thrown value: true",
+				where === "thrown by a parallel branch after a wait" ? "caught the thrown value: true" : "caught a copy: true",
 				"after ran",
 				"act undefined",
 				"after undefined"

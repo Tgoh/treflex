@@ -139,7 +139,7 @@ export function* startClock(draft: IClock): IActionGenerator {
 - **`startTimer(entity, key, receiver, intervalMs, payload?)`** writes one `(key, entity)` row. Starting it again with another interval, receiver or payload replaces the row and restarts the interval, which is how an interval changes; starting it again with the same row changes nothing, and the running interval stands. `payload` is required only when the key declares fields. A timer key is in `ITimerRegistry`, not `IMessageRegistry`, so nothing can publish it.
 - **`stopTimer(entity, key)`** removes the row. The owner leaving removes every row it started.
 
-**Measure elapsed time with a deadline, never a tick count.** A countdown, a hold or an expiry stores its deadline in state, read from a clock effect the app declares `settles: "sync"` ([sync effects](./effects.md#sync-effects)), and its timer ticks only to redraw or to check whether the deadline has passed. Counting ticks loses time whenever the tab is suspended or reloaded.
+**Measure elapsed time with a deadline, never a tick count.** A countdown, a hold or an expiry stores its deadline in state, read from a clock effect the app declares `settles: "sync"` ([sync effects](./effects.md#sync-effects)), and its timer ticks only to check whether the deadline has passed. Counting ticks loses time whenever the tab is suspended or reloaded. A view that redraws as time passes, such as a countdown's display, reads a [display clock](./derived-reads.md#an-outside-value-or-the-tree), not a timer.
 
 ## Rules
 
@@ -306,7 +306,7 @@ export function* draw(draft: IChart): IActionGenerator {
 - **A call doesn't queue behind the owner's hold.** It runs as part of the calling action, and its `ctx.signal` aborts when that action is stopped, so removing the calling child cancels its call.
 - **A call waits** until the handler settles. Calls made during setup wait for it.
 - **Arguments and results are plain data**, copied. A non-plain argument throws `NonPlainDataError` and nothing is sent; so does a non-plain result.
-- **A handler's throw reaches the caller by reference**, so `instanceof` checks on application error classes hold, unless the instance retired first.
+- **A handler's throw reaches the caller as a copy** of its native error type, as an effect's rejection does ([effects](./effects.md#a-rejection-crosses-as-a-copy)), unless the instance retired first. A failure the caller branches on is part of the method's result.
 - **A call resolves `undefined` when nothing can answer**: no row, a type or receiver not registered, a restore's [repair pause](./restart-and-records.md#the-repair), an instance that retired or ended before answering, or a method the type didn't register. With no row it raises [`resource/not-open`](./troubleshooting.md#resourcenot-open), on an ended cell [`resource/used-after-end`](./troubleshooting.md#resourceused-after-end), and for an unregistered method [`resource/unknown-method`](./troubleshooting.md#resourceunknown-method).
 - **Calls can run at once.** A type that must not do one piece of work twice keeps an in-flight map and hands a second caller the first promise. Shared work runs on `r.signal`, never on one caller's `ctx.signal`, which aborts when the instance retires or the calling fiber is [stopped](./fibers.md#stopping).
 

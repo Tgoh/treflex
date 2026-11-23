@@ -1,19 +1,14 @@
+import solid from "@solidjs/vite-plugin";
 import { defaultClientConditions, defineConfig } from "vite";
-import solidPlugin from "vite-plugin-solid";
+import { buildId } from "../checkout/buildId";
 import { DEV_PORTS } from "./src/shell/builds";
 
-export default defineConfig(({ command }) => ({
+export default defineConfig({
 	base: "./",
 	plugins: [
-		solidPlugin()
+		solid(),
+		buildId()
 	],
-	// A dev server's code changes with every edit, so only a build names its code.
-	define:
-		command === "build"
-			? {
-					"import.meta.env.VITE_BUILD_ID": JSON.stringify(new Date().toISOString())
-				}
-			: {},
 	resolve: {
 		conditions: [
 			"treflex-source",
@@ -26,12 +21,14 @@ export default defineConfig(({ command }) => ({
 			"treflex-solid"
 		]
 	},
-	// The record stream panel shows an unnamed action's function name, which minification would mangle.
-	esbuild: {
-		keepNames: true
-	},
 	build: {
-		target: "esnext"
+		target: "esnext",
+		rolldownOptions: {
+			output: {
+				// The record stream panel shows an unnamed action's function name, which minification would mangle.
+				keepNames: true
+			}
+		}
 	},
 	server: {
 		port: DEV_PORTS.solid,
@@ -43,4 +40,4 @@ export default defineConfig(({ command }) => ({
 			]
 		}
 	}
-}));
+});

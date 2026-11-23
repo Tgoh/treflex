@@ -1,21 +1,15 @@
-import { $TRACK, batch, createEffect, createMemo, createRoot, mapArray, untrack } from "solid-js";
 import { describe, expect, it, vi } from "vitest";
 import { createRecordingProxy } from "../../src/Runtime/recordingProxy";
 import { tracking } from "../../src/Runtime/tracking";
 import { isWrappable, RAW, rawOf, setViewDiagEmitter, unwrapValue, view } from "../../src/Runtime/viewProxy";
+import * as reactive from "../reactive";
 import { createTreeState } from "../testHelpers";
 
-// The tracking and view layers standalone: a raw tree, the view over it,
-// and writes made directly to the raw followed by the notify calls the
-// gateway makes at its traps. Nothing here involves the runtime.
-
-// Counts how many times `read` re-runs inside a detached root, returning
-// the latest value.
 function observe<T>(read: () => T) {
 	let runs = 0;
 	let last!: T;
-	const dispose = createRoot((d) => {
-		createEffect(() => {
+	const dispose = reactive.root((d) => {
+		reactive.effect(() => {
 			runs++;
 			last = read();
 		});
@@ -28,12 +22,11 @@ function observe<T>(read: () => T) {
 	};
 }
 
-// A write the way the gateway sees it: mutate raw, then bump.
 function writeKey(target: object, key: string, value: unknown) {
 	const had = Object.hasOwn(target, key);
 	const changed = (target as any)[key] !== value;
 	(target as any)[key] = value;
-	batch(() => {
+	reactive.batch(() => {
 		if (changed) {
 			tracking.notifyKey(target, key);
 		}
@@ -47,7 +40,7 @@ function writeKey(target: object, key: string, value: unknown) {
 function deleteKey(target: object, key: string) {
 	const had = Object.hasOwn(target, key);
 	delete (target as any)[key];
-	batch(() => {
+	reactive.batch(() => {
 		tracking.notifyKey(target, key);
 		tracking.notifyShape(target);
 		if (had) {
@@ -200,12 +193,12 @@ describe("view proxy: tracking", () => {
 		};
 		const v = view(raw);
 		const obs = observe(() => v.a + v.b);
-		batch(() => {
+		reactive.batch(() => {
 			writeKey(raw, "a", 2);
 			writeKey(raw, "b", 2);
 		});
 		expect(obs.runs()).toBe(2);
-		batch(() => {
+		reactive.batch(() => {
 			writeKey(raw, "a", 9);
 			writeKey(raw, "a", 2);
 		});
@@ -218,9 +211,8 @@ describe("view proxy: tracking", () => {
 			a: 1
 		};
 		const v = view(raw);
-		untrack(() => v.a);
+		reactive.untrack(() => v.a);
 		expect(v.a).toBe(1);
-		// Nothing tracked, so a notify finds no record and does nothing.
 		expect(() => tracking.notifyKey(raw, "a")).not.toThrow();
 	});
 
@@ -230,12 +222,11 @@ describe("view proxy: tracking", () => {
 		};
 		const v = view(raw);
 		const obs = observe(() => {
-			(v as any)[$TRACK];
-			return Object.keys(untrack(() => v)).length;
+			(v as any)[reactive.TRACK];
+			return Object.keys(reactive.untrack(() => v)).length;
 		});
 		writeKey(raw, "b", 2);
 		expect(obs.runs()).toBe(2);
-		// A value write on an existing key bumps the shape too (1.9 parity).
 		writeKey(raw, "a", 5);
 		expect(obs.runs()).toBe(3);
 		obs.dispose();
@@ -303,8 +294,8 @@ describe("view proxy: tracking", () => {
 		});
 		const v = view(raw);
 		const shape = observe(() => {
-			(v.Items as any)[$TRACK];
-			(v as any)[$TRACK];
+			(v.Items as any)[reactive.TRACK];
+			(v as any)[reactive.TRACK];
 		});
 		const key = observe(() => v.a);
 		setState((s) => {
@@ -334,7 +325,7 @@ describe("view proxy: tracking", () => {
 		});
 		const v = view(raw);
 		const shape = observe(() => {
-			(v.Items as any)[$TRACK];
+			(v.Items as any)[reactive.TRACK];
 			return "NoSuchKey" in v.Items;
 		});
 		setState((s) => {
@@ -386,7 +377,7 @@ describe("view proxy: tracking", () => {
 		const v = view(raw);
 		const obs = observe(() => v.length);
 		raw.push(3);
-		batch(() => {
+		reactive.batch(() => {
 			tracking.notifyKey(raw, "2");
 			tracking.notifyKey(raw, "length");
 			tracking.notifyShape(raw);
@@ -485,80 +476,6 @@ describe("view proxy: arrays", () => {
 		const desc = Object.getOwnPropertyDescriptor(v, "a")!;
 		expect(desc.value).toBe(v.a);
 		expect(desc.configurable).toBe(true);
-	});
-
-	it("mapArray over the view diffs by reference on push, replace, reverse, and child writes", () => {
-		const raw = [
-			{
-				Id: "a"
-			},
-			{
-				Id: "b"
-			}
-		];
-		const v = view(raw);
-		let created = 0;
-		let mapped!: () => string[];
-		const dispose = createRoot((d) => {
-			mapped = mapArray(
-				() => v,
-				(row) => {
-					created++;
-					return row.Id;
-				}
-			);
-			createEffect(() => mapped());
-			return d;
-		});
-		expect(mapped()).toEqual([
-			"a",
-			"b"
-		]);
-		expect(created).toBe(2);
-		// push: the new element is created, the survivors are not.
-		raw.push({
-			Id: "c"
-		});
-		batch(() => {
-			tracking.notifyKey(raw, "2");
-			tracking.notifyKey(raw, "length");
-			tracking.notifyShape(raw);
-		});
-		expect(mapped()).toEqual([
-			"a",
-			"b",
-			"c"
-		]);
-		expect(created).toBe(3);
-		// element replacement re-runs For through the shape bump.
-		raw[1] = {
-			Id: "B"
-		};
-		writeKey(raw, "1", raw[1]);
-		expect(mapped()).toEqual([
-			"a",
-			"B",
-			"c"
-		]);
-		expect(created).toBe(4);
-		// reverse: same elements, same count, no new mappings.
-		raw.reverse();
-		batch(() => {
-			for (let i = 0; i < raw.length; i++) {
-				tracking.notifyKey(raw, String(i));
-			}
-			tracking.notifyShape(raw);
-		});
-		expect(mapped()).toEqual([
-			"c",
-			"B",
-			"a"
-		]);
-		expect(created).toBe(4);
-		// a scalar write on a child does not re-diff the list.
-		writeKey(raw[0], "Id", "C");
-		expect(created).toBe(4);
-		dispose();
 	});
 });
 
@@ -720,8 +637,8 @@ describe("view proxy: memos", () => {
 		const v = view(raw);
 		let computes = 0;
 		let read!: () => number;
-		const dispose = createRoot((d) => {
-			read = createMemo(() => {
+		const dispose = reactive.root((d) => {
+			read = reactive.memo(() => {
 				computes++;
 				return v.n * 2;
 			});

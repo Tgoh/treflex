@@ -1,0 +1,28 @@
+{
+	"name": "treflex-checkout",
+	"private": true,
+	"type": "module",
+	"description": "A checkout flow written as code, and what a reload does to it",
+	"scripts": {
+		"dev": "vite",
+		"build": "tsc --noEmit && vite build",
+		"typecheck": "tsc --noEmit",
+		"preview": "vite preview",
+		"test": "vitest run",
+		"test:watch": "vitest"
+	},
+	"dependencies": {
+		"@solidjs/web": "^2.0.3",
+		"solid-js": "^2.0.3",
+		"treflex": "file:../../packages/core",
+		"treflex-solid": "file:../../packages/solid"
+	},
+	"devDependencies": {
+		"@solidjs/vite-plugin": "^3.0.1",
+		"@types/node": "^24.0.3",
+		"jsdom": "29.1.1",
+		"typescript": "^7.0.2",
+		"vite": "^8.3.8",
+		"vitest": "^4.1.4"
+	}
+}

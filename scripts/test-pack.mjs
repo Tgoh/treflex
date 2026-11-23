@@ -12,6 +12,7 @@ import {
 	readdirSync,
 	readFileSync,
 	realpathSync,
+	renameSync,
 	rmSync,
 	writeFileSync
 } from "node:fs";
@@ -25,14 +26,27 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const FIXTURE = join(ROOT, "scripts/test-pack");
 const KEEP = process.argv.includes("--keep");
 const RELEASE = process.argv.includes("--release") ? join(ROOT, "release") : undefined;
-// A published solid-js outside the ^1.9.7 that treflex and treflex-solid require.
-const MISMATCHED_SOLID = "1.8.23";
-// vite-plugin-solid 2.11.15 and later dedupe solid-js in builds, which bundles one copy from two on disk.
-const UNDEDUPED_VITE_PLUGIN_SOLID = "2.11.14";
-// The newest JSX compiler of the 1.8 line, so a later compiler can't break the build against solid-js 1.8.
-const MISMATCHED_SOLID_COMPILER = "1.8.22";
+// A published solid-js outside the ^2.0.3 that treflex-solid peers on.
+const MISMATCHED_SOLID = "2.0.2";
 // The start of the error TreflexProvider throws, in packages/solid/src/Context/TreflexContext.tsx.
-const TWO_SOLIDS = "[treflex] Two copies of solid-js are loaded";
+const TWO_SOLIDS = "[treflex] TreflexProvider found no Solid owner";
+// @solidjs/vite-plugin dedupes solid-js in builds, which bundles one copy from two on disk.
+const UNDEDUPED_VITE_CONFIG = `import solid from "@solidjs/vite-plugin";
+import { defineConfig } from "vite";
+
+export default defineConfig({
+	plugins: [
+		solid(),
+		{
+			name: "two-copies",
+			enforce: "post",
+			config(config) {
+				config.resolve.dedupe = [];
+			}
+		}
+	]
+});
+`;
 const SHIPS = {
 	core: [
 		"dist/",
@@ -48,11 +62,14 @@ const TEMPLATES = {
 	react: "treflex-react",
 	solid: "treflex-solid"
 };
-const PLANTED = "export function* planted() {\n\tyield Promise.resolve();\n\treturn Math.random();\n}\n";
-// The start of each message in packages/core/biome/require-yield-star.grit and no-nondeterminism.grit.
+const PLANTED =
+	"export function* planted() {\n\tyield Promise.resolve();\n\treturn Math.random();\n}\n\nexport function plantedView() {\n\tcreateEffect<number>((previous) => previous + 1, 0);\n\tuseEffect<void>(() => {});\n}\n";
+// The start of each message in packages/core/biome/require-yield-star.grit and no-nondeterminism.grit, and in each
+// template's own lifecycle.grit.
 const PLUGIN_MESSAGES = [
 	"Bare `yield` of a call",
-	"Non-determinism is confined"
+	"Non-determinism is confined",
+	"Most lifecycle work has a better home"
 ];
 // Drops the effect each template declares in src/counter/effects.ts.
 const PLANTED_DROP =
@@ -136,7 +153,8 @@ const COMPILERS = [
 			"--moduleResolution",
 			"bundler"
 		],
-		// solid-js's own types name ContentVisibilityAutoStateChangeEvent, which TypeScript 5.4's DOM lib lacks.
+		// @solidjs/web's types name a DOM type TypeScript 5.4's lib lacks, and a generic Uint8Array, which TypeScript
+		// before 5.7 lacks.
 		skipLibCheck: [
 			"solid"
 		]
@@ -665,26 +683,11 @@ function noSolidApp(scratch, packed) {
 	});
 	npmInstall(dir, "no-solid");
 	const versions = compilerVersions(dir, "no-solid");
-	const nodes = JSON.parse(
-		run(
-			"no-solid: npm explain solid-js",
-			"npm",
-			[
-				"explain",
-				"solid-js",
-				"--json"
-			],
-			{
-				cwd: dir,
-				echo: false
-			}
-		).stdout
-	);
-	const dependents = nodes.flatMap((n) => n.dependents.map((d) => `${d.from?.name ?? "the app"} (${d.type})`));
-	console.log(`solid-js ${nodes.map((n) => n.version).join(", ")}, required by ${dependents.join(", ")}`);
-	if (nodes.length === 0 || dependents.some((d) => d !== "treflex (prod)")) {
-		throw new StepFailed("no-solid: solid-js should reach the app only through treflex's dependency");
+	const copies = solidCopies(dir);
+	if (copies.length > 0) {
+		throw new StepFailed(`no-solid: a React app installed solid-js: ${copies.join(", ")}`);
 	}
+	console.log("no solid-js on disk");
 	app(dir, "core", versions);
 	checkReact("react", app(dir, "react", versions), versionOf("react"));
 	coreInNode(dir);
@@ -735,12 +738,13 @@ function solidApp(scratch, packed) {
 			"treflex-eslint"
 		],
 		workspace: [
+			"@solidjs/vite-plugin",
+			"@solidjs/web",
 			"eslint",
 			"jsdom",
 			"solid-js",
 			"typescript-eslint",
-			"vite",
-			"vite-plugin-solid"
+			"vite"
 		],
 		compilers: true,
 		fixtures: [
@@ -754,15 +758,15 @@ function solidApp(scratch, packed) {
 	if (copies.length !== 1) {
 		throw new StepFailed(`solid: ${copies.length} copies of solid-js on disk: ${copies.join(", ")}`);
 	}
-	const fromTreflex = resolveSolidFrom(join(dir, "node_modules/treflex/package.json"));
+	const fromBinding = resolveSolidFrom(join(dir, "node_modules/treflex-solid/package.json"));
 	const fromApp = resolveSolidFrom(join(dir, "package.json"));
-	if (fromTreflex !== fromApp) {
-		throw new StepFailed(`solid: treflex resolves solid-js to ${fromTreflex}, the app to ${fromApp}`);
+	if (fromBinding !== fromApp) {
+		throw new StepFailed(`solid: treflex-solid resolves solid-js to ${fromBinding}, the app to ${fromApp}`);
 	}
-	console.log(`one solid-js on disk, resolved from treflex and the app alike: ${fromApp}`);
+	console.log(`one solid-js on disk, resolved from treflex-solid and the app alike: ${fromApp}`);
 	const result = app(dir, "solid", versions);
 	if (result.oneSolid !== true) {
-		throw new StepFailed(`solid: the bundle's solid-js is not treflex's (oneSolid reads ${result.oneSolid})`);
+		throw new StepFailed(`solid: the bundle's solid-js is not treflex-solid's (oneSolid reads ${result.oneSolid})`);
 	}
 	eslint(dir);
 }
@@ -775,18 +779,19 @@ function mismatchApp(scratch, packed) {
 			"treflex-solid"
 		],
 		workspace: [
+			"@solidjs/vite-plugin",
 			"jsdom",
 			"vite"
 		],
 		pinned: {
-			"solid-js": MISMATCHED_SOLID,
-			"babel-preset-solid": MISMATCHED_SOLID_COMPILER,
-			"vite-plugin-solid": UNDEDUPED_VITE_PLUGIN_SOLID
+			"@solidjs/web": MISMATCHED_SOLID,
+			"solid-js": MISMATCHED_SOLID
 		},
 		fixtures: [
 			"solid"
 		]
 	});
+	writeFileSync(join(dir, "solid/vite.config.js"), UNDEDUPED_VITE_CONFIG);
 	const refused = npmInstall(
 		dir,
 		"mismatch",
@@ -801,12 +806,33 @@ function mismatchApp(scratch, packed) {
 	);
 	const refusal = `${refused.stdout}${refused.stderr}`.trim();
 	console.log(refusal);
-	if (refused.status === 0 || !refusal.includes("ERESOLVE") || !refusal.includes("solid-js")) {
-		throw new StepFailed(`mismatch: npm install exited ${refused.status} without an ERESOLVE over solid-js`);
+	if (refused.status === 0 || !refusal.includes("ERESOLVE") || !refusal.includes("treflex-solid")) {
+		throw new StepFailed(`mismatch: npm install exited ${refused.status} without an ERESOLVE over treflex-solid's peers`);
 	}
 	npmInstall(dir, "mismatch", [
 		"--legacy-peer-deps"
 	]);
+	// With peers only, npm gives treflex-solid the app's copy, so the binding's own copy is placed by hand, as a pnpm
+	// double instance or a linked workspace gives it one.
+	const second = join(scratch, "mismatch-second");
+	mkdirSync(second);
+	writeFileSync(
+		join(second, "package.json"),
+		`${JSON.stringify({
+			name: "treflex-pack-mismatch-second",
+			private: true,
+			dependencies: {
+				"solid-js": versionOf("solid-js")
+			}
+		})}\n`
+	);
+	npmInstall(second, "mismatch: treflex-solid's own solid-js");
+	const nested = join(dir, "node_modules/treflex-solid/node_modules");
+	mkdirSync(join(nested, "@solidjs"), {
+		recursive: true
+	});
+	renameSync(join(second, "node_modules/solid-js"), join(nested, "solid-js"));
+	renameSync(join(second, "node_modules/@solidjs/signals"), join(nested, "@solidjs/signals"));
 	const copies = solidCopies(dir);
 	console.log(copies.join("\n"));
 	if (copies.length !== 2) {
@@ -970,7 +996,7 @@ function templateApp(scratch, packed, version, template) {
 	const planted = join(dir, "src/planted.ts");
 	writeFileSync(planted, PLANTED);
 	const lint = node(
-		`${label}: biome lint on a file breaking both plugins`,
+		`${label}: biome lint on a file breaking every plugin`,
 		biome,
 		[
 			"lint",
@@ -989,7 +1015,7 @@ function templateApp(scratch, packed, version, template) {
 		console.error(reported);
 		throw new StepFailed(`${label}: biome lint exited ${lint.status} without reporting ${missing.join(" and ") || "an error"}`);
 	}
-	console.log(`both plugins reported: ${PLUGIN_MESSAGES.join(", ")}`);
+	console.log(`every plugin reported: ${PLUGIN_MESSAGES.join(", ")}`);
 	const plantedDrop = join(dir, "src/plantedDrop.ts");
 	writeFileSync(plantedDrop, PLANTED_DROP);
 	const dropped = node(

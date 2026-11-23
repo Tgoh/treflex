@@ -1,6 +1,5 @@
 import type { IActionGenerator } from "../../src/Types/IAction";
 import type { IRecord, IRecordExtras } from "../../src/Types/IRecord";
-import { createRoot } from "solid-js";
 import { describe, expect, it } from "vitest";
 import { parallel } from "../../src/Effects/parallel";
 import { publish as publishTyped } from "../../src/Effects/publish";
@@ -9,6 +8,7 @@ import { bind } from "../../src/Runtime/bind";
 import { createRuntime } from "../../src/Runtime/createRuntime";
 import { receiver as receiverTyped } from "../../src/Runtime/receiver";
 import { sliceSetState } from "../../src/Runtime/sliceSetState";
+import * as reactive from "../reactive";
 import { createTestRuntime, rootSetState, treeWrite } from "../testHelpers";
 
 const publish = publishTyped as unknown as (topic: string, data?: any) => Generator<any, void, any>;
@@ -250,7 +250,7 @@ describe("record stream: effects and steps", () => {
 	});
 
 	it("an effect aborted mid-await never settles — the cancelled action:end tells the story", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const runtime = createRuntime<{
 					$Id: string;
@@ -388,7 +388,7 @@ describe("record stream: branch lifecycle for parallel", () => {
 
 describe("record stream: cascade records", () => {
 	it("appends entity:dispose for each removed entity (depth-first)", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const runtime = createRuntime<{
 					$Id: string;
@@ -436,7 +436,7 @@ describe("record stream: cascade records", () => {
 	});
 
 	it("entity:dispose carries the disposed entity's path at the time of dispose", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const runtime = createRuntime<{
 					$Id: string;
@@ -471,7 +471,7 @@ describe("record stream: cascade records", () => {
 	});
 
 	it("appends message:deliver when a topic is published; the payload lives on the effect record", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				type RootState = {
 					$Id: string;
@@ -531,7 +531,7 @@ describe("record stream: cascade records", () => {
 	});
 
 	it("registerDataSource narrates through table records, not a dedicated vocabulary", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const runtime = createRuntime({
 					$Id: "root",

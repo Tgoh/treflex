@@ -230,7 +230,8 @@ describe("what a name leaves", () => {
 				ActionId: expect.any(String),
 				Name: "Doc/Save",
 				Label: "save",
-				EntityId: "a"
+				EntityId: "a",
+				State: "holding"
 			}
 		]);
 		h.releases.get("held")!();

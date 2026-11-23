@@ -1,7 +1,8 @@
+import solid from "@solidjs/vite-plugin";
 import react from "@vitejs/plugin-react";
 import type { PluginOption } from "vite";
 import { defaultClientConditions, defineConfig } from "vite";
-import solidPlugin from "vite-plugin-solid";
+import { buildId } from "../checkout/buildId";
 import { DEV_PORTS } from "../portal/src/shell/builds";
 
 const REACT_VIEWS = [
@@ -9,11 +10,11 @@ const REACT_VIEWS = [
 	/\/demos\/portal-swap\/(src|robust)\/react\/.*\.tsx$/
 ];
 
-export function jsxPlugins({ hot }: { hot: boolean }): PluginOption[] {
+export function jsxPlugins({ refresh }: { refresh: boolean }): PluginOption[] {
 	return [
 		// `exclude`, not an `include` of the Solid folders: treflex-solid's own .tsx source, served by the treflex-source condition, needs it too.
-		solidPlugin({
-			hot,
+		solid({
+			refresh,
 			exclude: REACT_VIEWS
 		}),
 		react({
@@ -24,9 +25,12 @@ export function jsxPlugins({ hot }: { hot: boolean }): PluginOption[] {
 
 export default defineConfig({
 	base: "./",
-	plugins: jsxPlugins({
-		hot: true
-	}),
+	plugins: [
+		...jsxPlugins({
+			refresh: true
+		}),
+		buildId()
+	],
 	resolve: {
 		conditions: [
 			"treflex-source",
@@ -39,6 +43,7 @@ export default defineConfig({
 			"treflex-solid",
 			"treflex-react",
 			"solid-js",
+			"@solidjs/web",
 			"react",
 			"react-dom"
 		]
@@ -50,12 +55,14 @@ export default defineConfig({
 			"treflex-react"
 		]
 	},
-	// The record stream panel shows each action's function name, which minification would mangle.
-	esbuild: {
-		keepNames: true
-	},
 	build: {
-		target: "esnext"
+		target: "esnext",
+		rolldownOptions: {
+			output: {
+				// The record stream panel shows each action's function name, which minification would mangle.
+				keepNames: true
+			}
+		}
 	},
 	server: {
 		port: DEV_PORTS.swap,

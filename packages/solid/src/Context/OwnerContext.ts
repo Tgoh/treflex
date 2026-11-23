@@ -1,3 +1,5 @@
-import { createContext } from "solid-js";
+import { createContext, useContext } from "solid-js";
 
-export const OwnerContext = createContext<() => string | undefined>();
+export const OwnerContext = createContext<(() => string | undefined) | null>(null);
+
+export const useOwner = (): (() => string | undefined) | undefined => useContext(OwnerContext) ?? undefined;

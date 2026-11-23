@@ -1,19 +1,7 @@
-import type { JSX } from "solid-js";
+import type { JSX } from "@solidjs/web";
 import type { IActionGenerator, IAskId, IEntity, IOpenGenerator, IResourceContext } from "treflex";
 import type { IRuntimeInternal } from "treflex/internal";
-import {
-	createEffect,
-	createRenderEffect,
-	createResource,
-	createRoot,
-	createSignal,
-	For,
-	Index,
-	on,
-	Show,
-	Suspense,
-	startTransition
-} from "solid-js";
+import { createEffect, createMemo, createSignal, For, flush, Loading, Show } from "solid-js";
 import { answer, ask, createRuntime, entity, latest, open, openResource, withoutIds } from "treflex";
 import { createSnapshot, restoreRuntime } from "treflex/snapshot";
 import { describe, expect, it } from "vitest";
@@ -21,6 +9,7 @@ import { createComponentFeature } from "../src/Context/createComponentFeature";
 import { createEntityFeature } from "../src/Context/createEntityFeature";
 import { TreflexProvider } from "../src/Context/TreflexContext";
 import { useComponentState } from "../src/Hooks/useComponentState";
+import { mount } from "./mount";
 import { inFlightOf, pendingAsksOf } from "./treeWrite";
 
 declare module "treflex" {
@@ -83,6 +72,26 @@ const seed = (): IRoot => ({
 });
 
 const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+// Read under <Loading on={gate()}>, a gate moved off 0 shows the fallback until resumed.
+function gated() {
+	const [gate, setGate] = createSignal(0);
+	let release = () => {};
+	const held = createMemo(() => {
+		const n = gate();
+		return n === 0
+			? n
+			: new Promise<number>((resolve) => {
+					release = () => resolve(n);
+				});
+	});
+	return {
+		gate,
+		setGate,
+		held,
+		resume: () => release()
+	};
+}
 
 function world(state: IRoot = seed()) {
 	const runtime = createRuntime<IRoot>(state, {
@@ -148,8 +157,6 @@ function* wait(name: string): Generator<any, any, any> {
 
 const RowFeature = createEntityFeature<IRow>("tests/spike/Row")({});
 
-// BlobImage's shape: state at first render, a load with async work, and an object URL
-// resource the component entity owns.
 interface IBlobImage extends IEntity {
 	BlobGuid: string;
 	Url: string | undefined;
@@ -180,11 +187,9 @@ function blobImageWorld(loader: typeof loadImage) {
 		() => {
 			ctx = BlobImageFeature.use();
 			firstRender.push(ctx.state.$Id, ctx.state.BlobGuid);
-			createEffect(
-				on(guid, (g) => {
-					ctx.loadImage(g).catch(() => {});
-				})
-			);
+			createEffect(guid, (g) => {
+				ctx.loadImage(g).catch(() => {});
+			});
 			return null;
 		},
 		() => ({
@@ -192,16 +197,16 @@ function blobImageWorld(loader: typeof loadImage) {
 			Url: undefined
 		})
 	);
-	const Row = RowFeature.provider(() => <Show when={shown()}>{<BlobImage />}</Show>);
-	const dispose = createRoot((disposer) => {
-		TreflexProvider({
-			value: w.runtime,
-			get children() {
-				return <Row state={w.runtime.state.Screen.Rows[0]!} />;
-			}
-		});
-		return disposer;
-	});
+	const Row = RowFeature.provider(() => (
+		<Show when={shown()}>
+			<BlobImage />
+		</Show>
+	));
+	const { dispose } = mount(() => (
+		<TreflexProvider value={w.runtime}>
+			<Row state={w.runtime.state.Screen.Rows[0]!} />
+		</TreflexProvider>
+	));
 	return {
 		...w,
 		firstRender,
@@ -311,15 +316,11 @@ describe("a BlobImage-shaped widget on ComponentState", () => {
 			})
 		);
 		const Row = RowFeature.provider(() => <Body />);
-		const dispose = createRoot((disposer) => {
-			TreflexProvider({
-				value: w.runtime,
-				get children() {
-					return <For each={w.runtime.state.Screen.Rows}>{(row) => <Row state={row} />}</For>;
-				}
-			});
-			return disposer;
-		});
+		const { dispose } = mount(() => (
+			<TreflexProvider value={w.runtime}>
+				<For each={w.runtime.state.Screen.Rows}>{(row) => <Row state={row} />}</For>
+			</TreflexProvider>
+		));
 		await settle();
 		expect(w.componentIds()).toHaveLength(2);
 		function* removeFirst(draft: IScreen): IActionGenerator {
@@ -337,7 +338,6 @@ describe("a BlobImage-shaped widget on ComponentState", () => {
 	});
 });
 
-// Case 1 of dialogs-are-components.md, Agency/EditCommission's shape.
 interface IEditing extends IEntity {
 	EditingId: string | null;
 }
@@ -483,15 +483,11 @@ function dialogWorld() {
 			</Show>
 		);
 	});
-	const dispose = createRoot((disposer) => {
-		TreflexProvider({
-			value: w.runtime,
-			get children() {
-				return <Screen state={w.runtime.state.Screen} />;
-			}
-		});
-		return disposer;
-	});
+	const { dispose } = mount(() => (
+		<TreflexProvider value={w.runtime}>
+			<Screen state={w.runtime.state.Screen} />
+		</TreflexProvider>
+	));
 	return {
 		...w,
 		screen: () => screen,
@@ -511,6 +507,7 @@ describe("a dialog as a component (dialogs-are-components.md, case 1)", () => {
 		const refreshing = w.screen().longRefresh();
 		expect(inFlightOf(w.runtime, longRefresh, w.screen().state)).toBe(true);
 		void w.editing().dispatch(setEditing, "row-1");
+		flush();
 		expect(w.dialog()?.state.Copy.Name).toBe("Alpha");
 		expect(w.pathOf(w.dialog()!.state.$Id)).toEqual([
 			"root",
@@ -531,6 +528,7 @@ describe("a dialog as a component (dialogs-are-components.md, case 1)", () => {
 	it("keeps the copy apart from the live row, keeps the mount and the input across a failed save, and saves on retry", async () => {
 		const w = dialogWorld();
 		void w.editing().dispatch(setEditing, "row-1");
+		flush();
 		const dialog = w.dialog()!;
 		await dialog.dispatch(typeName, "Gamma");
 		expect(w.runtime.state.Screen.Rows[0]!.Name).toBe("Alpha");
@@ -562,6 +560,7 @@ describe("a dialog as a component (dialogs-are-components.md, case 1)", () => {
 		const w = dialogWorld();
 		const refreshing = w.screen().longRefresh();
 		void w.editing().dispatch(setEditing, "row-1");
+		flush();
 		const dialog = w.dialog()!;
 		const saving = dialog.ok();
 		await settle();
@@ -583,6 +582,7 @@ describe("a dialog as a component (dialogs-are-components.md, case 1)", () => {
 	it("the dialog's own upload holds the dialog, so typing queues behind it unless the wait is open", async () => {
 		const w = dialogWorld();
 		void w.editing().dispatch(setEditing, "row-1");
+		flush();
 		const dialog = w.dialog()!;
 		const uploading = dialog.dispatch(stageUpload, "a.pdf");
 		const typing = dialog.dispatch(typeName, "During upload");
@@ -608,6 +608,7 @@ describe("a dialog as a component (dialogs-are-components.md, case 1)", () => {
 	it("unmount drops the copy, the error, a staged upload group and an upload in flight", async () => {
 		const w = dialogWorld();
 		void w.editing().dispatch(setEditing, "row-1");
+		flush();
 		const dialog = w.dialog()!;
 		await dialog.dispatch(showOutcome, "kept until unmount");
 		const uploading = dialog.dispatch(stageUploadOpen, "a.pdf");
@@ -652,15 +653,11 @@ describe("a grid's query in component state (question 7)", () => {
 				})
 			);
 			const Screen = createEntityFeature<IScreen>()({}).provider(() => <Body />);
-			const dispose = createRoot((disposer) => {
-				TreflexProvider({
-					value: runtime,
-					get children() {
-						return <Screen state={runtime.state.Screen} />;
-					}
-				});
-				return disposer;
-			});
+			const { dispose } = mount(() => (
+				<TreflexProvider value={runtime}>
+					<Screen state={runtime.state.Screen} />
+				</TreflexProvider>
+			));
 			return {
 				grid: () => grid,
 				dispose
@@ -720,15 +717,11 @@ describe("nested component entities", () => {
 				Items: []
 			})
 		);
-		const dispose = createRoot((disposer) => {
-			TreflexProvider({
-				value: w.runtime,
-				get children() {
-					return <Body />;
-				}
-			});
-			return disposer;
-		});
+		const { dispose } = mount(() => (
+			<TreflexProvider value={w.runtime}>
+				<Body />
+			</TreflexProvider>
+		));
 		await outer.init();
 		const nested = outer.state.Items[0]!;
 		expect(w.pathOf(nested.$Id)).toEqual([
@@ -774,16 +767,11 @@ describe("nested component entities", () => {
 		};
 		const Row = RowFeature.provider(() => <List />);
 		const row = w.runtime.state.Screen.Rows[0]!;
-		const dispose = createRoot((disposer) => {
-			const rendered = TreflexProvider({
-				value: w.runtime,
-				get children() {
-					return <Row state={row} />;
-				}
-			});
-			createRenderEffect(() => (typeof rendered === "function" ? (rendered as () => unknown)() : rendered));
-			return disposer;
-		});
+		const { dispose } = mount(() => (
+			<TreflexProvider value={w.runtime}>
+				<Row state={row} />
+			</TreflexProvider>
+		));
 		await list.dispatch(makeItem);
 		const itemId = list.state.Item!.$Id;
 		expect(w.internal.get("runtime/writeGateway").rootNameOf(itemId)).toBe("ComponentState");
@@ -825,23 +813,17 @@ describe("mounting and Solid's ownership", () => {
 			return null;
 		};
 		const Row = RowFeature.provider(() => <Widget />);
-		const dispose = createRoot((disposer) => {
-			TreflexProvider({
-				value: w.runtime,
-				get children() {
-					return (
-						<Row
-							state={{
-								$Id: "gone",
-								Name: "",
-								BlobGuid: ""
-							}}
-						/>
-					);
-				}
-			});
-			return disposer;
-		});
+		const { dispose } = mount(() => (
+			<TreflexProvider value={w.runtime}>
+				<Row
+					state={{
+						$Id: "gone",
+						Name: "",
+						BlobGuid: ""
+					}}
+				/>
+			</TreflexProvider>
+		));
 		expect(widget.state.Count).toBe(3);
 		expect(w.componentIds()).toEqual([]);
 		await expect(widget.dispatch(bump)).rejects.toThrow(/no entity/);
@@ -861,24 +843,18 @@ describe("mounting and Solid's ownership", () => {
 			);
 			return null;
 		};
-		const dispose = createRoot((disposer) => {
-			const rendered = TreflexProvider({
-				value: w.runtime,
-				get children() {
-					return (
-						<Show when={key() === 1} fallback={<Widget />}>
-							<Widget />
-						</Show>
-					);
-				}
-			});
-			createRenderEffect(() => (typeof rendered === "function" ? (rendered as () => unknown)() : rendered));
-			return disposer;
-		});
+		const { dispose } = mount(() => (
+			<TreflexProvider value={w.runtime}>
+				<Show when={key() === 1} fallback={<Widget />}>
+					<Widget />
+				</Show>
+			</TreflexProvider>
+		));
 		expect(w.componentIds()).toEqual([
 			ids[0]
 		]);
 		setKey(2);
+		flush();
 		expect(ids).toHaveLength(2);
 		expect(w.componentIds()).toEqual([
 			ids[1]
@@ -919,17 +895,9 @@ describe("a provider reused for another entity", () => {
 			return null;
 		};
 		const Row = RowFeature.provider((props: { index: number }) => <Widget index={props.index} />);
-		const dispose = createRoot((disposer) => {
-			const rendered = TreflexProvider({
-				value: w.runtime,
-				get children() {
-					return view(Row as unknown as IRowView);
-				}
-			});
-			createRenderEffect(() => (typeof rendered === "function" ? (rendered as () => unknown)() : rendered));
-			return disposer;
-		});
+		const { container, dispose } = mount(() => <TreflexProvider value={w.runtime}>{view(Row as unknown as IRowView)}</TreflexProvider>);
 		return {
+			container,
 			handles,
 			dispose
 		};
@@ -943,6 +911,7 @@ describe("a provider reused for another entity", () => {
 		await widget.dispatch(bump);
 		const id = widget.id;
 		setRow(w.runtime.state.Screen.Rows[1]!);
+		flush();
 		expect(widget.id).toBe(id);
 		expect(w.pathOf(id)).toEqual([
 			"root",
@@ -962,10 +931,12 @@ describe("a provider reused for another entity", () => {
 		w.runtime.dispose();
 	});
 
-	it("in an <Index>, keeps the first position working when the first row is removed", async () => {
+	it("in an unkeyed <For>, keeps the first position working when the first row is removed", async () => {
 		const w = world();
 		const { handles, dispose } = mountRows(w, (Row) => (
-			<Index each={w.runtime.state.Screen.Rows}>{(row, index) => <Row state={row()} index={index} />}</Index>
+			<For each={w.runtime.state.Screen.Rows} keyed={false}>
+				{(row, index) => <Row state={row()} index={index} />}
+			</For>
 		));
 		await w.runtime.dispatch(removeRow1, "screen");
 		const widget = handles[0]!;
@@ -985,31 +956,30 @@ describe("a provider reused for another entity", () => {
 		w.runtime.dispose();
 	});
 
-	it("stays under the shown row while a transition to another is pending, answers its ask, and moves at commit", async () => {
+	it("stays under the shown row while a hold on a switch to another is pending, answers its ask, and moves at the landing", async () => {
 		const w = world();
 		const [row, setRow] = createSignal<IRow>(w.runtime.state.Screen.Rows[0]!);
 		let finish = () => {};
-		const [detail] = createResource(
-			() => row().$Id,
-			(id) =>
-				id === "row-2"
-					? new Promise<string>((resolve) => {
-							finish = () => resolve(id);
-						})
-					: id
-		);
-		const Detail = () => (() => detail()) as unknown as JSX.Element;
-		const { handles, dispose } = mountRows(w, (Row) => (
-			<Suspense fallback="loading">
+		const detail = createMemo(() => {
+			const id = row().$Id;
+			return id === "row-2"
+				? new Promise<string>((resolve) => {
+						finish = () => resolve(id);
+					})
+				: id;
+		});
+		const { container, handles, dispose } = mountRows(w, (Row) => (
+			<Loading fallback="loading">
 				<Row state={row()} index={0} />
-				<Detail />
-			</Suspense>
+				{detail()}
+			</Loading>
 		));
 		const widget = handles[0]!;
 		const id = widget.id;
 		await widget.dispatch(bump);
-		const committed = startTransition(() => setRow(w.runtime.state.Screen.Rows[1]!));
+		setRow(w.runtime.state.Screen.Rows[1]!);
 		await settle();
+		expect(container.textContent).toBe("row-1");
 		expect(w.pathOf(id)).toEqual([
 			"root",
 			"screen",
@@ -1032,8 +1002,8 @@ describe("a provider reused for another entity", () => {
 		await widget.dispatch(answers as never, entry.Id as IAskId<string>);
 		await expect(asking).resolves.toBe("yes");
 		finish();
-		await committed;
 		await settle();
+		expect(container.textContent).toBe("row-2");
 		expect(widget.id).toBe(id);
 		expect(w.pathOf(id)).toEqual([
 			"root",
@@ -1056,6 +1026,7 @@ describe("a provider reused for another entity", () => {
 		await w.runtime.dispatch(addRow, "screen");
 		const added = w.runtime.state.Screen.Rows[2]!;
 		setShown(added);
+		flush();
 		expect(handles[0]).toBe(widget);
 		expect(w.pathOf(id)).toEqual([
 			"root",
@@ -1083,6 +1054,7 @@ describe("a provider reused for another entity", () => {
 			Name: "",
 			BlobGuid: ""
 		});
+		flush();
 		expect(widget.state.Count).toBe(0);
 		expect(w.componentIds()).toEqual([]);
 		await expect(widget.dispatch(bump)).rejects.toThrow(/no entity/);
@@ -1093,31 +1065,24 @@ describe("a provider reused for another entity", () => {
 	it("starts fresh when, while the boundary is hidden, the owner goes and the provider then switches", async () => {
 		const w = world();
 		const [row, setRow] = createSignal<IRow>(w.runtime.state.Screen.Rows[0]!);
-		const [gate, setGate] = createSignal(0);
-		let resume = () => {};
-		const [held] = createResource(gate, (n) =>
-			n === 0
-				? n
-				: new Promise<number>((resolve) => {
-						resume = () => resolve(n);
-					})
-		);
-		const Hold = () => (() => held()) as unknown as JSX.Element;
-		const { handles, dispose } = mountRows(w, (Row) => (
-			<Suspense fallback="loading">
+		const { gate, setGate, held, resume } = gated();
+		const { container, handles, dispose } = mountRows(w, (Row) => (
+			<Loading fallback="loading" on={gate()}>
 				<Row state={row()} index={0} />
-				<Hold />
-			</Suspense>
+				{held()}
+			</Loading>
 		));
 		const widget = handles[0]!;
 		const first = widget.id;
 		await widget.dispatch(bump);
 		setGate(1);
 		await settle();
+		expect(container.textContent).toBe("loading");
 		await w.runtime.dispatch(removeRow1, "screen");
 		setRow(w.runtime.state.Screen.Rows[0]!);
 		resume();
 		await settle();
+		expect(container.textContent).toBe("1");
 		expect(widget.id).not.toBe(first);
 		expect(widget.state.Count).toBe(0);
 		expect(w.pathOf(widget.id)).toEqual([
@@ -1195,15 +1160,11 @@ describe("a provider reused for another entity", () => {
 		);
 		const Row = RowFeature.provider(() => <PanelView />);
 		const first = w.runtime.state.Screen.Rows[0]!;
-		const dispose = createRoot((disposer) => {
-			TreflexProvider({
-				value: w.runtime,
-				get children() {
-					return <Row state={first} />;
-				}
-			});
-			return disposer;
-		});
+		const { dispose } = mount(() => (
+			<TreflexProvider value={w.runtime}>
+				<Row state={first} />
+			</TreflexProvider>
+		));
 		await w.runtime.dispatch(removeRow1, "screen");
 		await expect(panel.bump()).rejects.toThrow(/no entity/);
 		expect(diags).toContain("dispatch/unresolved-entity");
@@ -1256,32 +1217,16 @@ describe("a provider reused for another entity", () => {
 				return <BView />;
 			}, marker);
 			const [row, setRow] = createSignal<IRow>(w.runtime.state.Screen.Rows[0]!);
-			const [gate, setGate] = createSignal(0);
-			let resume = () => {};
-			const [held] = createResource(gate, (n) =>
-				n === 0
-					? n
-					: new Promise<number>((resolve) => {
-							resume = () => resolve(n);
-						})
-			);
-			const Hold = () => (() => held()) as unknown as JSX.Element;
+			const { gate, setGate, held, resume } = gated();
 			const Row = RowFeature.provider(() => <AView />);
-			const dispose = createRoot((disposer) => {
-				const rendered = TreflexProvider({
-					value: w.runtime,
-					get children() {
-						return (
-							<Suspense fallback="loading">
-								<Row state={row()} />
-								<Hold />
-							</Suspense>
-						);
-					}
-				});
-				createRenderEffect(() => (typeof rendered === "function" ? (rendered as () => unknown)() : rendered));
-				return disposer;
-			});
+			const { container, dispose } = mount(() => (
+				<TreflexProvider value={w.runtime}>
+					<Loading fallback="loading" on={gate()}>
+						<Row state={row()} />
+						{held()}
+					</Loading>
+				</TreflexProvider>
+			));
 			const ids = () => [
 				levels.A!.state.$Id,
 				levels.B!.state.$Id,
@@ -1305,8 +1250,10 @@ describe("a provider reused for another entity", () => {
 				hideAndReveal: async () => {
 					setGate(1);
 					await settle();
+					expect(container.textContent).toBe("loading");
 					resume();
 					await settle();
+					expect(container.textContent).toBe("1");
 				}
 			};
 		}
@@ -1327,7 +1274,7 @@ describe("a provider reused for another entity", () => {
 			w.runtime.dispose();
 		});
 
-		it("keep every level's state across a Suspense hide and reveal", async () => {
+		it("keep every level's state across a Loading hide and reveal", async () => {
 			const w = world();
 			const t = threeLevels(w);
 			await t.markAll();
@@ -1365,6 +1312,7 @@ describe("a provider reused for another entity", () => {
 			await t.markAll();
 			const ids = t.ids();
 			t.setRow(w.runtime.state.Screen.Rows[1]!);
+			flush();
 			expect(t.ids()).toEqual(ids);
 			for (const id of ids) {
 				expect(w.pathOf(id)).toEqual([

@@ -3,6 +3,7 @@ import type { IMonitor } from "../portal/monitor";
 import type { IPortal } from "../portal/Portal";
 import type { IAutosave, ISessionStore, ITabDocument, ITabWindow } from "../portal/session";
 import type { IPortalHost } from "./host";
+import { BUILD } from "virtual:build-id";
 import { wallClock } from "../portal/clock";
 import { createMonitor } from "../portal/monitor";
 import { boot, createAutosave, RECEIVER_IDS, watchTabs } from "../portal/session";
@@ -37,7 +38,8 @@ export function startPortal({ store, document, window, reload, render, fail }: I
 		options: {
 			onError: (error) => console.error("[portal] action failed:", error),
 			requireNames: true,
-			build: import.meta.env.VITE_BUILD_ID
+			build: BUILD,
+			resume: true
 		},
 		attach: (runtime) => {
 			autosave = createAutosave(runtime, store, {

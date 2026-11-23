@@ -1,20 +1,19 @@
+import solid from "@solidjs/vite-plugin";
+import { defaultClientConditions } from "vite";
 import { defineConfig } from "vitest/config";
-import solidPlugin from "vite-plugin-solid";
 
-// The env, environment and solid-js conditions match packages/core/vitest.config.ts.
+// The env matches packages/core/vitest.config.ts.
 export default defineConfig({
-	// Solid's JSX transform. Without it the classic React factory is used and
-	// `props` is a plain object, so a binding that captures `props.state` once
-	// passes every test that does not re-read it.
 	plugins: [
-		solidPlugin()
+		solid()
 	],
 	test: {
 		name: "treflex-solid",
 		env: {
 			TREFLEX_VERIFY_INDEX: "always"
 		},
-		environment: "node",
+		// Not "node": the Solid plugin serves solid-js's server build there, which runs no effects.
+		environment: "jsdom",
 		// Not "treflex/vitest": Vitest resolves a setup file by Node's conditions, to the dist the workspace doesn't build.
 		setupFiles: [
 			"../core/src/Testing/vitest.ts"
@@ -27,17 +26,7 @@ export default defineConfig({
 	resolve: {
 		conditions: [
 			"treflex-source",
-			"solid",
-			"browser"
+			...defaultClientConditions
 		]
-	},
-	ssr: {
-		resolve: {
-			conditions: [
-				"treflex-source",
-				"solid",
-				"browser"
-			]
-		}
 	}
 });

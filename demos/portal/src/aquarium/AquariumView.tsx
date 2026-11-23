@@ -1,6 +1,6 @@
 import type { IRestoreProps } from "../shell/RestoreBanner";
 import type { IFish } from "./Fish";
-import { batch, createSignal, For, onMount, Show, untrack } from "solid-js";
+import { createSignal, For, onSettled, Show, untrack } from "solid-js";
 import { wallClock } from "../portal/clock";
 import { RestoreBanner } from "../shell/RestoreBanner";
 import { Aquarium } from "./contexts";
@@ -81,9 +81,7 @@ function afterStylePass(slot: HTMLElement, run: () => void): void {
 	queueMicrotask(() => {
 		const queued = pickUps.splice(0);
 		for (const each of queued) void getComputedStyle(each.slot).transform;
-		batch(() => {
-			for (const each of queued) each.run();
-		});
+		for (const each of queued) each.run();
 	});
 }
 
@@ -97,7 +95,7 @@ function Swimmer(props: { fish: IFish; title: string; arriving: boolean; onRelea
 	const [holding, setHolding] = createSignal(swim !== null);
 	const [delay, setDelay] = createSignal(0);
 	let slot!: HTMLDivElement;
-	onMount(() => {
+	onSettled(() => {
 		if (!swim) return;
 		afterStylePass(slot, () => {
 			setDelay(swim.Elapsed);
@@ -108,11 +106,13 @@ function Swimmer(props: { fish: IFish; title: string; arriving: boolean; onRelea
 	return (
 		<div
 			ref={slot}
-			class="fish-slot"
-			classList={{
-				arriving,
-				holding: holding()
-			}}
+			class={[
+				"fish-slot",
+				{
+					arriving,
+					holding: holding()
+				}
+			]}
 			style={{
 				"--fish-x": `${holding() && swim ? swim.FromX : props.fish.X}`,
 				"--fish-y": `${holding() && swim ? swim.FromY : props.fish.Y}`,
@@ -132,7 +132,7 @@ export const AquariumView = Aquarium.provider<{
 	const aquarium = Aquarium.use();
 	const facts = () => aquarium.tankFacts();
 	let mounted = false;
-	onMount(() => {
+	onSettled(() => {
 		mounted = true;
 	});
 

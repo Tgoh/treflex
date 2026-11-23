@@ -3,7 +3,7 @@ import type { IRecordChange } from "../Types/IRecord";
 import type { IExternalRead } from "./createExternalTable";
 import type { ISliceHooks } from "./createWriteGateway";
 import type { IFiberContext } from "./processAction";
-import { host } from "../Solid/host";
+import { host } from "../Reactive/host";
 import { serializeThrow } from "../Utility/serializeThrow";
 import { externalAnswer } from "./createExternalTable";
 import { copyEffectInput } from "./crossing";
@@ -111,6 +111,9 @@ function stepGenerator<T>(
 	const run = (): IteratorResult<unknown, unknown> => {
 		const prevJournalChanges = recording.currentJournalChanges;
 		recording.currentJournalChanges = journalPending;
+		if (journalPending) {
+			recording.landing = ctx.env.journal.asking;
+		}
 		try {
 			return host.batch(() => {
 				const step = runningStep.enter(recording, false, ctx.step);
@@ -126,6 +129,18 @@ function stepGenerator<T>(
 	};
 	const gateway = ctx.env.gateway;
 	return gateway ? gateway.actionFrame(run, ctx.fiber, hooks) : run();
+}
+
+// The frame's own batch is nested in this one, so its flush, and the reactive effects the step's
+// writes trigger, wait until the record has landed.
+function recordedBeforeFlush<R>(frame: () => R, record: () => void): R {
+	return host.batch(() => {
+		try {
+			return frame();
+		} finally {
+			record();
+		}
+	});
 }
 
 function sliceEnd(ended: IteratorResult<unknown, unknown> | undefined): string {
@@ -374,6 +389,9 @@ export function createFiberMachine<T>(
 			const diag = ctx.env.emitDiag;
 			const prevJournalChanges = recording.currentJournalChanges;
 			recording.currentJournalChanges = closeChanges;
+			if (closeChanges) {
+				recording.landing = ctx.env.journal.asking;
+			}
 			const step = runningStep.enter(recording, true, ctx.closeStep);
 			try {
 				let r = generator?.return(undefined);
@@ -419,19 +437,28 @@ export function createFiberMachine<T>(
 		};
 		const gateway = ctx.env.gateway;
 		try {
-			if (gateway) {
-				gateway.actionFrame(run, ctx.fiber, {
-					endedAt: () => "its close",
-					rolledBack: (error) => {
-						refusal = error;
-					},
-					release: (settle) => {
-						release = settle;
+			recordedBeforeFlush(
+				() => {
+					if (gateway) {
+						gateway.actionFrame(run, ctx.fiber, {
+							endedAt: () => "its close",
+							rolledBack: (error) => {
+								refusal = error;
+							},
+							release: (settle) => {
+								release = settle;
+							}
+						});
+					} else {
+						run();
 					}
-				});
-			} else {
-				run();
-			}
+				},
+				() => {
+					if (!refusal) {
+						journalStep(ctx, closeChanges, true);
+					}
+				}
+			);
 		} catch (error) {
 			if (error !== refusal) {
 				throw error;
@@ -440,11 +467,6 @@ export function createFiberMachine<T>(
 				reportCloseThrow(error, stopped);
 			}
 		} finally {
-			// After the frame, so the records land on a tree the index has
-			// reconciled.
-			if (!refusal) {
-				journalStep(ctx, closeChanges, true);
-			}
 			(release as (() => void) | null)?.();
 		}
 	}
@@ -486,18 +508,21 @@ export function createFiberMachine<T>(
 			};
 			try {
 				try {
-					r = stepGenerator(ctx, stepJournal, slice, {
-						endedAt: () => sliceEnd(ended),
-						rolledBack: (error) => {
-							refusal = error;
-						},
-						release: (settle) => {
-							release = settle;
-						}
-					});
+					r = recordedBeforeFlush(
+						() =>
+							stepGenerator(ctx, stepJournal, slice, {
+								endedAt: () => sliceEnd(ended),
+								rolledBack: (error) => {
+									refusal = error;
+								},
+								release: (settle) => {
+									release = settle;
+								}
+							}),
+						// A refused slice's answers were still read, so they stay on a record of their own.
+						() => journalStep(ctx, refusal ? (answers && stepJournal ? [] : null) : stepJournal, undefined, answers)
+					);
 				} finally {
-					// A refused slice's answers were still read, so they stay on a record of their own.
-					journalStep(ctx, refusal ? (answers && stepJournal ? [] : null) : stepJournal, undefined, answers);
 					(release as (() => void) | null)?.();
 				}
 			} catch (error) {
@@ -544,6 +569,14 @@ export function createFiberMachine<T>(
 	} {
 		position = "errored";
 		ctx.env.refusalOut(error);
+		// A replayed prefix that throws has diverged, and its generator is discarded unclosed.
+		if (ctx.env.prefix !== null) {
+			ctx.env.prefix.diverge("the action threw where the history holds it in flight");
+			return {
+				kind: "errored",
+				error
+			};
+		}
 		// A flush can throw with the generator suspended, and its finally blocks still have to run.
 		try {
 			closeGenerator(false);

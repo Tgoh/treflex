@@ -1,7 +1,6 @@
 import type { IActionGenerator, IOpenGenerator } from "../../src/Types/IAction";
 import type { IReceiver } from "../../src/Types/IReceiver";
 import type { IRecord } from "../../src/Types/IRecord";
-import { createRoot } from "solid-js";
 import { describe, expect, it } from "vitest";
 import { publish } from "../../src/Effects/publish";
 import { publishToNearest } from "../../src/Effects/publishToNearest";
@@ -11,6 +10,7 @@ import { open } from "../../src/Runtime/open";
 import { receiver } from "../../src/Runtime/receiver";
 import { sliceSetState } from "../../src/Runtime/sliceSetState";
 import { settled } from "../../src/Testing/createTestRuntime";
+import * as reactive from "../reactive";
 import { rootSetState } from "../testHelpers";
 
 const publishAny = publish as unknown as (topic: string) => Generator<any, void, any>;
@@ -25,7 +25,7 @@ async function withRuntime<T extends object>(
 	initial: T,
 	body: (runtime: ReturnType<typeof createRuntime<T>>) => Promise<void>
 ): Promise<void> {
-	await createRoot(async (dispose) => {
+	await reactive.root(async (dispose) => {
 		try {
 			await body(createRuntime(initial));
 		} finally {
@@ -242,7 +242,7 @@ describe("Action/Error escalation", () => {
 
 	async function runEscalation(thrown: unknown): Promise<S> {
 		let result!: S;
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const runtime = createRuntime<S>(initial(), {
 					onError: () => {}
@@ -363,7 +363,7 @@ describe("a binding whose receiver was never registered", () => {
 	});
 
 	it("does not report it as a receiver, names it as unresolved, and diags once, when the binding lands", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const runtime = createRuntime<SubState>(seedState(), {});
 				const records: any[] = [];
@@ -423,7 +423,7 @@ describe("a binding whose receiver was never registered", () => {
 	});
 
 	it("omits UnresolvedIds entirely when every receiver resolves", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const runtime = createRuntime<SubState>(seedState(), {});
 				runtime.registerReceiver(Unregistered);
@@ -457,7 +457,7 @@ describe("a binding whose receiver was never registered", () => {
 	});
 
 	it("keeps the binding, so a later registration heals it", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const runtime = createRuntime<SubState>(seedState());
 
@@ -503,7 +503,7 @@ describe("a binding whose receiver was never registered", () => {
 				};
 			};
 		};
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const runtime = createRuntime<ScopedState>(
 					{

@@ -1,4 +1,5 @@
 import { DEV } from "../Utility/devMode";
+import { errorClass } from "../Utility/errorClasses";
 import { runningStep } from "./runningStep";
 
 // Symbol.for, so a refusal from a second evaluation of this module (a Vite duplicate load) still answers.
@@ -30,6 +31,9 @@ export class OutsideActionError extends TreflexRefusal {
 		this.name = "OutsideActionError";
 	}
 }
+
+errorClass("treflex/TreflexRefusal", TreflexRefusal);
+errorClass("treflex/OutsideActionError", OutsideActionError);
 
 export function isRefusal(error: unknown): error is TreflexRefusal {
 	if (error === null || typeof error !== "object") {

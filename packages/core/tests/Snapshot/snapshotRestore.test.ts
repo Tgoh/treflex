@@ -1,6 +1,5 @@
 import type { IRuntime } from "../../src/Runtime/createRuntime";
 import type { IAction, IActionGenerator } from "../../src/Types/IAction";
-import { createRoot } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { publish } from "../../src/Effects/publish";
 import { registerDataSource } from "../../src/Effects/registerDataSource";
@@ -11,6 +10,7 @@ import { sliceSetState } from "../../src/Runtime/sliceSetState";
 import { createSnapshot } from "../../src/Snapshot/createSnapshot";
 import { SNAPSHOT_FORMAT_VERSION } from "../../src/Snapshot/ISnapshot";
 import { restoreRuntime } from "../../src/Snapshot/index";
+import * as reactive from "../reactive";
 import { minted, rawReceiver, rootSetState } from "../testHelpers";
 
 type IChild = {
@@ -81,7 +81,7 @@ afterEach(() => {
 
 describe("snapshot/restore (restart-only)", () => {
 	it("round-trips state, bindings, and data sources into a fresh runtime", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const a = createRuntime<IRootState>(initialState(), {});
 
@@ -144,10 +144,6 @@ describe("snapshot/restore (restart-only)", () => {
 				await dispatch(b, resolveSource);
 				expect(b.state.Resolved).toBe("Root");
 
-				// Minted ids are session-local trace identity: no restored
-				// row is keyed by one, so B numbers its own branches from the
-				// start instead of continuing A's — and its ids stay unique
-				// because a counter that is never rewound cannot repeat one.
 				expect(bActionIds[0]).toBe("branch-1");
 				expect(new Set(bActionIds).size).toBe(bActionIds.length);
 			} finally {
@@ -157,7 +153,7 @@ describe("snapshot/restore (restart-only)", () => {
 	});
 
 	it("excludes live actions whose entity has already left the tree from the snapshot's lists", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const a = createRuntime<IRootState>(
 					{
@@ -203,7 +199,7 @@ describe("snapshot/restore (restart-only)", () => {
 	});
 
 	it("carries each live action's own name in the in-flight index, and the restore reports it", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const barrier = createBarrier();
 				const a = createRuntime<IRootState>(initialState(), {});
@@ -253,7 +249,7 @@ describe("snapshot/restore (restart-only)", () => {
 	});
 
 	it("labels a drop from a version 7 row's legacy Key when the row carries no Name", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const legacy = {
 					Version: 7,
@@ -300,7 +296,7 @@ describe("snapshot/restore (restart-only)", () => {
 	});
 
 	it("names the dropped in-flight actions in the result", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const barrier = createBarrier();
 				const a = createRuntime<IRootState>(initialState(), {});
@@ -329,7 +325,9 @@ describe("snapshot/restore (restart-only)", () => {
 						actionId: parsed.InFlight[0].ActionId,
 						name: null,
 						label: "hangs",
-						entityId: "Root"
+						entityId: "Root",
+						state: "holding",
+						reason: "resume-off"
 					}
 				]);
 
@@ -342,7 +340,7 @@ describe("snapshot/restore (restart-only)", () => {
 	});
 
 	it("loads an envelope written while request and reply existed, and reports nothing about its PendingRequests", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const written = {
 					Version: SNAPSHOT_FORMAT_VERSION,
@@ -363,6 +361,7 @@ describe("snapshot/restore (restart-only)", () => {
 					options: {}
 				});
 				expect(result).toStrictEqual({
+					resumed: [],
 					dropped: [],
 					unresolved: [],
 					sweptOrphanedRows: 0,

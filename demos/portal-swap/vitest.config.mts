@@ -1,4 +1,5 @@
 import { defineConfig } from "vitest/config";
+import { buildId } from "../checkout/buildId";
 import viteConfig, { jsxPlugins } from "./vite.config.mts";
 
 const conditions = [
@@ -8,9 +9,12 @@ const conditions = [
 ];
 
 export default defineConfig({
-	plugins: jsxPlugins({
-		hot: false
-	}),
+	plugins: [
+		...jsxPlugins({
+			refresh: false
+		}),
+		buildId()
+	],
 	resolve: {
 		...viteConfig.resolve,
 		conditions

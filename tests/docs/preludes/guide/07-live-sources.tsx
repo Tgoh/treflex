@@ -7,7 +7,7 @@ declare module "treflex" {
 }
 
 interface IFeedInfo {}
-const fetchFeed = defineEffect<IEffect & { Type: "Reader/FetchFeed"; Url: string }, IFeedInfo | null>("Reader/FetchFeed");
+declare function loadFeed(url: string): IActionGenerator<IFeedInfo | null>;
 
 interface IArticle extends IEntity {}
 interface IReader extends IEntity {
@@ -17,7 +17,7 @@ interface IReader extends IEntity {
 }
 declare function assignFeed(feed: IFeed, info: IFeedInfo): IActionGenerator;
 function* refresh(draft: IFeed): IActionGenerator {
-	const info = yield* fetchFeed({ Url: draft.Url });
+	const info = yield* loadFeed(draft.Url);
 	if (info === null) return;
 	yield* assignFeed(draft, info);
 }

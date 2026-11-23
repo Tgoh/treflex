@@ -1,5 +1,5 @@
 import type { IPrice, IVoucherView } from "./Planner";
-import { createEffect, createSignal, on, onCleanup, Show } from "solid-js";
+import { createEffect, createSignal, Show } from "solid-js";
 import { callsForFlourish, runTicker } from "./flourish";
 
 /**
@@ -15,14 +15,12 @@ export function createFlourish(
 ] {
 	const [playing, setPlaying] = createSignal(false);
 	createEffect(
-		on(
-			() => callsForFlourish(voucher()),
-			(calls) => {
-				if (!calls) return;
-				setPlaying(true);
-				markPlayed();
-			}
-		)
+		() => callsForFlourish(voucher()),
+		(calls) => {
+			if (!calls) return;
+			setPlaying(true);
+			markPlayed();
+		}
 	);
 	return [
 		playing,
@@ -37,24 +35,24 @@ export function createFlourish(
 export function Ticker(props: { price: IPrice; playing: boolean; delayMs: number }) {
 	const [text, setText] = createSignal<string | null>(null);
 	createEffect(
-		on(
-			() => props.playing,
-			(playing) => {
-				if (!playing) {
-					setText(null);
-					return;
-				}
-				onCleanup(runTicker(props.price, props.delayMs, setText));
+		() => props.playing,
+		(playing) => {
+			if (!playing) {
+				setText(null);
+				return;
 			}
-		)
+			return runTicker(props.price, props.delayMs, setText);
+		}
 	);
 	return (
 		<span class="now">
 			<span
-				class="real"
-				classList={{
-					ticking: text() !== null
-				}}
+				class={[
+					"real",
+					{
+						ticking: text() !== null
+					}
+				]}
 			>
 				{props.price.Now}
 			</span>

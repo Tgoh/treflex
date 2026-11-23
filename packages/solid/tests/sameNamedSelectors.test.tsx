@@ -1,10 +1,11 @@
 import type { Accessor } from "solid-js";
 import type { IActionGenerator, IEntity, ISelectorGenerator } from "treflex";
-import { createMemo, createRoot } from "solid-js";
+import { createMemo } from "solid-js";
 import { createRuntime } from "treflex";
 import { describe, expect, it } from "vitest";
 import { createEntityFeature } from "../src/Context/createEntityFeature";
 import { TreflexProvider } from "../src/Context/TreflexContext";
+import { mount } from "./mount";
 
 interface IDoc extends IEntity {
 	N: number;
@@ -44,14 +45,11 @@ function mountReader(
 		return null;
 	};
 	const Wrapped = feature.provider(Inner);
-	const dispose = createRoot((disposer) => {
-		void (
-			<TreflexProvider value={host as any}>
-				<Wrapped state={runtime.state} />
-			</TreflexProvider>
-		);
-		return disposer;
-	});
+	const { dispose } = mount(() => (
+		<TreflexProvider value={host as any}>
+			<Wrapped state={runtime.state} />
+		</TreflexProvider>
+	));
 	return {
 		label: () => label(),
 		bump: () => dispatchBump(),

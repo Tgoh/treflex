@@ -2,7 +2,6 @@ import type { IRuntimeInternal } from "../../src/Runtime/internals";
 import type { IAction, IActionGenerator } from "../../src/Types/IAction";
 import type { IEntity, IEntityId } from "../../src/Types/IEntity";
 import type { IRecord } from "../../src/Types/IRecord";
-import { createEffect, createRoot } from "solid-js";
 import { describe, expect, it, vi } from "vitest";
 import { ask } from "../../src/Effects/ask";
 import { defineEffect } from "../../src/Effects/defineEffect";
@@ -23,6 +22,7 @@ import { ReconcileRowsKeyError, ReconcileRowsWaitError, reconcileRows } from "..
 import { transient } from "../../src/Runtime/transient";
 import { rawOf } from "../../src/Runtime/viewProxy";
 import { createTestRuntime, guids, type ITestRuntimeOptions } from "../../src/Testing/createTestRuntime";
+import * as reactive from "../reactive";
 import { captureSurfaced, mountComponent } from "../testHelpers";
 
 declare module "../../src/Registries/IMessageRegistry" {
@@ -382,8 +382,8 @@ export function reconcileRowsRules(build_: string): void {
 		it("ends the step, so a write ahead of it reaches a view before the next one", async () => {
 			const h = build();
 			const seen: string[] = [];
-			const dispose = createRoot((disposer) => {
-				createEffect(() => {
+			const dispose = reactive.root((disposer) => {
+				reactive.effect(() => {
 					seen.push(h.runtime.state.Title);
 				});
 				return disposer;
@@ -882,8 +882,8 @@ export function reconcileRowsRules(build_: string): void {
 		it("shows a view the state before and the state after, with new rows at every depth and the writes around it", async () => {
 			const h = await loaded();
 			const seen: unknown[] = [];
-			const dispose = createRoot((disposer) => {
-				createEffect(() => {
+			const dispose = reactive.root((disposer) => {
+				reactive.effect(() => {
 					seen.push([
 						h.runtime.state.Title,
 						...h.runtime.state.Rows.map((r) => `${r.Id}(${r.Subs.map((s) => s.Id).join()})`)
@@ -1822,7 +1822,7 @@ export function reconcileRowsRules(build_: string): void {
 			await expect(h.run(refresh)).rejects.toBeInstanceOf(NonPlainDataError);
 		});
 
-		it("refuses a target that isn't a draft array, and incoming that isn't an array", async () => {
+		it("refuses a target that isn't a draft array or record, an entity as the record, and incoming that isn't an array", async () => {
 			function* reconcilesAnArgument(_draft: IDoc, rows: IRow[]): IActionGenerator {
 				yield* reconcileRows(rows, [] as IRowFields[], (row) => row.Id, {
 					update: () => {}
@@ -1851,10 +1851,10 @@ export function reconcileRowsRules(build_: string): void {
 					reconcilesNull
 				]
 			});
-			await expect(h.runtime.dispatch(reconcilesAnArgument, "doc", [])).rejects.toThrow(/an array on the draft/);
-			await expect(h.run(reconcilesTheView)).rejects.toThrow(/an array on the draft/);
-			await expect(h.run(reconcilesTheDraft)).rejects.toThrow(/an array on the draft/);
-			await expect(h.run(reconcilesNull)).rejects.toThrow(/incoming rows have to be an array/);
+			await expect(h.runtime.dispatch(reconcilesAnArgument, "doc", [])).rejects.toThrow(/an array or a record on the draft/);
+			await expect(h.run(reconcilesTheView)).rejects.toThrow(/an array or a record on the draft/);
+			await expect(h.run(reconcilesTheDraft)).rejects.toThrow(/the record is an entity/);
+			await expect(h.run(reconcilesNull)).rejects.toThrow(/incoming rows for a list have to be an array/);
 		});
 
 		it("refuses a call with no update, before minting or moving", async () => {

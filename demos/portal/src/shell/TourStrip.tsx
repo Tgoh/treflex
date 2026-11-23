@@ -23,11 +23,13 @@ export const TourStrip = Tour.provider(() => {
 									<span class="tline" />
 								</Show>
 								<span
-									class="ts"
-									classList={{
-										done: tour.state[s.Mark],
-										now: step() === i() + 1
-									}}
+									class={[
+										"ts",
+										{
+											done: tour.state[s.Mark],
+											now: step() === i() + 1
+										}
+									]}
 								>
 									<i>{tour.state[s.Mark] ? "✓" : i() + 1}</i>
 									<span class="ts-label">{s.Label}</span>

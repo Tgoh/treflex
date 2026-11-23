@@ -1,6 +1,6 @@
 {
 	"name": "treflex-solid",
-	"version": "0.2.0",
+	"version": "0.3.0",
 	"description": "Solid bindings for treflex",
 	"license": "MIT",
 	"author": "Tam Goh",
@@ -10,7 +10,12 @@
 		"directory": "packages/solid"
 	},
 	"type": "module",
-	"sideEffects": false,
+	"sideEffects": [
+		"./src/index.ts",
+		"./dist/index.js",
+		"./src/Context/TreflexContext.tsx",
+		"./dist/Context/TreflexContext.js"
+	],
 	"scripts": {
 		"build": "node ../../scripts/build.mjs",
 		"prepack": "node ../../scripts/build.mjs --pack",
@@ -35,7 +40,11 @@
 		}
 	},
 	"peerDependencies": {
-		"solid-js": "^1.9.7",
-		"treflex": "0.2.0"
+		"@solidjs/web": "^2.0.3",
+		"solid-js": "^2.0.3",
+		"treflex": "0.3.0"
+	},
+	"devDependencies": {
+		"jsdom": "29.1.1"
 	}
 }

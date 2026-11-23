@@ -1,10 +1,10 @@
 import type { IRuntimeInternal } from "../../src/Runtime/internals";
 import type { IActionGenerator } from "../../src/Types/IAction";
 import type { IEntity } from "../../src/Types/IEntity";
-import { createEffect, createRoot } from "solid-js";
 import { describe, expect, it } from "vitest";
 import { createRuntime } from "../../src/Runtime/createRuntime";
 import { rawOf } from "../../src/Runtime/viewProxy";
+import * as reactive from "../reactive";
 import { minted, mountComponent, rawWrite, treeWrite } from "../testHelpers";
 
 // Every test that claims re-navigation moves the entity to a DIFFERENT key
@@ -53,7 +53,7 @@ type IWorld = IRuntimeInternal<IParent>;
 
 function world<R>(fn: (runtime: IWorld) => Promise<R>): Promise<R> {
 	return new Promise<R>((resolve, reject) => {
-		createRoot(async (dispose) => {
+		reactive.root(async (dispose) => {
 			const runtime = createRuntime<IParent>(seed()) as IWorld;
 			try {
 				resolve(await fn(runtime));
@@ -188,7 +188,7 @@ describe("runtime.resolveCell", () => {
 	it("does not subscribe the calling computation to the cell", async () => {
 		await world(async (runtime) => {
 			let runs = 0;
-			createEffect(() => {
+			reactive.effect(() => {
 				runs++;
 				runtime.resolveCell("c1");
 			});

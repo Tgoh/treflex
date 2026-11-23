@@ -8,7 +8,7 @@ import { now } from "../backend/backend";
 import { fakeRandom } from "../backend/fakeBackend";
 import { getDefaultState, ROOT_ID } from "../portal/Portal";
 import { restoreBanner } from "../portal/restoreBanner";
-import { announceDropped, registerReceivers } from "../portal/session";
+import { registerReceivers, repairRestore } from "../portal/session";
 import { tourHint } from "../portal/tourHints";
 import { currentStep } from "../tour/Tour";
 import {
@@ -59,7 +59,7 @@ async function reload(before: IRuntime<IPortal>): Promise<IRuntime<IPortal>> {
 			generateGuid: guids("qr")
 		},
 		setup,
-		repair: announceDropped
+		repair: repairRestore
 	});
 	runtimes.push(runtime);
 	await settled();

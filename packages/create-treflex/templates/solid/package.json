@@ -13,19 +13,20 @@
 		"check": "tsc --noEmit && biome check && eslint . && vitest run"
 	},
 	"dependencies": {
-		"solid-js": "^1.9.7",
+		"@solidjs/web": "^2.0.3",
+		"solid-js": "^2.0.3",
 		"treflex": "*",
 		"treflex-solid": "*"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.4.12",
+		"@solidjs/vite-plugin": "^3.0.1",
 		"eslint": "^10.9.1",
 		"jsdom": "^29.1.1",
 		"treflex-eslint": "*",
 		"typescript": "~6.0.2",
 		"typescript-eslint": "^8.69.0",
-		"vite": "^6.3.5",
-		"vite-plugin-solid": "^2.11.7",
+		"vite": "^8.3.8",
 		"vitest": "^4.1.4"
 	}
 }

@@ -1,8 +1,8 @@
 import type { IAction, IEntity, IWithId } from "treflex";
 import type { IRuntimeInternal } from "treflex/internal";
-import { createRenderEffect, createSignal, on, onCleanup, untrack, useContext } from "solid-js";
+import { createRenderEffect, createSignal, onCleanup, untrack } from "solid-js";
 import { view } from "treflex/internal";
-import { OwnerContext } from "../Context/OwnerContext";
+import { useOwner } from "../Context/OwnerContext";
 import { useTreflexContext } from "../Context/TreflexContext";
 
 export interface IUseComponentState<T extends object> {
@@ -19,38 +19,35 @@ export function mountComponentState<T extends object>(factory: () => object, whe
 			`[treflex] ${where}: no TreflexProvider with a runtime above this component, so there is no ComponentState to mount in.`
 		);
 	}
-	const owner = useContext(OwnerContext);
+	const owner = useOwner();
 	const seed = () => runtime.seedComponent(untrack(factory), where);
 	let ownerId = owner ? untrack(owner) : undefined;
 	let mounted = true;
-	const [mount, setMount] = createSignal(seed());
-	runtime.seatComponent(ownerId, untrack(mount).raw);
+	// The signal lands only at Solid's flush, so dispatch, the reseat and the cleanup read `current`.
+	let current = seed();
+	const [mount, setMount] = createSignal(current);
+	runtime.seatComponent(ownerId, current.raw);
 	if (owner) {
-		// A render effect, not a computed: Solid holds it until a transition commits, so the
-		// entity doesn't move under an owner the transition hasn't shown.
+		// A render effect, not a watch: Solid holds its apply with the screen, so the entity doesn't move
+		// under an owner the screen doesn't show yet.
 		createRenderEffect(
-			on(
-				owner,
-				(next) => {
-					if (next === ownerId) {
-						return;
-					}
-					ownerId = next;
-					if (!runtime.reseatComponent(untrack(mount).id, next)) {
-						const fresh = seed();
-						runtime.seatComponent(next, fresh.raw);
-						setMount(fresh);
-					}
-				},
-				{
-					defer: true
+			() => owner(),
+			(next) => {
+				if (next === ownerId) {
+					return;
 				}
-			)
+				ownerId = next;
+				if (!runtime.reseatComponent(current.id, next)) {
+					current = seed();
+					runtime.seatComponent(next, current.raw);
+					setMount(current);
+				}
+			}
 		);
 	}
 	onCleanup(() => {
 		mounted = false;
-		runtime.unmountComponent(untrack(mount).id);
+		runtime.unmountComponent(current.id);
 	});
 	return {
 		get id() {
@@ -60,7 +57,7 @@ export function mountComponentState<T extends object>(factory: () => object, whe
 			return view(mount().raw) as T;
 		},
 		dispatch: (action, ...args) => {
-			const { id, raw } = untrack(mount);
+			const { id, raw } = current;
 			// A dispatch left over from the unmount starts, and the removal a microtask later stops it.
 			if (!mounted && runtime.seatComponent(ownerId, raw)) {
 				queueMicrotask(() => runtime.unmountComponent(id));

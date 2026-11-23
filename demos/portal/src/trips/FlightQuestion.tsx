@@ -1,6 +1,6 @@
 import type { IAskId } from "treflex";
 import type { IFlightOptions } from "./Trip";
-import { Index, Show } from "solid-js";
+import { For, Show } from "solid-js";
 import { money } from "../text";
 import { Trip } from "./contexts";
 import { DESTINATIONS } from "./destinations";
@@ -11,10 +11,12 @@ export function FlightQuestion(props: { options: IFlightOptions; highlight: bool
 
 	return (
 		<div
-			class="askcard"
-			classList={{
-				hot: props.highlight
-			}}
+			class={[
+				"askcard",
+				{
+					hot: props.highlight
+				}
+			]}
 		>
 			<div class="who">
 				<span class="dot blue" />
@@ -23,13 +25,15 @@ export function FlightQuestion(props: { options: IFlightOptions; highlight: bool
 			<h2 class="serif">{props.options.Heading}</h2>
 			<div class="sub">{props.options.Sub}</div>
 			<div class="opts">
-				<Index each={props.options.Options}>
+				<For each={props.options.Options} keyed={false}>
 					{(option) => (
 						<div
-							class="opt"
-							classList={{
-								pick: option().Cheaper
-							}}
+							class={[
+								"opt",
+								{
+									pick: option().Cheaper
+								}
+							]}
 						>
 							<div class="h">
 								<span>
@@ -60,10 +64,12 @@ export function FlightQuestion(props: { options: IFlightOptions; highlight: bool
 								</span>
 								<button
 									type="button"
-									class="btn"
-									classList={{
-										teal: option().Cheaper
-									}}
+									class={[
+										"btn",
+										{
+											teal: option().Cheaper
+										}
+									]}
 									onClick={() => void trip.pickFare(props.options.Entry.Id as IAskId<string>, option().Fare.Id)}
 								>
 									{option().Button}
@@ -71,7 +77,7 @@ export function FlightQuestion(props: { options: IFlightOptions; highlight: bool
 							</div>
 						</div>
 					)}
-				</Index>
+				</For>
 			</div>
 			<Show when={props.options.Meanwhile}>
 				<div class="meanwhile">

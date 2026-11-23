@@ -1,13 +1,13 @@
 import type { IRuntimeInternal } from "../../src/Runtime/internals";
 import type { IActionGenerator } from "../../src/Types/IAction";
 import type { IRecord } from "../../src/Types/IRecord";
-import { createEffect, createRoot } from "solid-js";
 import { describe, expect, it } from "vitest";
 import { publish } from "../../src/Effects/publish";
 import { publishToNearest } from "../../src/Effects/publishToNearest";
 import { bind } from "../../src/Runtime/bind";
 import { createRuntime } from "../../src/Runtime/createRuntime";
 import { receiver } from "../../src/Runtime/receiver";
+import * as reactive from "../reactive";
 import { createTestRuntime, minted, mountComponent, rawWrite } from "../testHelpers";
 
 const refreshRaw = (raw: IParent): void => {
@@ -49,7 +49,7 @@ function* rename(draft: IChild, name: string): IActionGenerator {
 
 describe("runtime.dispatch (createRuntime)", () => {
 	it("dispatches against the entity the id resolves to", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const runtime = createRuntime<IParent>(makeParent());
 				await runtime.dispatch(rename, "child-2", "renamed");
@@ -63,7 +63,7 @@ describe("runtime.dispatch (createRuntime)", () => {
 	});
 
 	it("rejects and diags dispatch/unresolved-entity for an id the index cannot serve", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const runtime = createRuntime<IParent>(makeParent());
 				const diags: any[] = [];
@@ -107,7 +107,7 @@ describe("runtime.dispatch (createRuntime)", () => {
 	});
 
 	it("dispatches to a ComponentState entity by its $Id, and refuses it once unmounted", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const runtime = createRuntime<IParent>(makeParent());
 				const internal = runtime as IRuntimeInternal<IParent>;
@@ -132,7 +132,7 @@ describe("runtime.dispatch (createRuntime)", () => {
 	});
 
 	it("a raw same-$Id replacement mid-park stops the parked action, which resolves undefined", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const runtime = createRuntime<IParent>(makeParent());
 				let release!: () => void;
@@ -166,13 +166,13 @@ describe("runtime.dispatch (createRuntime)", () => {
 	});
 
 	it("does not subscribe the calling computation to the entity's cell", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const runtime = createRuntime<IParent>(makeParent());
 				function* noop(_draft: IChild): IActionGenerator {}
 
 				let runs = 0;
-				createEffect(() => {
+				reactive.effect(() => {
 					runs++;
 					void runtime.dispatch(noop, "child-1").catch(() => {});
 				});

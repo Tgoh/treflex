@@ -1,13 +1,11 @@
 import type { IActionGenerator, IEntity, IResourceContext, IRuntimeEventOf } from "treflex";
 import type { IUseResource } from "../src/Hooks/useResource";
-import { createEffect, createRoot, createSignal } from "solid-js";
+import { createEffect, createRoot, createSignal, flush } from "solid-js";
 import { closeResource, createRuntime, openResource } from "treflex";
 import { describe, expect, it } from "vitest";
 import { TreflexProvider } from "../src/Context/TreflexContext";
 import { useResource } from "../src/Hooks/useResource";
-
-// useResource is a view's one door to a resource: a reactive value and
-// status, and supply. No DOM: the component returns null.
+import { mount } from "./mount";
 
 declare module "treflex" {
 	interface IResourceTypeRegistry {
@@ -59,8 +57,6 @@ function* openOwned(draft: IEntity): IActionGenerator {
 	});
 }
 
-// Two items, each able to hold a "View/Owned" resource that exposes and
-// answers with its owner's id, and every diag the runtime raises.
 function world() {
 	const runtime = createRuntime<IRoot>({
 		$Id: "root",
@@ -87,26 +83,25 @@ function world() {
 	};
 }
 
-// Mounts a view over `useResource(owner, "View/Owned")`, recording each
-// status and value it renders.
-function mount(runtime: ReturnType<typeof world>["runtime"], owner: Parameters<typeof useResource>[0]) {
+const record =
+	(seen: string[]) =>
+	(value: string): void => {
+		seen.push(value);
+	};
+
+function mountView(runtime: ReturnType<typeof world>["runtime"], owner: Parameters<typeof useResource>[0]) {
 	let bound!: IUseResource<"View/Owned">;
 	const seen: string[] = [];
-	const dispose = createRoot((disposer) => {
-		const View = (): null => {
-			bound = useResource(owner, "View/Owned");
-			createEffect(() => {
-				seen.push(`${bound.status().State}:${bound.value() ?? "-"}`);
-			});
-			return null;
-		};
-		void (
-			<TreflexProvider value={runtime}>
-				<View />
-			</TreflexProvider>
-		);
-		return disposer;
-	});
+	const View = (): null => {
+		bound = useResource(owner, "View/Owned");
+		createEffect(() => `${bound.status().State}:${bound.value() ?? "-"}`, record(seen));
+		return null;
+	};
+	const { dispose } = mount(() => (
+		<TreflexProvider value={runtime}>
+			<View />
+		</TreflexProvider>
+	));
 	return {
 		bound: () => bound,
 		seen,
@@ -127,21 +122,16 @@ describe("useResource", () => {
 		});
 		let bound!: IUseResource<"View/Preview">;
 		const seen: string[] = [];
-		const dispose = createRoot((disposer) => {
-			const View = (): null => {
-				bound = useResource(runtime.state, "View/Preview");
-				createEffect(() => {
-					seen.push(`${bound.status().State}:${bound.value() ?? "-"}`);
-				});
-				return null;
-			};
-			void (
-				<TreflexProvider value={runtime}>
-					<View />
-				</TreflexProvider>
-			);
-			return disposer;
-		});
+		const View = (): null => {
+			bound = useResource(runtime.state, "View/Preview");
+			createEffect(() => `${bound.status().State}:${bound.value() ?? "-"}`, record(seen));
+			return null;
+		};
+		const { dispose } = mount(() => (
+			<TreflexProvider value={runtime}>
+				<View />
+			</TreflexProvider>
+		));
 		await settle();
 		await runtime.dispatch(open, "root");
 		ctx.expose("blob:1");
@@ -166,7 +156,7 @@ describe("useResource", () => {
 		const owner = {
 			$Id: "a"
 		};
-		const view = mount(runtime, owner);
+		const view = mountView(runtime, owner);
 		owner.$Id = "b";
 		await runtime.dispatch(openOwned, "a");
 		await settle();
@@ -182,7 +172,7 @@ describe("useResource", () => {
 
 	it("takes an id string", async () => {
 		const { runtime } = world();
-		const view = mount(runtime, "b");
+		const view = mountView(runtime, "b");
 		await runtime.dispatch(openOwned, "b");
 		await settle();
 		expect(view.seen[0]).toBe("none:-");
@@ -201,7 +191,7 @@ describe("useResource", () => {
 		const { runtime, diags, a } = world();
 		await runtime.dispatch(openOwned, "a");
 		const [owner, setOwner] = createSignal<IEntity | undefined>();
-		const view = mount(runtime, owner);
+		const view = mountView(runtime, owner);
 		await settle();
 		expect(view.seen).toEqual([
 			"none:-"
@@ -215,6 +205,7 @@ describe("useResource", () => {
 			"no owner"
 		]);
 		setOwner(a);
+		flush();
 		expect(view.seen.at(-1)).toBe("live:blob:a");
 		view.dispose();
 		runtime.dispose();
@@ -224,17 +215,20 @@ describe("useResource", () => {
 		const { runtime, a, b } = world();
 		await runtime.dispatch(openOwned, "a");
 		const [owner, setOwner] = createSignal<IEntity | string | undefined>(a);
-		const view = mount(runtime, owner);
+		const view = mountView(runtime, owner);
 		await settle();
 		expect(view.seen.at(-1)).toBe("live:blob:a");
 		setOwner(b);
+		flush();
 		expect(view.seen.at(-1)).toBe("none:-");
 		await runtime.dispatch(openOwned, "b");
 		await settle();
 		expect(view.seen.at(-1)).toBe("live:blob:b");
 		setOwner(undefined);
+		flush();
 		expect(view.seen.at(-1)).toBe("none:-");
 		setOwner("a");
+		flush();
 		expect(view.seen.at(-1)).toBe("live:blob:a");
 		view.dispose();
 		runtime.dispose();
@@ -245,7 +239,7 @@ describe("useResource", () => {
 		await runtime.dispatch(openOwned, "a");
 		await runtime.dispatch(openOwned, "b");
 		const [owner, setOwner] = createSignal<IEntity>(a);
-		const view = mount(runtime, owner);
+		const view = mountView(runtime, owner);
 		await settle();
 		const first = view.bound().supply([
 			"x"
@@ -267,15 +261,18 @@ describe("useResource", () => {
 		await runtime.dispatch(openOwned, "a");
 		await runtime.dispatch(openOwned, "b");
 		const [owner, setOwner] = createSignal<IEntity>(a);
-		const view = mount(runtime, owner);
+		const view = mountView(runtime, owner);
 		let runs = 0;
 		const disposeEffect = createRoot((disposer) => {
-			createEffect(() => {
-				runs++;
-				void view.bound().supply([
-					"x"
-				]);
-			});
+			createEffect(
+				() => {
+					runs++;
+					void view.bound().supply([
+						"x"
+					]);
+				},
+				() => {}
+			);
 			return disposer;
 		});
 		await settle();
@@ -285,6 +282,13 @@ describe("useResource", () => {
 		disposeEffect();
 		view.dispose();
 		runtime.dispose();
+	});
+
+	it("needs a TreflexProvider", () => {
+		const { runtime } = world();
+		expect(() => createRoot(() => useResource(runtime.state.Items[0]!, "View/Owned"))).toThrow(
+			"[treflex] useResource called outside a TreflexProvider."
+		);
 	});
 
 	it("types the owner as an entity, an id, or an accessor of either or undefined", () => {

@@ -1,7 +1,7 @@
-import { $TRACK, For } from "solid-js";
-import { render } from "solid-js/web";
+import { render } from "@solidjs/web";
+import { $TRACK, For, untrack } from "solid-js";
 import { createRuntime, generateGuid, type IActionGenerator, type IEntity, type ISelectorGenerator } from "treflex";
-import { DEV, solidTrack } from "treflex/internal";
+import { DEV, registerOutsideGraph } from "treflex/internal";
 import { createEntityFeature, TreflexProvider } from "treflex-solid";
 import { expect, report, waitFor } from "../../shared/report.js";
 
@@ -67,5 +67,12 @@ report(async () => {
 	box.click();
 	await waitFor(() => remainingText() === "0 remaining", "the view's toggle to dispatch and re-render");
 
-	return { dev: DEV, oneSolid: solidTrack === $TRACK };
+	// The shared host answers true only to the graph that holds it, so this is true when treflex-solid's solid-js is the app's.
+	const oneSolid = registerOutsideGraph({
+		TRACK: $TRACK,
+		isReading: () => false,
+		createMirror: () => ({ track() {}, write() {} }),
+		untrack
+	});
+	return { dev: DEV, oneSolid };
 });

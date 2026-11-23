@@ -182,7 +182,7 @@ export function Root(props: { reader: IReader }) {
 // index.tsx
 import { createRuntime } from "treflex";
 import { TreflexProvider } from "treflex-solid";
-import { render } from "solid-js/web";
+import { render } from "@solidjs/web";
 import { Root } from "./Root";
 
 const runtime = createRuntime<IReader>(

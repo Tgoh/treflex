@@ -1,6 +1,7 @@
 import type { IEntity } from "../Types/IEntity";
 import type { IReadGenerator } from "../Types/ISelector";
 import type { IWriteGateway } from "./createWriteGateway";
+import { errorClass } from "../Utility/errorClasses";
 import { globalWeakMap } from "../Utility/globalWeakMap";
 import { cloneStrict, copyFrozen, type ICopyOptions, type IStrictClone } from "../Utility/valueCodec";
 import { refuseAnyId } from "./draftNode";
@@ -24,6 +25,8 @@ export class MoveBetweenRootsError extends TreflexRefusal {
 		this.to = to;
 	}
 }
+
+errorClass("treflex/MoveBetweenRootsError", MoveBetweenRootsError);
 
 export const TRANSIENT_YIELD = "transient";
 
@@ -101,8 +104,27 @@ export function slotOf<S extends object>(owner: IEntity, name: string, initial: 
 	if (held) {
 		return held;
 	}
+	const negativeZeros = {
+		count: 0
+	};
 	const made = new Set<object>();
-	const fallback = copied<S>((options) => copyFrozen(initial, options), name, made);
+	let fallback = copied<S>(
+		(options) =>
+			copyFrozen(initial, {
+				...options,
+				negativeZeros
+			}),
+		name,
+		made
+	);
+	if (negativeZeros.count > 0) {
+		// A frozen copy drops a -0's sign, and this stands in for the slot's state, which keeps it, so no crossing may share it.
+		made.clear();
+		fallback = copied<S>((options) => cloneStrict(initial, options), name, made);
+		for (const node of made) {
+			Object.freeze(node);
+		}
+	}
 	for (const node of made) {
 		unwrittenSlots.set(node, name);
 	}

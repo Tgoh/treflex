@@ -6,7 +6,7 @@ import { createSnapshot, restoreRuntime } from "treflex/snapshot";
 import { afterEach, expect, it, vi } from "vitest";
 import { registerFakeBackend } from "../backend/fakeBackend";
 import { getDefaultState, PortalReceiver, ROOT_ID, TOAST_MS, toast } from "./Portal";
-import { announceDropped, registerReceivers } from "./session";
+import { registerReceivers, repairRestore } from "./session";
 
 const runtimes: IRuntime<IPortal>[] = [];
 
@@ -91,7 +91,7 @@ it("keeps a toast raised soon after a restore up for its own full time", async (
 		rootId: ROOT_ID,
 		options: {},
 		setup,
-		repair: announceDropped
+		repair: repairRestore
 	});
 	runtimes.push(runtime);
 	await vi.advanceTimersByTimeAsync(TOAST_MS - 2000);

@@ -1,13 +1,13 @@
 import type { IRuntime } from "treflex";
-import type { ICheckProvider, IFare, IPick, IPostMessage, IProviderResult } from "./backend";
+import type { ICheckProvider, IFare, IPick, IPostAnswer, IPostMessage, IProviderResult } from "./backend";
 import { implementation } from "treflex";
 import { wallClock } from "../portal/clock";
 import { CARRIERS, DESTINATIONS } from "../trips/destinations";
-import { chatCue, chatHistory, chatTime, checkProvider, now, ProviderError, postMessage, random, SendError } from "./backend";
+import { chatCue, chatHistory, chatTime, checkProvider, now, ProviderError, postMessage, random } from "./backend";
 import { CUES, HISTORY, lineText } from "./chatScript";
 import { paced } from "./fast";
 
-export type IWait = (ms: number, signal: AbortSignal | undefined, effect: ICheckProvider) => Promise<void>;
+export type IWait = (ms: number, signal: AbortSignal | undefined, effect: ICheckProvider, attempt: number) => Promise<void>;
 
 function hash(text: string): number {
 	let h = 2166136261;
@@ -178,10 +178,10 @@ function activities(effect: ICheckProvider): IPick[] {
 	return out;
 }
 
-export function providerAnswer(effect: ICheckProvider): IProviderResult {
+export function providerAnswer(effect: ICheckProvider, attempt: number): IProviderResult {
 	const provider = providerName(effect);
 	const roll = seeded(`${effect.Destination}|${effect.Kind}|${effect.Index}|fail`)();
-	if (effect.Attempt === 0 && roll < 0.09) {
+	if (attempt === 0 && roll < 0.09) {
 		throw new ProviderError(provider, FAILURES[Math.floor(roll * 100) % FAILURES.length]);
 	}
 	return {
@@ -197,8 +197,8 @@ const LEG_MS: Record<ICheckProvider["Kind"], number> = {
 	activities: 29_000
 };
 
-export function providerDelay(effect: ICheckProvider): number {
-	const rand = seeded(`${effect.Destination}|${effect.Kind}|${effect.Index}|${effect.Attempt}|delay`);
+export function providerDelay(effect: ICheckProvider, attempt: number): number {
+	const rand = seeded(`${effect.Destination}|${effect.Kind}|${effect.Index}|${attempt}|delay`);
 	const each = LEG_MS[effect.Kind] / DESTINATIONS[effect.Destination].Providers[effect.Kind];
 	return Math.round(each * (0.85 + rand() * 0.3));
 }
@@ -226,8 +226,17 @@ export const realWait: IWait = (ms, signal) => sleep(paced(ms), signal);
 
 export function fakeBackend(wait: IWait = realWait) {
 	return implementation(checkProvider, async (effect, action) => {
-		await wait(providerDelay(effect), action?.signal, effect);
-		return providerAnswer(effect);
+		const signal = action?.signal;
+		for (let attempt = 0; ; attempt++) {
+			await wait(providerDelay(effect, attempt), signal, effect, attempt);
+			try {
+				return providerAnswer(effect, attempt);
+			} catch (error) {
+				if (!(error instanceof ProviderError)) throw error;
+				if (attempt >= effect.Retries) throw new Error(error.message);
+				signal?.throwIfAborted();
+			}
+		}
 	});
 }
 
@@ -302,14 +311,21 @@ export function fakeChat(wait: IChatWait = realChatWait) {
 					}
 				: null;
 		}),
-		implementation(postMessage, async (effect, action) => {
+		implementation(postMessage, async (effect, action): Promise<IPostAnswer> => {
 			const ms = 700 + Math.floor(seeded(`${effect.Conversation}|${effect.Number}|${effect.Attempt}|post`)() * 600);
 			await wait(ms, action?.signal, {
 				Kind: "post",
 				Conversation: effect.Conversation,
 				Index: effect.Number
 			});
-			if (sendFails(effect)) throw new SendError("the server didn't answer");
+			return sendFails(effect)
+				? {
+						Sent: false,
+						Message: "the server didn't answer"
+					}
+				: {
+						Sent: true
+					};
 		})
 	];
 }

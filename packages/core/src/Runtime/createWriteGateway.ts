@@ -3,10 +3,10 @@ import type { IDiagEmitter } from "../Types/IRuntimeEvent";
 import type { IJournal } from "./createJournal";
 import type { IFiber } from "./Fiber";
 import type { IRootSetState, ISetState } from "./sliceSetState";
-import { host } from "../Solid/host";
+import { host } from "../Reactive/host";
 import { callbackThrew } from "../Types/IRuntimeEvent";
 import { DEV } from "../Utility/devMode";
-import { DraftDetachedError, EntityReplacedError, isMintedId, receiverFault, refuseWrittenId } from "./draftNode";
+import { DraftDetachedError, EntityReplacedError, entityIdOf, isMintedId, receiverFault, refuseWrittenId } from "./draftNode";
 import { EMPTY_INDEX, NonPlainDataError } from "./nonPlainDataError";
 import { TreflexRefusal } from "./refusal";
 import { StateAliasError } from "./stateAlias";
@@ -43,6 +43,11 @@ export type INodePlace =
 	| {
 			kind: "no-entity";
 	  };
+
+export type INodeLanding = {
+	entityId: string;
+	path: string[];
+};
 
 declare module "../Registries/IRuntimeServiceRegistry" {
 	interface IRuntimeServiceRegistry {
@@ -84,9 +89,13 @@ export interface IWriteGateway extends ISlotHome {
 	// there never counts as plain data replacing an entity.
 	observe(target: object, key: string, seating?: boolean): void;
 	// After the write has landed, with what the slot held before it. `length` is the array's
-	// length before an element write, and -1 otherwise; `order` an object's keys before a delete.
-	logWrite(target: object, key: string, had: boolean, prev: unknown, length: number, order?: readonly string[]): void;
+	// length before an element write, and -1 otherwise.
+	logWrite(target: object, key: string, had: boolean, prev: unknown, length: number): void;
+	// Before a delete from a plain object, so an undo puts its keys back in their order.
+	keepOrder(target: object): void;
+	// Every mark taken is released, in a finally.
 	logMark(): number;
+	releaseMark(): void;
 	unwindTo(mark: number): void;
 	// Indexes in [from, to) that a write may have left empty, judged when the frame ends.
 	noteGap(target: readonly unknown[], from: number, to: number): void;
@@ -94,9 +103,17 @@ export interface IWriteGateway extends ISlotHome {
 	rollbacks(): number;
 	// The keys from `root` down to `node`, as of the last reconciliation; undefined when not below it.
 	pathFrom(root: object, node: object): PropertyKey[] | undefined;
+	landingOf(node: object): INodeLanding | undefined;
 	// Whether a frame is open whose end can hold work until the frame has passed its check.
 	frameOpen(): boolean;
 	afterFrame(run: () => void, drop: () => void): void;
+	/**
+	 * Opens a write scope, outside every frame and scope. Frames inside it end as frames do, and the undo
+	 * log is kept across their ends. A removed entity's disposal waits for the scope's end.
+	 */
+	openScope(): IWriteScope;
+	// An exempt frame inside an open scope whose removals leave nodes unborn: no node it takes out is marked detached.
+	rewindFrame<R>(fn: () => R): R;
 	frame<R>(fn: () => R): R;
 	// A generator slice's frame. `ending` is
 	// the executing fiber, held for the frame's duration: isDetached answers false
@@ -153,6 +170,14 @@ export interface IWriteGateway extends ISlotHome {
 	readonly slotHome: ISlotHome;
 }
 
+/** A write scope. Exactly one of its methods is called, once, outside every frame. */
+export interface IWriteScope {
+	/** Puts the tree back as it was when the scope opened, with the same nodes, and disposes nothing. */
+	unwind(): void;
+	/** Keeps what its frames did, and disposes each entity they removed whose `$Id` is out of the tree. */
+	end(): void;
+}
+
 export interface ISliceHooks {
 	// Names what a rollback undoes, as "the slice ending at …", read only when one happens.
 	endedAt(): string;
@@ -183,6 +208,11 @@ type INodeMeta = {
 	key: string;
 	children: Map<string, object>;
 	id: string | null;
+};
+
+type IUpLink = {
+	parent: object;
+	key: string;
 };
 
 // Reading a slot must not write, so a draft's read holds it here until a write reaches it.
@@ -273,18 +303,37 @@ type IUndoWrite = {
 	had: boolean;
 	prev: unknown;
 	length: number;
-	// An object's keys before a delete: a key put back goes last, so the keys after it follow it again.
-	order?: readonly string[] | undefined;
 };
 
-type IUndo = IUndoWrite | (() => void);
+type IKeyOrder = {
+	target: object;
+	keys: readonly string[];
+};
+
+type IUndo = IUndoWrite | IKeyOrder | (() => void);
+
+type IOpenScope = {
+	held: Map<
+		string,
+		{
+			node: object;
+			path: string[];
+			root: IRecordRoot;
+		}
+	>;
+	rewinding: boolean;
+};
 
 function undo(entry: IUndo): void {
 	if (typeof entry === "function") {
 		entry();
 		return;
 	}
-	const { key, had, prev, length, order } = entry;
+	if ("keys" in entry) {
+		restoreOrder(entry.target as Record<string, unknown>, entry.keys);
+		return;
+	}
+	const { key, had, prev, length } = entry;
 	const target = entry.target as Record<string, unknown>;
 	const isArray = Array.isArray(target);
 	const lengthBefore = isArray ? target.length : 0;
@@ -294,19 +343,45 @@ function undo(entry: IUndo): void {
 	} else {
 		delete target[key];
 	}
-	if (order && !hadNow) {
-		for (const later of order.slice(order.indexOf(key) + 1)) {
-			if (Object.hasOwn(target, later)) {
-				const value = target[later];
-				delete target[later];
-				target[later] = value;
-			}
-		}
-	}
 	if (isArray && length >= 0 && target.length !== length) {
 		target.length = length;
 	}
 	notifyWrite(target, key, true, hadNow !== had, isArray && target.length !== lengthBefore);
+}
+
+// A listed key that is absent is skipped and an unlisted one stays last, so a stale list misorders and never throws.
+function restoreOrder(target: Record<string, unknown>, keys: readonly string[]): void {
+	const now = Object.keys(target);
+	let at = 0;
+	let from = 0;
+	for (; from < keys.length; from++) {
+		const key = keys[from]!;
+		if (Object.hasOwn(target, key)) {
+			if (now[at] !== key) {
+				break;
+			}
+			at++;
+		}
+	}
+	const tail: string[] = [];
+	for (let i = from; i < keys.length; i++) {
+		if (Object.hasOwn(target, keys[i]!)) {
+			tail.push(keys[i]!);
+		}
+	}
+	if (tail.length < now.length - at) {
+		const listed = new Set(keys);
+		for (let i = at; i < now.length; i++) {
+			if (!listed.has(now[i]!)) {
+				tail.push(now[i]!);
+			}
+		}
+	}
+	for (const key of tail) {
+		const value = target[key];
+		delete target[key];
+		target[key] = value;
+	}
 }
 
 type IExpectedCell = {
@@ -324,15 +399,6 @@ function pathsEqual(a: readonly string[], b: readonly string[]): boolean {
 		}
 	}
 	return true;
-}
-
-function entityIdOf(node: object): string | null {
-	const id = (
-		node as {
-			$Id?: unknown;
-		}
-	).$Id;
-	return typeof id === "string" && id !== "" ? id : null;
 }
 
 function holdsData(value: unknown, seen = new Set<object>()): boolean {
@@ -492,8 +558,7 @@ export function createWriteGateway(options: IWriteGatewayOptions): IWriteGateway
 	// after the phase loops is what keeps a tap subscriber that mutates a
 	// reactive store from waking a disposing entity's still-subscribed
 	// readers.
-	function runDisposePipeline(id: string, path: readonly string[]): void {
-		const recordRoot = rootNameOf(id) ?? "AppState";
+	function runDisposePipeline(id: string, path: readonly string[], recordRoot: IRecordRoot = rootNameOf(id) ?? "AppState"): void {
 		const gone = detached.get(cells[id]?.state as object);
 		if (gone) {
 			gone.addressEnded = true;
@@ -546,8 +611,16 @@ export function createWriteGateway(options: IWriteGatewayOptions): IWriteGateway
 	const drained = new Set<object>();
 	let resynced = false;
 	let formerSlots: IAliasHit[] = [];
-	// Holds every write since the last pass that passed the check.
+	// Holds every write since the last pass that passed the check, or since the open scope opened.
 	let undoLog: IUndo[] = [];
+	// Where the current frame's own entries start in the undo log: past the scope's, while one is open.
+	let frameBase = 0;
+	const openMarks: number[] = [];
+	// Only the index: an entry held here would outlive the log it was cleared from.
+	const keyOrders = new WeakMap<object, number>();
+	let scope: IOpenScope | null = null;
+	let placed = new Map<object, IUpLink[]>();
+	let placedUpTo = 0;
 	const gaps = new Map<readonly unknown[], number[]>();
 	let deferred: {
 		run: () => void;
@@ -577,9 +650,9 @@ export function createWriteGateway(options: IWriteGatewayOptions): IWriteGateway
 	}
 
 	// Callers hold the draining latch and untrack. Every pass is judged: the first carries the
-	// frame's own writes, and a later one a dispose callback's, past the frame's undoing.
-	function drainPending(hooks?: ISliceHooks): Error | null {
-		let first = true;
+	// frame's own writes, unless `cascadeOnly`, and a later one a dispose callback's, past the frame's undoing.
+	function drainPending(hooks?: ISliceHooks, cascadeOnly = false): Error | null {
+		let first = !cascadeOnly;
 		while (pending.size > 0) {
 			while (pending.size > 0) {
 				const touched = [
@@ -608,17 +681,42 @@ export function createWriteGateway(options: IWriteGatewayOptions): IWriteGateway
 		return null;
 	}
 
-	function logWrite(target: object, key: string, had: boolean, prev: unknown, length: number, order?: readonly string[]): void {
+	function logWrite(target: object, key: string, had: boolean, prev: unknown, length: number): void {
 		if (frameDepth > 0) {
 			undoLog.push({
 				target,
 				key,
 				had,
 				prev,
-				length,
-				order
+				length
 			});
 		}
+	}
+
+	// A target's entry is reused only while every point the log can still be unwound to on its own, the frame's
+	// base and each open mark, lies at or below it.
+	function keepOrder(target: object): void {
+		if (frameDepth === 0) {
+			return;
+		}
+		const at = keyOrders.get(target);
+		if (at !== undefined && at >= frameBase && at >= (openMarks[openMarks.length - 1] ?? 0)) {
+			const entry = undoLog[at];
+			if (entry !== undefined && typeof entry !== "function" && "keys" in entry && entry.target === target) {
+				return;
+			}
+		}
+		keyOrders.set(target, undoLog.length);
+		undoLog.push({
+			target,
+			keys: Object.keys(target)
+		});
+	}
+
+	function logMark(): number {
+		const mark = undoLog.length;
+		openMarks.push(mark);
+		return mark;
 	}
 
 	function logUndo(fn: () => void): void {
@@ -638,6 +736,16 @@ export function createWriteGateway(options: IWriteGatewayOptions): IWriteGateway
 		while (undoLog.length > mark) {
 			undo(undoLog.pop()!);
 		}
+		if (placedUpTo > mark) {
+			forgetPlaced();
+		}
+	}
+
+	function forgetPlaced(): void {
+		if (placedUpTo !== frameBase || placed.size > 0) {
+			placed = new Map();
+			placedUpTo = frameBase;
+		}
 	}
 
 	function noteGap(target: readonly unknown[], from: number, to: number): void {
@@ -656,19 +764,126 @@ export function createWriteGateway(options: IWriteGatewayOptions): IWriteGateway
 	}
 
 	function commit(): void {
-		undoLog = [];
+		if (scope === null) {
+			undoLog = [];
+		} else {
+			frameBase = undoLog.length;
+		}
+		forgetPlaced();
 		gaps.clear();
 	}
 
 	function rollback(): void {
-		const log = undoLog;
-		undoLog = [];
+		let log = undoLog;
+		if (scope === null) {
+			undoLog = [];
+		} else {
+			log = undoLog.splice(frameBase);
+		}
+		forgetPlaced();
 		gaps.clear();
 		for (let i = log.length - 1; i >= 0; i--) {
 			undo(log[i]!);
 		}
 		rollbacks++;
 		rebuildIndex("rollback");
+	}
+
+	function openScope(): IWriteScope {
+		if (scope !== null || frameOpen()) {
+			throw new Error("[treflex] a write scope opens only outside every frame and scope.");
+		}
+		const open: IOpenScope = {
+			held: new Map(),
+			rewinding: false
+		};
+		scope = open;
+		return {
+			unwind: () => unwindScope(open),
+			end: () => endScope(open)
+		};
+	}
+
+	function closeScope(open: IOpenScope): IUndo[] {
+		if (scope !== open || frameOpen()) {
+			throw new Error("[treflex] a write scope is unwound or ended once, outside every frame.");
+		}
+		const log = undoLog;
+		scope = null;
+		undoLog = [];
+		frameBase = 0;
+		forgetPlaced();
+		gaps.clear();
+		return log;
+	}
+
+	function holdDisposal(id: string, node: object, path: readonly string[]): void {
+		const { held } = scope!;
+		// Re-inserted at the end, so a later removal of its parent still disposes it first.
+		held.delete(id);
+		held.set(id, {
+			node,
+			path: [
+				...path
+			],
+			root: rootNameOf(id) ?? "AppState"
+		});
+	}
+
+	// The passes since the scope opened were drained and heard, so the listeners hear the undoing as a resync.
+	function unwindScope(open: IOpenScope): void {
+		const log = closeScope(open);
+		host.untrack(() => {
+			host.batch(() => {
+				for (let i = log.length - 1; i >= 0; i--) {
+					undo(log[i]!);
+				}
+				rollbacks++;
+				rebuildIndex("rollback");
+			});
+		});
+		resynced = drainListeners.length > 0;
+		notifyDrained();
+		verifyNow();
+	}
+
+	function endScope(open: IOpenScope): void {
+		closeScope(open);
+		if (open.held.size > 0) {
+			draining = true;
+			let settled = false;
+			try {
+				host.untrack(() => {
+					host.batch(() => disposeHeld(open));
+					drainPending(undefined, true);
+				});
+				notifyDrained();
+				settled = true;
+			} finally {
+				draining = false;
+				commit();
+				takeDeferred(!settled)();
+			}
+		}
+		verifyNow();
+	}
+
+	// Callers hold the drain latch and untrack.
+	function disposeHeld(open: IOpenScope): void {
+		for (const [id, { node, path, root }] of open.held) {
+			if (cells[id]) {
+				continue;
+			}
+			let mark = detached.get(node);
+			if (!mark) {
+				mark = {
+					path: []
+				};
+				detached.set(node, mark);
+			}
+			mark.addressEnded = true;
+			runDisposePipeline(id, path, root);
+		}
 	}
 
 	function undoneBy(hooks: ISliceHooks | undefined): string {
@@ -708,7 +923,7 @@ export function createWriteGateway(options: IWriteGatewayOptions): IWriteGateway
 			}
 		}
 		// A gap wider than the frame's write count can't have been filled, so the scan stops there.
-		const bound = undoLog.length + 1;
+		const bound = undoLog.length - frameBase + 1;
 		for (const [array, ranges] of gaps) {
 			const m = meta.get(array);
 			if (!m || !upLinksHold(array, m)) {
@@ -1150,7 +1365,8 @@ export function createWriteGateway(options: IWriteGatewayOptions): IWriteGateway
 			});
 			arrivingRoot.clear();
 			notifyDrained();
-			if (verifyMode !== "off" && !disposed && ++drainsSinceVerify >= verifyCadence) {
+			// An entity a scope holds out keeps its holders until the scope ends, which a verify pass would refuse.
+			if (verifyMode !== "off" && !disposed && scope === null && ++drainsSinceVerify >= verifyCadence) {
 				drainsSinceVerify = 0;
 				const visited = verifyAgainstTree();
 				verifyCadence = verifyMode === "always" ? 1 : verifyCadenceFor(visited);
@@ -1251,9 +1467,13 @@ export function createWriteGateway(options: IWriteGatewayOptions): IWriteGateway
 		for (const { id, node } of identitiesLost) {
 			const cell = cells[id];
 			if (cell && cell.state === node) {
-				runDisposePipeline(id, [
-					...cell.path
-				]);
+				if (scope === null) {
+					runDisposePipeline(id, [
+						...cell.path
+					]);
+				} else {
+					holdDisposal(id, node, cell.path);
+				}
 				deleteCell(id);
 			}
 		}
@@ -1705,7 +1925,9 @@ export function createWriteGateway(options: IWriteGatewayOptions): IWriteGateway
 			return;
 		}
 		// Ahead of the recursion, so keyPathOf still reads a live up-link chain.
-		markDetached(node);
+		if (scope === null || !scope.rewinding) {
+			markDetached(node);
+		}
 		for (const child of m.children.values()) {
 			const cm = meta.get(child);
 			if (cm && cm.parent === node) {
@@ -1716,11 +1938,15 @@ export function createWriteGateway(options: IWriteGatewayOptions): IWriteGateway
 			const id = m.id;
 			const cell = cells[id];
 			if (cell && cell.state === node) {
-				// Ahead of the pipeline, whose phases retract what this reads.
-				noteAttachments(id, node);
-				runDisposePipeline(id, [
-					...cell.path
-				]);
+				if (scope === null) {
+					// Ahead of the pipeline, whose phases retract what this reads.
+					noteAttachments(id, node);
+					runDisposePipeline(id, [
+						...cell.path
+					]);
+				} else {
+					holdDisposal(id, node, cell.path);
+				}
 				deleteCell(id);
 			}
 		}
@@ -1788,6 +2014,141 @@ export function createWriteGateway(options: IWriteGatewayOptions): IWriteGateway
 		return keys.reverse();
 	}
 
+	function landingOf(node: object): INodeLanding | undefined {
+		const fresh = placedThisFrame();
+		const holdersOf = (n: object): IUpLink[] => {
+			const links: IUpLink[] = [];
+			const held = fresh.get(n);
+			if (held) {
+				// Newest first: the first chain to reach the root is the one named.
+				for (let i = held.length - 1; i >= 0; i--) {
+					const link = held[i]!;
+					if (holds(link.parent, link.key, n)) {
+						links.push(link);
+					}
+				}
+			}
+			const m = meta.get(n);
+			if (m?.parent && holds(m.parent, m.key, n) && !links.some((link) => link.parent === m.parent && link.key === m.key)) {
+				links.push({
+					parent: m.parent,
+					key: m.key
+				});
+			}
+			return links;
+		};
+		const seen = new Set<object>();
+		let outside: INodeLanding | undefined;
+		const climb = (n: object, keys: string[], found: INodeLanding | undefined): INodeLanding | undefined | "top" => {
+			const id = found ? null : entityIdOf(n);
+			const here = id
+				? {
+						entityId: id,
+						path: keys
+					}
+				: found;
+			if (n === rootRaw) {
+				outside = here;
+				return "top";
+			}
+			seen.add(n);
+			for (const { parent, key } of holdersOf(n)) {
+				if (
+					!seen.has(parent) &&
+					climb(
+						parent,
+						here
+							? keys
+							: [
+									key,
+									...keys
+								],
+						here
+					) === "top"
+				) {
+					return "top";
+				}
+			}
+			outside ??= here;
+			return undefined;
+		};
+		climb(node, [], undefined);
+		return outside;
+	}
+
+	function holds(parent: object, key: string, node: object): boolean {
+		return Object.hasOwn(parent, key) && rawOf((parent as Record<string, unknown>)[key]) === node;
+	}
+
+	// Only each slot's newest entry is read, since every entry is read through its slot as it stands now.
+	// Only a value new to the tree is searched inside: a node with meta that took a child this frame took
+	// it by a write of its own.
+	function placedThisFrame(): Map<object, IUpLink[]> {
+		const end = undoLog.length;
+		if (placedUpTo === end) {
+			return placed;
+		}
+		const newest: IUndoWrite[] = [];
+		const slots = new Map<object, Set<string>>();
+		for (let i = end - 1; i >= placedUpTo; i--) {
+			const entry = undoLog[i]!;
+			if (typeof entry === "function" || "keys" in entry) {
+				continue;
+			}
+			let keys = slots.get(entry.target);
+			if (!keys) {
+				keys = new Set();
+				slots.set(entry.target, keys);
+			}
+			if (!keys.has(entry.key)) {
+				keys.add(entry.key);
+				newest.push(entry);
+			}
+		}
+		placedUpTo = end;
+		const note = (parent: object, key: string, searched: Set<object>): void => {
+			if (!Object.hasOwn(parent, key)) {
+				return;
+			}
+			const child = rawOf((parent as Record<string, unknown>)[key]);
+			if (child === null || typeof child !== "object") {
+				return;
+			}
+			const link = {
+				parent,
+				key
+			};
+			const held = placed.get(child);
+			if (held) {
+				// A place dropped here can hold the child again only through a later logged write, which the next
+				// call notes, or through an unwind below `placedUpTo`, which forgets the whole map.
+				let kept = 0;
+				for (const h of held) {
+					if ((h.parent !== parent || h.key !== key) && holds(h.parent, h.key, child)) {
+						held[kept++] = h;
+					}
+				}
+				held.length = kept;
+				held.push(link);
+			} else {
+				placed.set(child, [
+					link
+				]);
+			}
+			if (!meta.has(child) && !searched.has(child)) {
+				searched.add(child);
+				for (const k of Object.keys(child)) {
+					note(child, k, searched);
+				}
+			}
+		};
+		for (let i = newest.length - 1; i >= 0; i--) {
+			const { target, key } = newest[i]!;
+			note(target, key, new Set());
+		}
+		return placed;
+	}
+
 	function makeCellSetState(id: string): ISetState<any> {
 		return (...args: ((x: any) => any)[]) => {
 			// A caller inside a computation must not subscribe to the cell it
@@ -1850,6 +2211,7 @@ export function createWriteGateway(options: IWriteGatewayOptions): IWriteGateway
 	// is what gives it the mark a removal walk would have left.
 	function rebuildIndex(mode: "resync" | "rollback"): void {
 		pending.clear();
+		forgetPlaced();
 		if (mode === "resync") {
 			resynced = drainListeners.length > 0;
 		}
@@ -1946,15 +2308,18 @@ export function createWriteGateway(options: IWriteGatewayOptions): IWriteGateway
 		} finally {
 			draining = wasDraining;
 		}
+		// Off the budget: the rebuild re-derived the whole index.
+		verifyNow();
+		if (!wasDraining && frameDepth === 0) {
+			takeDeferred(false)();
+		}
+	}
+
+	function verifyNow(): void {
 		if (verifyMode !== "off") {
-			// Unconditional here, off the budget: the rebuild re-derived the
-			// whole index.
 			drainsSinceVerify = 0;
 			const visited = verifyAgainstTree();
 			verifyCadence = verifyMode === "always" ? 1 : verifyCadenceFor(visited);
-		}
-		if (!wasDraining && frameDepth === 0) {
-			takeDeferred(false)();
 		}
 	}
 
@@ -2023,9 +2388,20 @@ export function createWriteGateway(options: IWriteGatewayOptions): IWriteGateway
 		const wasDraining = draining;
 		draining = true;
 		disposed = true;
+		const open = scope;
+		if (open !== null) {
+			scope = null;
+			undoLog = [];
+			frameBase = 0;
+		}
 		try {
 			host.untrack(() => {
-				host.batch(() => removeSubtree(rootRaw!));
+				host.batch(() => {
+					if (open !== null) {
+						disposeHeld(open);
+					}
+					removeSubtree(rootRaw!);
+				});
 			});
 		} finally {
 			draining = wasDraining;
@@ -2139,13 +2515,39 @@ export function createWriteGateway(options: IWriteGatewayOptions): IWriteGateway
 		},
 		observe,
 		logWrite,
-		logMark: () => undoLog.length,
+		keepOrder,
+		logMark,
+		releaseMark: () => {
+			openMarks.pop();
+		},
 		unwindTo,
 		noteGap,
 		rollbacks: () => rollbacks,
 		pathFrom,
+		landingOf,
 		frameOpen,
 		afterFrame,
+		openScope,
+		rewindFrame: (fn) => {
+			const open = scope;
+			if (open === null || frameOpen()) {
+				throw new Error("[treflex] a rewind frame opens only inside a write scope, outside every frame.");
+			}
+			open.rewinding = true;
+			try {
+				return runFrame(true, fn, {
+					endedAt: () => "the rewind",
+					rolledBack: () => {},
+					// What the frame held runs as ordinary frames.
+					release: (settle) => {
+						open.rewinding = false;
+						settle();
+					}
+				});
+			} finally {
+				open.rewinding = false;
+			}
+		},
 		frame: (fn) => runFrame(false, fn),
 		actionFrame: (fn, ending, slice) => {
 			const prev = sliceEnding;

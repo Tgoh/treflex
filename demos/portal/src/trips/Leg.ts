@@ -2,7 +2,7 @@ import type { IActionGenerator, IEntity, ISelectorGenerator } from "treflex";
 import type { IFare, IPick, IProviderResult } from "../backend/backend";
 import type { IDestinationKey, ILegKind } from "./destinations";
 import { inFlight, leading, named, publishToNearest } from "treflex";
-import { checkProvider, ProviderError } from "../backend/backend";
+import { checkProvider } from "../backend/backend";
 import { DESTINATIONS } from "./destinations";
 
 declare module "treflex" {
@@ -25,7 +25,7 @@ export interface ILeg extends IEntity {
 	Done: boolean;
 }
 
-export type ILegStatus = "waiting" | "searching" | "interrupted" | "done";
+export type ILegStatus = "waiting" | "searching" | "failed" | "done";
 
 export const MAX_PICKS = 3;
 
@@ -83,43 +83,54 @@ function take(draft: ILeg, result: IProviderResult): void {
 		return;
 	}
 	draft.Found += result.Picks.length;
-	draft.Picks = bestPicks([
-		...draft.Picks,
-		...result.Picks
-	]);
+	writePicks(
+		draft.Picks,
+		bestPicks([
+			...draft.Picks,
+			...result.Picks
+		])
+	);
+}
+
+// Field by field, not a new array: a resumable flight question's history merges another writer's scalar sets, and
+// an array set on every provider check stops the merging, so the history grows with each check.
+function writePicks(picks: IPick[], next: readonly IPick[]): void {
+	for (const [i, pick] of next.entries()) {
+		const kept = picks[i];
+		if (!kept) {
+			picks.push({
+				...pick
+			});
+			continue;
+		}
+		for (const key of Object.keys(pick) as (keyof IPick)[]) {
+			if (kept[key] !== pick[key]) (kept as Record<keyof IPick, unknown>)[key] = pick[key];
+		}
+	}
+	if (picks.length > next.length) picks.splice(next.length);
 }
 
 export function* search(draft: ILeg): IActionGenerator {
 	if (draft.Done) return;
 	draft.Started = true;
 	while (draft.Checked < draft.Total) {
-		const query = {
+		const index = draft.Checked;
+		const result = yield* checkProvider({
 			Destination: draft.Destination,
 			Kind: draft.Kind,
-			Index: draft.Checked
-		};
-		let result: IProviderResult;
-		try {
-			result = yield* checkProvider({
-				...query,
-				Attempt: 0
-			});
-		} catch (error) {
-			if (!(error instanceof ProviderError)) throw error;
-			result = yield* checkProvider({
-				...query,
-				Attempt: 1
-			});
-		}
+			Index: index,
+			Retries: 1
+		});
 		take(draft, result);
-		draft.Checked = query.Index + 1;
+		draft.Checked = index + 1;
 	}
 	draft.Done = true;
 	yield* publishToNearest(draft, "Leg/Finished", {
 		Kind: draft.Kind
 	});
 }
-named(search, "Trips/SearchLeg");
+export const SEARCH_NAME = "Trips/SearchLeg";
+named(search, SEARCH_NAME);
 leading(search);
 
 export const actions = {};
@@ -127,7 +138,7 @@ export const actions = {};
 export function* legStatus(draft: ILeg): ISelectorGenerator<ILegStatus> {
 	if (draft.Done) return "done";
 	if (yield* inFlight(search, draft)) return "searching";
-	return draft.Started ? "interrupted" : "waiting";
+	return draft.Started ? "failed" : "waiting";
 }
 
 export const selectors = {

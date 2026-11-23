@@ -27,6 +27,12 @@ for (const key of Object.keys(globbed)) {
 	sources[key.replace(/^\.\.\//, "")] = globbed[key];
 }
 
+const coreTests = import.meta.glob("../packages/core/tests/**/*.{ts,tsx}", {
+	query: "?raw",
+	import: "default",
+	eager: true
+}) as Record<string, string>;
+
 const entries: Record<string, string> = {};
 const packageNames: string[] = [];
 for (const key of Object.keys(manifests)) {
@@ -175,7 +181,7 @@ describe("package boundaries", () => {
 
 	it("core reaches no binding package and no .tsx module", () => {
 		const closure = importClosure(coreEntries);
-		expect(closure.has("packages/core/src/Solid/host.ts")).toBe(true);
+		expect(closure.has("packages/core/src/Reactive/host.ts")).toBe(true);
 
 		const offenders = [
 			...closure
@@ -233,7 +239,7 @@ describe("package boundaries", () => {
 		for (const key of Object.keys(sources).filter((key) => BINDINGS.some((binding) => key.startsWith(binding)))) {
 			for (const match of sources[key].matchAll(/import\s+(?:type\s+)?\{([^}]*)\}\s+from\s+"treflex\/internal"/g)) {
 				for (const name of match[1].split(",")) {
-					imported.add(name.trim());
+					imported.add(name.trim().replace(/^type\s+/, ""));
 				}
 			}
 		}
@@ -263,6 +269,20 @@ describe("package boundaries", () => {
 		]);
 		expect(closure.has("packages/react/src/createFrames.ts")).toBe(true);
 		expect(closure.has("packages/core/src/Runtime/viewProxy.ts")).toBe(true);
+	});
+
+	it("no core module and no core test imports solid-js", () => {
+		const namesSolid = (text: string) =>
+			[
+				...text.matchAll(SPECIFIER)
+			].some(([, spec]) => spec === "solid-js" || spec.startsWith("solid-js/"));
+		const modules = Object.keys(sources).filter((key) => key.startsWith(CORE) && namesSolid(sources[key]));
+		const tests = Object.keys(coreTests).filter((key) => namesSolid(coreTests[key]));
+		expect(Object.keys(coreTests).length).toBeGreaterThan(100);
+		expect([
+			...modules,
+			...tests
+		]).toEqual([]);
 	});
 
 	it("the snapshot entry reaches the core it restores into", () => {

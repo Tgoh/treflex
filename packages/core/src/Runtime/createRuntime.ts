@@ -1,6 +1,7 @@
 import type { IExternalKey, IExternalValue } from "../Registries/IExternalRegistry";
 import type { IResourceKey, IResourceSupplyOf, IResourceSupplyResponseOf, IResourceTypeName } from "../Registries/IResourceRegistry";
 import type { IRuntimeServiceKey, IRuntimeServiceValue } from "../Registries/IRuntimeServiceRegistry";
+import type { IPrefixSupport } from "../Resume/prefix";
 import type { IAction } from "../Types/IAction";
 import type { IEntity } from "../Types/IEntity";
 import type { IReceiver } from "../Types/IReceiver";
@@ -20,9 +21,10 @@ import type { ISetState } from "./sliceSetState";
 import { v4 as uuid } from "uuid";
 import { mintedValues } from "../Effects/entity";
 import { implement as generateGuidImpl } from "../Implementations/generateGuid";
-import { host } from "../Solid/host";
+import { host } from "../Reactive/host";
+import { createKeeper, type IWithResume } from "../Resume/createKeeper";
 import { pairDiag } from "../Types/IRuntimeEvent";
-import { type IInFlightStub, IN_FLIGHT_YIELD, readInFlight } from "./arrivals";
+import { type IInFlightStub, IN_FLIGHT_YIELD, readInFlight, watchWork } from "./arrivals";
 import { createAskTable } from "./createAskTable";
 import { createBindingIndex } from "./createBindingIndex";
 import { createDataSourceMap } from "./createDataSourceMap";
@@ -47,7 +49,6 @@ import { refuseReservedType } from "./operations";
 import { PENDING_ASKS_YIELD, readPendingAsks, shareAsks } from "./pendingAsks";
 import { createProcessAction } from "./processAction";
 import { processSelector as processSelectorImpl } from "./processSelector";
-import { assertReactiveHost } from "./reactiveHost";
 import { wrapSetState } from "./sliceSetState";
 import { slotHomes, slotOf, TRANSIENT_YIELD, unwrittenSlots } from "./transient";
 import { copyComponentSeed, copySeed, rawOf, setViewDiagEmitter, view } from "./viewProxy";
@@ -78,6 +79,21 @@ export interface IRuntimeOptions {
 	requireNames?: boolean | undefined;
 	/** The code this runtime runs, written into a snapshot as `Build`. A non-empty string. See docs/reference/runtime.md#build. */
 	build?: string | undefined;
+	/**
+	 * Turns resume on: a snapshot carries the history of each in-flight `resumable` action, and a restore
+	 * into the same `build` brings such an action back to the wait it was caught at. `true`, or
+	 * `{ budget, total }` in bytes of history per action and per snapshot; `false` leaves it off. See
+	 * docs/reference/restart-and-records.md#resume.
+	 *
+	 * @experimental
+	 */
+	resume?:
+		| boolean
+		| {
+				budget?: number | undefined;
+				total?: number | undefined;
+		  }
+		| undefined;
 }
 
 declare module "../Registries/IRuntimeServiceRegistry" {
@@ -140,7 +156,6 @@ export interface IRuntime<T extends object> {
 }
 
 export function createRuntime<T extends object>(initialState: T, options?: IRuntimeOptions): IRuntime<T> {
-	assertReactiveHost();
 	const build = options?.build;
 	if (build !== undefined && (typeof build !== "string" || build === "")) {
 		throw new TypeError(
@@ -150,11 +165,17 @@ export function createRuntime<T extends object>(initialState: T, options?: IRunt
 	// The "record" channel is closed over, so the bus and the journal can be
 	// constructed in either order.
 	const bus = createEventBus(
-		(listener, kinds) => journal.tap(listener, kinds),
+		(listener, kinds, landing) => journal.tap(listener, kinds, landing),
 		(event) => emitDiag(event)
 	);
 
-	const emitDiag: IDiagEmitter = pairDiag(bus.emit);
+	const paired = pairDiag(bus.emit);
+	let quiet = 0;
+	const emitDiag: IDiagEmitter = (event) => {
+		if (quiet === 0) {
+			paired(event);
+		}
+	};
 	// The bus half only: the view layer owns the console line.
 	const unregisterViewDiag = setViewDiagEmitter((event) => bus.emit("diag", event));
 
@@ -182,8 +203,7 @@ export function createRuntime<T extends object>(initialState: T, options?: IRunt
 		TransientState: Record<string, Record<string, object>>;
 		ComponentState: Record<string, Record<string, object>>;
 	};
-	// Both holder roots are keyed by owner $Id, which can be any string, and neither reaches a
-	// snapshot.
+	// Both holder roots are keyed by owner $Id, which can be any string.
 	const rawRoot: IRoot = {
 		AppState: copySeed(initialState, "createRuntime(): the initial state"),
 		TransientState: Object.create(null),
@@ -459,6 +479,35 @@ export function createRuntime<T extends object>(initialState: T, options?: IRunt
 	set("runtime/externals", externals);
 	set("runtime/writeGateway", gateway);
 	set("runtime/build", build ?? null);
+	const resume = (options as IWithResume | undefined)?.resume;
+	set(
+		"runtime/resume",
+		resume === undefined || resume === false
+			? null
+			: createKeeper(resume, {
+					journal,
+					lookup: gateway.lookup,
+					rootNameOf: gateway.rootNameOf,
+					frameOpen: gateway.frameOpen,
+					unlisted: () => dispatchLoop.unlistedWork(),
+					emitDiag
+				})
+	);
+	if (resume !== undefined && resume !== false && build === undefined) {
+		queueMicrotask(() => {
+			if (!disposed) {
+				emitDiag({
+					severity: "warn",
+					code: "resume/no-build",
+					message:
+						"[treflex] createRuntime(): resume is on and the runtime has no build, so a restore resumes nothing: a save is " +
+						"resumed only into the build that wrote it. Pass build, and on a development server an id it draws at start " +
+						"(docs/reference/restart-and-records.md#a-development-build-id).",
+					data: {}
+				});
+			}
+		});
+	}
 
 	const dispatchLoop = createProcessAction({
 		effectProcessor: processEffect,
@@ -476,6 +525,30 @@ export function createRuntime<T extends object>(initialState: T, options?: IRunt
 	});
 	const { processAction, dispatchInternal } = dispatchLoop;
 	set("runtime/inFlightActions", dispatchLoop.inFlightActions);
+	if (get("runtime/resume") === null) {
+		set("runtime/prefixes", null);
+	} else {
+		watchWork(gateway);
+		const prefixes: IPrefixSupport = {
+			dispatch: dispatchInternal,
+			during: dispatchLoop.duringPrefix,
+			liveRuns: dispatchLoop.liveRuns,
+			window: dispatchLoop.releaseWindow,
+			quiet: () => {
+				quiet++;
+				const loud = journal.mute();
+				let lifted = false;
+				return () => {
+					if (!lifted) {
+						lifted = true;
+						quiet--;
+						loud();
+					}
+				};
+			}
+		};
+		set("runtime/prefixes", prefixes);
+	}
 
 	const resourceManager = createResourceManager({
 		table: resourceTable,

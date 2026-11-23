@@ -1,5 +1,4 @@
 import type { IAction, IActionGenerator } from "../../src/Types/IAction";
-import { createRoot } from "solid-js";
 import { describe, expect, it } from "vitest";
 import { publish } from "../../src/Effects/publish";
 import { bind } from "../../src/Runtime/bind";
@@ -8,6 +7,7 @@ import { receiver } from "../../src/Runtime/receiver";
 import { createSnapshot } from "../../src/Snapshot/createSnapshot";
 import { SNAPSHOT_FORMAT_VERSION } from "../../src/Snapshot/ISnapshot";
 import { restoreRuntime, restoreTestRuntime } from "../../src/Snapshot/index";
+import * as reactive from "../reactive";
 import { rootSetState } from "../testHelpers";
 
 const publishAny = publish as unknown as (key: string) => Generator<any, void, any>;
@@ -57,7 +57,7 @@ const dispatch = (runtime: ReturnType<typeof createRuntime<IRootState>>, action:
 
 describe("a restored binding whose receiver this build no longer registers", () => {
 	it("is reported at restore and in the result, and is deaf until registered", async () => {
-		const snapshot = await createRoot(async (dispose) => {
+		const snapshot = await reactive.root(async (dispose) => {
 			try {
 				const runtime = createRuntime<IRootState>(initialState(), {});
 				runtime.registerReceiver(makeReceiver("OldReceiver"));
@@ -73,7 +73,7 @@ describe("a restored binding whose receiver this build no longer registers", () 
 			}
 		});
 
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const diags: any[] = [];
 				const { runtime, result } = await restoreRuntime<IRootState>(snapshot, {
@@ -130,7 +130,7 @@ describe("a restored binding whose receiver this build no longer registers", () 
 	});
 
 	it("says nothing when every restored binding resolves", async () => {
-		const snapshot = await createRoot(async (dispose) => {
+		const snapshot = await reactive.root(async (dispose) => {
 			try {
 				const runtime = createRuntime<IRootState>(initialState(), {});
 				runtime.registerReceiver(makeReceiver("OldReceiver"));
@@ -143,7 +143,7 @@ describe("a restored binding whose receiver this build no longer registers", () 
 			}
 		});
 
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const diags: string[] = [];
 				const { runtime, result } = await restoreRuntime<IRootState>(snapshot, {
@@ -168,7 +168,7 @@ describe("a restored binding whose receiver this build no longer registers", () 
 	});
 
 	it("reports a binding whose receiver id is a prototype member name", async () => {
-		const snapshot = await createRoot(async (dispose) => {
+		const snapshot = await reactive.root(async (dispose) => {
 			try {
 				const runtime = createRuntime<IRootState>(initialState(), {});
 				const Poisoned = makeReceiver("constructor");
@@ -184,7 +184,7 @@ describe("a restored binding whose receiver this build no longer registers", () 
 			}
 		});
 
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const diags: any[] = [];
 				const { runtime } = await restoreRuntime<IRootState>(snapshot, {

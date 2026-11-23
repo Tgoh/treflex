@@ -3,7 +3,6 @@ import type { IActionGenerator } from "../../src/Types/IAction";
 import type { IExternalAnswer, IRecord } from "../../src/Types/IRecord";
 import type { IRuntimeEventOf } from "../../src/Types/IRuntimeEvent";
 import type { ISelectorGenerator } from "../../src/Types/ISelector";
-import { createEffect, createMemo, createRoot, createSignal, untrack } from "solid-js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parallel } from "../../src/Effects/parallel";
 import { external } from "../../src/Reads/external";
@@ -13,7 +12,7 @@ import { createRuntime } from "../../src/Runtime/createRuntime";
 import { createTraceAggregator } from "../../src/Runtime/createTraceAggregator";
 import { NonPlainDataError } from "../../src/Runtime/nonPlainDataError";
 import { createSnapshot, restoreRuntime } from "../../src/Snapshot";
-import { jsonExact } from "../../src/Utility/jsonExact";
+import * as reactive from "../reactive";
 
 declare module "../../src/Registries/IExternalRegistry" {
 	interface IExternalRegistry {
@@ -118,8 +117,8 @@ function watching<R>(read: () => R): {
 	dispose: () => void;
 } {
 	const seen: R[] = [];
-	const dispose = createRoot((d) => {
-		createEffect(() => {
+	const dispose = reactive.root((d) => {
+		reactive.effect(() => {
 			seen.push(read());
 		});
 		return d;
@@ -233,9 +232,9 @@ describe("external: a selector's read", () => {
 			})
 		});
 		const seen: unknown[] = [];
-		const dispose = createRoot((d) => {
-			createEffect(() => seen.push(h.runtime.processSelector(box, () => h.runtime.state)));
-			createEffect(() => seen.push(h.runtime.processSelector(box, () => h.runtime.state)));
+		const dispose = reactive.root((d) => {
+			reactive.effect(() => seen.push(h.runtime.processSelector(box, () => h.runtime.state)));
+			reactive.effect(() => seen.push(h.runtime.processSelector(box, () => h.runtime.state)));
 			return d;
 		});
 		handle.changed();
@@ -328,7 +327,7 @@ describe("external: a selector's read", () => {
 
 	it("subscribes a selector memo to nothing a diag listener reads", () => {
 		const h = build();
-		const [heard, setHeard] = createSignal(0);
+		const [heard, setHeard] = reactive.signal(0);
 		h.runtime.on("diag", () => {
 			heard();
 		});
@@ -348,10 +347,10 @@ describe("external: a selector's read", () => {
 
 	it("subscribes a scope that provides to nothing the plain-data check reads", () => {
 		const h = build();
-		const [n, setN] = createSignal(1);
+		const [n, setN] = reactive.signal(1);
 		let runs = 0;
-		const dispose = createRoot((d) => {
-			createEffect(() => {
+		const dispose = reactive.root((d) => {
+			reactive.effect(() => {
 				runs++;
 				h.runtime.provideExternal("test/Box", {
 					read: () => ({
@@ -482,7 +481,7 @@ describe("external: an action's read", () => {
 		expect(h.codes()).toContain("external/unprovided");
 	});
 
-	it("marks Lossy a copy whose JSON form doesn't give it back, judged on the copy the action got", async () => {
+	it("records the copy the action got, where a -0 is 0", async () => {
 		const h = build();
 		let value: unknown = {
 			N: 1,
@@ -516,15 +515,13 @@ describe("external: an action's read", () => {
 			},
 			{
 				Key: "test/Any",
-				Value: -0,
-				Lossy: true
+				Value: 0
 			},
 			{
 				Key: "test/Any",
 				Value: {
-					N: -0
-				},
-				Lossy: true
+					N: 0
+				}
 			},
 			{
 				Key: "test/Any"
@@ -533,6 +530,17 @@ describe("external: an action's read", () => {
 		expect(Object.keys(answers[0]?.Value as object)).toEqual([
 			"N"
 		]);
+		expect(Object.is(answers[1]?.Value, 0)).toBe(true);
+		expect(
+			Object.is(
+				(
+					answers[2]?.Value as {
+						N: number;
+					}
+				).N,
+				0
+			)
+		).toBe(true);
 		expect(answers[3]).not.toHaveProperty("Value");
 	});
 
@@ -676,42 +684,6 @@ describe("external: an action's read", () => {
 		expect(copied[0]?.message).toContain('external("test/Any")');
 		expect(copied[0]?.message).toContain("narrower key");
 		expect(copied[0]?.message).not.toContain("out of state");
-	});
-});
-
-describe("jsonExact", () => {
-	it("refuses what JSON can't give back exactly", () => {
-		expect(
-			jsonExact({
-				A: [
-					1,
-					"x",
-					null,
-					true,
-					{
-						B: 2
-					}
-				]
-			})
-		).toBe(true);
-		const holed: unknown[] = [];
-		holed[1] = 1;
-		for (const lossy of [
-			{
-				A: undefined
-			},
-			[
-				undefined
-			],
-			holed,
-			-0,
-			Number.NaN,
-			Number.POSITIVE_INFINITY,
-			undefined,
-			new Date(0)
-		]) {
-			expect(jsonExact(lossy)).toBe(false);
-		}
 	});
 });
 
@@ -886,17 +858,17 @@ describe("external: dispose", () => {
 });
 
 describe("external: a change from inside a computation", () => {
-	it("waits a microtask when it comes from a Solid effect", async () => {
+	it("applies at once from an effect, whose own read after it gets the new value", () => {
 		const h = build();
 		let value = 1;
 		const handle = h.runtime.provideExternal("test/Count", {
 			read: () => value
 		});
 		const view = watching(() => h.runtime.runSelector(count, () => h.runtime.state));
-		const [mirrored, setMirrored] = createSignal(1);
+		const [mirrored, setMirrored] = reactive.signal(1);
 		let inEffect: number | undefined;
-		const dispose = createRoot((d) => {
-			createEffect(() => {
+		const dispose = reactive.root((d) => {
+			reactive.effect(() => {
 				value = mirrored();
 				handle.changed();
 				inEffect = h.runtime.processSelector(count, () => h.runtime.state);
@@ -904,11 +876,7 @@ describe("external: a change from inside a computation", () => {
 			return d;
 		});
 		setMirrored(2);
-		expect(inEffect).toBe(1);
-		expect(view.seen).toEqual([
-			1
-		]);
-		await Promise.resolve();
+		expect(inEffect).toBe(2);
 		expect(view.seen).toEqual([
 			1,
 			2
@@ -917,16 +885,46 @@ describe("external: a change from inside a computation", () => {
 		view.dispose();
 	});
 
-	it("applies at once from an untracked stretch inside a Solid effect", () => {
+	it("runs an effect that read the key once more after its run, in the same flush", () => {
+		const h = build();
+		let value = 1;
+		const handle = h.runtime.provideExternal("test/Count", {
+			read: () => value
+		});
+		const [go, setGo] = reactive.signal(false);
+		const seen: (number | undefined)[] = [];
+		const dispose = reactive.root((d) => {
+			reactive.effect(() => {
+				const n = h.runtime.runSelector(count, () => h.runtime.state);
+				seen.push(n);
+				if (go() && n === 1) {
+					value = 2;
+					handle.changed();
+					seen.push(h.runtime.runSelector(count, () => h.runtime.state));
+				}
+			});
+			return d;
+		});
+		setGo(true);
+		expect(seen).toEqual([
+			1,
+			1,
+			2,
+			2
+		]);
+		dispose();
+	});
+
+	it("applies at once from an untracked stretch inside an effect", () => {
 		const h = build();
 		let value = 1;
 		const handle = h.runtime.provideExternal("test/Count", {
 			read: () => value
 		});
 		let inEffect: number | undefined;
-		const dispose = createRoot((d) => {
-			createEffect(() => {
-				untrack(() => {
+		const dispose = reactive.root((d) => {
+			reactive.effect(() => {
+				reactive.untrack(() => {
 					value = 2;
 					handle.changed();
 				});
@@ -938,26 +936,25 @@ describe("external: a change from inside a computation", () => {
 		dispose();
 	});
 
-	it("waits a microtask when it comes from a Solid memo", async () => {
+	it("applies at once from a memo, whose own read after it gets the new value", () => {
 		const h = build();
 		let value = 1;
 		const handle = h.runtime.provideExternal("test/Count", {
 			read: () => value
 		});
 		const view = watching(() => h.runtime.runSelector(count, () => h.runtime.state));
-		const dispose = createRoot((d) => {
-			const memo = createMemo(() => {
+		let inMemo: number | undefined;
+		const dispose = reactive.root((d) => {
+			const memo = reactive.memo(() => {
 				value = 5;
 				handle.changed();
+				inMemo = h.runtime.processSelector(count, () => h.runtime.state);
 				return value;
 			});
 			memo();
 			return d;
 		});
-		expect(view.seen).toEqual([
-			1
-		]);
-		await Promise.resolve();
+		expect(inMemo).toBe(5);
 		expect(view.seen).toEqual([
 			1,
 			5
@@ -966,7 +963,7 @@ describe("external: a change from inside a computation", () => {
 		view.dispose();
 	});
 
-	it("waits a microtask when it comes from a selector's memo", async () => {
+	it("applies at once from a selector's memo, whose own read after it gets the new value", () => {
 		const h = build();
 		let value = 1;
 		const handle = h.runtime.provideExternal("test/Count", {
@@ -976,17 +973,59 @@ describe("external: a change from inside a computation", () => {
 		function* bumps(draft: IRoot): ISelectorGenerator<string> {
 			value = 3;
 			handle.changed();
-			return draft.Title;
+			return `${draft.Title}${yield* external("test/Count")}`;
 		}
-		h.runtime.runSelector(bumps, () => h.runtime.state);
-		expect(view.seen).toEqual([
-			1
-		]);
-		await Promise.resolve();
+		expect(h.runtime.runSelector(bumps, () => h.runtime.state)).toBe("3");
 		expect(view.seen).toEqual([
 			1,
 			3
 		]);
+		view.dispose();
+	});
+
+	it("stops a selector that changes its key forever, throwing the runaway from the write, so the dispatch that set it off rejects", async () => {
+		const errors: unknown[] = [];
+		const runtime = createRuntime<IRoot>(
+			{
+				$Id: "root",
+				Title: ""
+			},
+			{
+				onError: (error) => errors.push(error)
+			}
+		) as IRuntimeInternal<IRoot>;
+		const records: IRecord[] = [];
+		runtime.on("record", (record) => records.push(record));
+		let value = 0;
+		const handle = runtime.provideExternal("test/Count", {
+			read: () => value
+		});
+		function* spins(draft: IRoot): ISelectorGenerator<number | undefined> {
+			const n = yield* external("test/Count");
+			if (draft.Title === "go") {
+				value = (n ?? 0) + 1;
+				handle.changed();
+			}
+			return n;
+		}
+		const view = watching(() => runtime.runSelector(spins, () => runtime.state));
+		function* go(draft: IRoot): IActionGenerator {
+			draft.Title = "go";
+		}
+		await expect(runtime.dispatch(go, "root")).rejects.toThrow(/Potential infinite loop/);
+		expect(runtime.state.Title).toBe("go");
+		expect(errors).toHaveLength(1);
+		expect((errors[0] as Error).message).toMatch(/Potential infinite loop/);
+		expect(records.some((record) => record.Kind === "step")).toBe(true);
+		const end = records.find((record) => record.Kind === "action:end") as Record<string, unknown>;
+		expect(end.Status).toBe("errored");
+		function* stop(draft: IRoot): IActionGenerator {
+			draft.Title = "stop";
+		}
+		await runtime.dispatch(stop, "root");
+		value = 0;
+		handle.changed();
+		expect(view.seen.at(-1)).toBe(0);
 		view.dispose();
 	});
 });

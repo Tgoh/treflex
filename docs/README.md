@@ -1,6 +1,6 @@
 # treflex documentation
 
-Start with the [quickstart](./quickstart.md): a counter in React or Solid, made by `npm create treflex` or added to an app by hand. [Requirements](./requirements.md) has the packages, the versions and the build setup.
+Start with the [quickstart](./quickstart.md): a counter in React or Solid, made by `npm create treflex` or added to an app by hand. [Requirements](./requirements.md) has the packages, the versions and the build setup. [Upgrading](./upgrading.md) has what changes from one release to the next.
 
 Four tiers. Each fact is stated once, on the page where a reader acts on it, and everything else links there.
 
@@ -60,4 +60,4 @@ Four pages cut across them:
 
 ## Examples
 
-[`demos/todo/`](../demos/todo/) is one entity in one file. [`demos/portal/`](../demos/portal/) is the live demo the [top-level README](../README.md#getting-started) links, and its README maps each capability onto its files. [`demos/react-todo/`](../demos/react-todo/) and [`demos/react-portal/`](../demos/react-portal/) are the same apps in React, and [`demos/portal-swap/`](../demos/portal-swap/) switches the portal between its Solid and React views in place.
+[`demos/todo/`](../demos/todo/) is one entity in one file. [`demos/portal/`](../demos/portal/) is the live demo the [top-level README](../README.md#getting-started) links, and its README maps each capability onto its files. [`demos/react-todo/`](../demos/react-todo/) and [`demos/react-portal/`](../demos/react-portal/) are the same apps in React, and [`demos/portal-swap/`](../demos/portal-swap/) switches the portal between its Solid and React views in place. [`demos/checkout/`](../demos/checkout/) is a flow written as one action, a checkout of several questions, and what a reload does to it.

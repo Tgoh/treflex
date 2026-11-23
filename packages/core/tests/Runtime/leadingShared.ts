@@ -5,7 +5,6 @@ import type { IEntity } from "../../src/Types/IEntity";
 import type { IRecord } from "../../src/Types/IRecord";
 import type { IResourceContext } from "../../src/Types/IResource";
 import type { ISelectorGenerator } from "../../src/Types/ISelector";
-import { createEffect, createMemo, createRoot } from "solid-js";
 import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 import { openResource } from "../../src/Effects/openResource";
 import { publish } from "../../src/Effects/publish";
@@ -19,6 +18,7 @@ import { seat } from "../../src/Runtime/draftNode";
 import { receiver } from "../../src/Runtime/receiver";
 import { createSnapshot } from "../../src/Snapshot/createSnapshot";
 import { restoreRuntime } from "../../src/Snapshot/index";
+import * as reactive from "../reactive";
 import { inFlightOf } from "../testHelpers";
 
 declare module "../../src/Registries/IMessageRegistry" {
@@ -183,10 +183,10 @@ export function leadingRules(build_: string): void {
 
 		it("is dropped when dispatched from a view, with nothing subscribed by the mark's read", async () => {
 			const h = build();
-			await createRoot(async (dispose) => {
+			await reactive.root(async (dispose) => {
 				const results: unknown[] = [];
 				let runs = 0;
-				createEffect(() => {
+				reactive.effect(() => {
 					runs++;
 					results.push(h.runtime.dispatch(save, "a", "one"), h.runtime.dispatch(save, "a", "two"));
 				});
@@ -591,10 +591,10 @@ export function leadingRules(build_: string): void {
 	describe(`leading ${build_}: reading it`, () => {
 		it("reacts in a view: up on the run and back down, a throw included", async () => {
 			const h = build();
-			await createRoot(async (dispose) => {
+			await reactive.root(async (dispose) => {
 				const seen: boolean[] = [];
-				const saving = createMemo(() => inFlightOf(h.runtime, save, h.a()));
-				createEffect(() => {
+				const saving = reactive.memo(() => inFlightOf(h.runtime, save, h.a()));
+				reactive.effect(() => {
 					seen.push(saving());
 				});
 				await settle();

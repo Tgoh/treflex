@@ -11,10 +11,17 @@ export interface IFinished {
 	Voucher?: true;
 }
 
+/** An action a restore resumed or dropped, by its durable name and the entity it ran on. */
+export interface IRestoredWork {
+	Name: string | null;
+	EntityId: string;
+}
+
 declare module "treflex" {
 	interface IMessageRegistry {
 		"Portal/Restored": {
-			DroppedEntityIds: string[];
+			Resumed: IRestoredWork[];
+			Dropped: IRestoredWork[];
 		};
 		"Portal/AppShown": {
 			App: IAppId;
@@ -27,7 +34,7 @@ declare module "treflex" {
 		"Portal/Viewed": {};
 		/** An app's report of what the restore found in it, published to the portal from its Portal/Restored case. */
 		"Portal/RestoreFound": {
-			/** Work the restore stopped: a trip search or question, or a send. */
+			/** Work the restore stopped: a trip's flight question, or a send. */
 			CutOff: boolean;
 		};
 		/** The chat's travel voucher was applied, once: every trip, current and future, takes Percent off. */

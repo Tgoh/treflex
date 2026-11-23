@@ -4,7 +4,6 @@ import type { IRuntimeInternal } from "../../src/Runtime/internals";
 import type { IRuntimeStoreReader } from "../../src/Runtime/processAction";
 import type { IActionGenerator } from "../../src/Types/IAction";
 import type { IRecord } from "../../src/Types/IRecord";
-import { createRoot } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { defineEffect } from "../../src/Effects/defineEffect";
 import { parallel } from "../../src/Effects/parallel";
@@ -21,6 +20,7 @@ import { open } from "../../src/Runtime/open";
 import { createProcessAction } from "../../src/Runtime/processAction";
 import { receiver } from "../../src/Runtime/receiver";
 import { sliceSetState } from "../../src/Runtime/sliceSetState";
+import * as reactive from "../reactive";
 import { createTreeState, minted, rootSetState } from "../testHelpers";
 
 function createBarrier() {
@@ -105,6 +105,9 @@ async function grabJournal(
 	return {
 		get enabled() {
 			return real.enabled;
+		},
+		get asking() {
+			return real.asking;
 		},
 		wants: real.wants,
 		sample: real.sample,
@@ -249,7 +252,7 @@ describe("createJournal (unit)", () => {
 
 describe("journal (runtime integration)", () => {
 	it("records a totally ordered interleaved scenario and round-trips through JSON", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const barrier = createBarrier();
 				const runtime = createRuntime<TestState>(initialState(), {
@@ -345,7 +348,7 @@ describe("journal (runtime integration)", () => {
 	});
 
 	it("step changes carry Path, Prev, and the cloned written Value — no hash", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const barrier = createBarrier();
 				const runtime = createRuntime<TestState>(initialState(), {});
@@ -383,7 +386,7 @@ describe("journal (runtime integration)", () => {
 	});
 
 	it("pop journals the delete trap's record and a bare length write — no synthesized duplicate", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const barrier = createBarrier();
 				const runtime = createRuntime<TestState>(initialState(), {});
@@ -432,7 +435,7 @@ describe("journal (runtime integration)", () => {
 	});
 
 	it("a length-assignment shrink synthesizes the tail deletes before the length record", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const barrier = createBarrier();
 				const runtime = createRuntime<TestState>(initialState(), {});
@@ -481,7 +484,7 @@ describe("journal (runtime integration)", () => {
 	});
 
 	it("a write through a re-derived reference to a moved element journals the element's CURRENT path", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const barrier = createBarrier();
 				const runtime = createRuntime<TestState>(initialState(), {});
@@ -529,7 +532,7 @@ describe("journal (runtime integration)", () => {
 	});
 
 	it("journals the table-write built-ins' dispatches and their table mutations at the store boundary", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				vi.spyOn(console, "warn").mockImplementation(() => {});
 				const barrier = createBarrier();
@@ -597,7 +600,7 @@ describe("journal (runtime integration)", () => {
 	});
 
 	it("records branch:start edges for parallel children", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const barrier = createBarrier();
 				const runtime = createRuntime<TestState>(initialState(), {});
@@ -663,7 +666,7 @@ describe("journal (runtime integration)", () => {
 	});
 
 	it("records action:end with status 'cancelled' when the entity is removed mid-flight", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const pinBarrier = createBarrier();
 				const childBarrier = createBarrier();
@@ -727,7 +730,7 @@ describe("journal (runtime integration)", () => {
 	});
 
 	it("journals receiver-dispatched work with its receiver's id as Receiver and Label, and no Name", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				vi.spyOn(console, "warn").mockImplementation(() => {});
 				const barrier = createBarrier();
@@ -778,7 +781,7 @@ describe("journal (runtime integration)", () => {
 	});
 
 	it("undefined-valued keys in descriptors and responses are absence, not loss", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const pinBarrier = createBarrier();
 				const runtime = createRuntime<TestState>(initialState(), {});
@@ -839,7 +842,7 @@ describe("journal (runtime integration)", () => {
 	});
 
 	it("journals a caught effect throw as an Error settlement and the action continues", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const barrier = createBarrier();
 				const runtime = createRuntime<TestState>(initialState(), {});
@@ -904,7 +907,7 @@ describe("journal (runtime integration)", () => {
 	});
 
 	it("journals an uncaught effect throw as an Error settlement plus action:end errored", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const barrier = createBarrier();
 				const runtime = createRuntime<TestState>(initialState(), {
@@ -964,7 +967,7 @@ describe("journal (runtime integration)", () => {
 	});
 
 	it("an aborted effect settles nothing — the cancelled action ends with no response record", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const pinBarrier = createBarrier();
 				const childBarrier = createBarrier();
@@ -1039,7 +1042,7 @@ describe("journal (runtime integration)", () => {
 	});
 
 	it("with no tap the journal reports disabled, and actions still run", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const runtime = createRuntime<TestState>(initialState());
 				const journal = await grabJournal(runtime, {
@@ -1096,7 +1099,7 @@ describe("journal (runtime integration)", () => {
 
 describe("journal owns Args and Descriptors", () => {
 	it("clones Args and Descriptors at append — mutating them after dispatch cannot rewrite history", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const barrier = createBarrier();
 				const runtime = createRuntime<TestState>(initialState(), {});
@@ -1157,7 +1160,7 @@ describe("journal owns Args and Descriptors", () => {
 	});
 
 	it("trailing undefined args trim loss-free; a mid-list undefined arg reaches the record", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const pinBarrier = createBarrier();
 				const runtime = createRuntime<TestState>(initialState(), {});
@@ -1222,7 +1225,7 @@ describe("journal owns Args and Descriptors", () => {
 	});
 
 	it("a start effect journals its target's Name and Label in the normalized descriptor", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const barrier = createBarrier();
 				const runtime = createRuntime<TestState>(initialState(), {});
@@ -1274,7 +1277,7 @@ describe("journal owns Args and Descriptors", () => {
 	});
 
 	it("a function in a publish payload is refused at the sender, naming the effect", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const runtime = createRuntime<TestState>(initialState(), {
 					onError: () => {}
@@ -1295,7 +1298,7 @@ describe("journal owns Args and Descriptors", () => {
 	});
 
 	it("journals normalized descriptors for start, parallel and parallelSettled", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const barrier = createBarrier();
 				const runtime = createRuntime<TestState>(initialState(), {});
@@ -1370,7 +1373,7 @@ describe("journal owns Args and Descriptors", () => {
 	});
 
 	it("fan-out settlements are owned clones, with parallelSettled's errors serialized to data", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const pinBarrier = createBarrier();
 				const runtime = createRuntime<TestState>(initialState(), {});
@@ -1498,7 +1501,7 @@ describe("journal owns Args and Descriptors", () => {
 	});
 
 	it("a generator-body throw after a settled effect journals one settlement and the step's writes", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const pinBarrier = createBarrier();
 				const runtime = createRuntime<TestState>(initialState(), {
@@ -1585,7 +1588,7 @@ describe("journal owns Args and Descriptors", () => {
 	});
 
 	it("a throwing first step still journals its writes", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const pinBarrier = createBarrier();
 				const runtime = createRuntime<TestState>(initialState(), {
@@ -1638,7 +1641,7 @@ describe("journal owns Args and Descriptors", () => {
 	});
 
 	it('non-fiber responses are owned clones, and a returns: "module" settlement records what survives', async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const pinBarrier = createBarrier();
 				const runtime = createRuntime<TestState>(initialState(), {});
@@ -1709,7 +1712,7 @@ describe("journal owns Args and Descriptors", () => {
 	});
 
 	it("a long-lived action's body narrates like every other action's — and is never stored", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const pinBarrier = createBarrier();
 				const runtime = createRuntime<TestState>(initialState(), {});
@@ -1786,7 +1789,7 @@ describe("journal owns Args and Descriptors", () => {
 	});
 
 	it("redacted effects journal Type only — no descriptor payload, no settlement payload", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const pinBarrier = createBarrier();
 				const runtime = createRuntime<TestState>(initialState(), {});
@@ -1845,7 +1848,7 @@ describe("journal owns Args and Descriptors", () => {
 	});
 
 	it("an effect that resolves after its action was cancelled settles nothing", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const pinBarrier = createBarrier();
 				const childBarrier = createBarrier();
@@ -2028,7 +2031,7 @@ describe("createJournal: the record tap", () => {
 
 describe("action names", () => {
 	it("journals a function's own name as its Label, and null for an anonymous one", async () => {
-		await createRoot(async (dispose) => {
+		await reactive.root(async (dispose) => {
 			try {
 				const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 				const runtime = createRuntime<TestState>(initialState(), {});

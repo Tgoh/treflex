@@ -6,8 +6,5 @@
 	"include": [
 		"./src",
 		"./tests"
-	],
-	"exclude": [
-		"./tests/SideBySide/baseline"
 	]
 }

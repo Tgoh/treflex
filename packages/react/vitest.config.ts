@@ -1,7 +1,6 @@
 import { defineConfig } from "vitest/config";
 
-// The env and the solid-js conditions match packages/core/vitest.config.ts:
-// the runtime under the binding needs Solid's reactive build.
+// The env matches packages/core/vitest.config.ts.
 export default defineConfig({
 	test: {
 		name: "treflex-react",
@@ -21,7 +20,6 @@ export default defineConfig({
 	resolve: {
 		conditions: [
 			"treflex-source",
-			"solid",
 			"browser"
 		]
 	},
@@ -29,7 +27,6 @@ export default defineConfig({
 		resolve: {
 			conditions: [
 				"treflex-source",
-				"solid",
 				"browser"
 			]
 		}

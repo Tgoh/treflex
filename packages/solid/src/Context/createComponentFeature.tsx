@@ -45,9 +45,9 @@ export function createComponentFeature<T extends IEntity>(
 					// body accepts anything anyway.
 					const bodyProps = props as unknown as P;
 					return (
-						<Context.Provider value={context}>
+						<Context value={context}>
 							<WrappedComponent {...bodyProps}></WrappedComponent>
-						</Context.Provider>
+						</Context>
 					);
 				};
 			},

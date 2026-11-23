@@ -1,11 +1,10 @@
 import type { IEntity } from "treflex";
-import { createRoot } from "solid-js";
 import { describe, expect, it, vi } from "vitest";
 import { createComponentFeature } from "../src/Context/createComponentFeature";
 import { createEntityFeature } from "../src/Context/createEntityFeature";
 import { componentFeatureRegistry, entityFeatureRegistry } from "../src/Context/hmrRegistry";
 import { TreflexProvider } from "../src/Context/TreflexContext";
-import { unhandledDuring } from "./unhandledDuring";
+import { mount } from "./mount";
 
 vi.mock("treflex/internal", async (importOriginal) => ({
 	...(await importOriginal<typeof import("treflex/internal")>()),
@@ -18,9 +17,16 @@ interface State extends IEntity {
 
 const CHUNK = "https://host/assets/index-BdhACKtC.js";
 
-// A throw in a view under the provider is raised uncaught.
-async function crashes(mount: () => unknown): Promise<string[]> {
-	return (await unhandledDuring(mount)).map(String);
+// A component body that throws at the first mount, with no boundary, throws out of render.
+function crashes(mountIt: () => unknown): string[] {
+	try {
+		mountIt();
+		return [];
+	} catch (error) {
+		return [
+			String(error)
+		];
+	}
 }
 
 function* a(_draft: State) {}
@@ -38,67 +44,62 @@ const hostValue = {
 };
 
 function useInside(outer: any, inner: any): () => any {
-	return () =>
-		createRoot((dispose) => {
-			let seen: any;
-			(TreflexProvider as unknown as Function)({
-				value: hostValue,
-				get children() {
-					const Wrapped = outer.provider(() => {
-						seen = inner.use();
-						return null;
-					});
-					return (Wrapped as Function)({
-						state: {
-							$Id: "e1",
-							Value: 0
-						}
-					});
-				}
-			});
-			dispose();
-			return seen;
+	return () => {
+		let seen: any;
+		const Wrapped = outer.provider(() => {
+			seen = inner.use();
+			return null;
 		});
+		mount(() => (
+			<TreflexProvider value={hostValue as any}>
+				<Wrapped
+					state={{
+						$Id: "e1",
+						Value: 0
+					}}
+				/>
+			</TreflexProvider>
+		)).dispose();
+		return seen;
+	};
 }
 
 function useInsideComponent(outer: any, inner: any): () => any {
-	return () =>
-		createRoot((dispose) => {
-			let seen: any;
-			(TreflexProvider as unknown as Function)({
-				value: {
-					...hostValue,
-					get: () => ({}),
-					seedComponent: () => ({
-						id: "~mounted",
-						raw: {
-							$Id: "~mounted",
-							Value: 0
-						}
-					}),
-					seatComponent: () => true,
-					unmountComponent: () => {}
-				},
-				get children() {
-					const Wrapped = outer.provider(
-						() => {
-							seen = inner.use();
-							return null;
-						},
-						() => ({
-							Value: 0
-						})
-					);
-					return (Wrapped as Function)({});
+	return () => {
+		let seen: any;
+		const Wrapped = outer.provider(
+			() => {
+				seen = inner.use();
+				return null;
+			},
+			() => ({
+				Value: 0
+			})
+		);
+		const host = {
+			...hostValue,
+			get: () => ({}),
+			seedComponent: () => ({
+				id: "~mounted",
+				raw: {
+					$Id: "~mounted",
+					Value: 0
 				}
-			});
-			dispose();
-			return seen;
-		});
+			}),
+			seatComponent: () => true,
+			unmountComponent: () => {}
+		};
+		mount(() => (
+			<TreflexProvider value={host as any}>
+				<Wrapped />
+			</TreflexProvider>
+		)).dispose();
+		return seen;
+	};
 }
 
 describe("createEntityFeature in a production build", () => {
-	it("gives two features that share a chunk URL two distinct contexts", async () => {
+	it("gives two features that share a chunk URL two distinct contexts", () => {
 		const first = createEntityFeature<State>(CHUNK)(
 			{
 				a
@@ -126,10 +127,10 @@ describe("createEntityFeature in a production build", () => {
 		expect(insideSecond.a).toBeUndefined();
 		expect(insideSecond.selB()).toBe("b");
 
-		expect(await crashes(useInside(first, second))).toEqual([
+		expect(crashes(useInside(first, second))).toEqual([
 			expect.stringMatching(/outside the matching provider/)
 		]);
-		expect(await crashes(useInside(second, first))).toEqual([
+		expect(crashes(useInside(second, first))).toEqual([
 			expect.stringMatching(/outside the matching provider/)
 		]);
 	});
@@ -155,7 +156,7 @@ describe("createEntityFeature in a production build", () => {
 });
 
 describe("createComponentFeature in a production build", () => {
-	it("gives two component features that share a chunk URL two distinct contexts", async () => {
+	it("gives two component features that share a chunk URL two distinct contexts", () => {
 		const first = createComponentFeature<State>(CHUNK)({
 			a
 		});
@@ -167,10 +168,10 @@ describe("createComponentFeature in a production build", () => {
 		expect(typeof insideFirst.a).toBe("function");
 		expect(insideFirst.b).toBeUndefined();
 
-		expect(await crashes(useInsideComponent(first, second))).toEqual([
+		expect(crashes(useInsideComponent(first, second))).toEqual([
 			expect.stringMatching(/outside the matching provider/)
 		]);
-		expect(await crashes(useInsideComponent(second, first))).toEqual([
+		expect(crashes(useInsideComponent(second, first))).toEqual([
 			expect.stringMatching(/outside the matching provider/)
 		]);
 		expect(componentFeatureRegistry.get(CHUNK)).toBeUndefined();

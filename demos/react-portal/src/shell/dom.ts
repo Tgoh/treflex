@@ -1,6 +1,5 @@
 import type { CSSProperties } from "react";
 
-/** A className from a base and the names whose flag is true, as Solid's `classList` builds it. */
 export function cx(base: string, flags: Record<string, boolean>): string {
 	const on = Object.keys(flags).filter((name) => flags[name]);
 	return [

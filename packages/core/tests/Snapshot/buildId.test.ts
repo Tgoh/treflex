@@ -128,7 +128,9 @@ describe("the build in a snapshot", () => {
 				actionId: expect.any(String),
 				name: "Build/Hangs",
 				label: "hangs",
-				entityId: "Root"
+				entityId: "Root",
+				state: "holding",
+				reason: "resume-off"
 			}
 		]);
 		expect(JSON.parse(createSnapshot(runtime)).InFlight).toEqual([]);
@@ -161,7 +163,8 @@ describe("the build in a snapshot", () => {
 				Name: null,
 				Label: "Build/RootReceiver",
 				Receiver: "Build/RootReceiver",
-				EntityId: "Root"
+				EntityId: "Root",
+				State: "holding"
 			}
 		]);
 		runtime.dispose();
@@ -206,13 +209,15 @@ describe("a version 7 envelope", () => {
 				actionId: "branch-1",
 				name: null,
 				label: "hangs",
-				entityId: "Root"
+				entityId: "Root",
+				reason: "resume-off"
 			},
 			{
 				actionId: "branch-2",
 				name: null,
 				label: null,
-				entityId: "Root"
+				entityId: "Root",
+				reason: "resume-off"
 			}
 		]);
 		runtime.dispose();

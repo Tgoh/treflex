@@ -1,3 +1,5 @@
+import { errorClass } from "../Utility/errorClasses";
+
 /** The entity a dispatch, an `ask` or an `openResource` names is not in the tree, or is leaving it. */
 export class EntityGoneError extends Error {
 	readonly id: string;
@@ -7,3 +9,5 @@ export class EntityGoneError extends Error {
 		this.id = id;
 	}
 }
+
+errorClass("treflex/EntityGoneError", EntityGoneError);

@@ -6,6 +6,11 @@ import { callbackThrew, consoleDiag, type IDiagEmitter } from "../Types/IRuntime
 export interface IRecordTapOptions<K extends IRecordKind> {
 	/** The kinds this tap hears. */
 	kinds: readonly K[];
+	/**
+	 * Asks for `Landing`, which every tap and trace then has on the changes of a step that begins while a tap
+	 * asks, where an entity holds the written place. Only a tap whose `kinds` take `step` asks.
+	 */
+	landing?: boolean;
 }
 
 export interface IEventBus {
@@ -32,7 +37,7 @@ export interface IEventBusInternal extends IEventBus {
 
 /** `report` hears a subscriber's throw, which stops only that subscriber. A diag subscriber's throw goes to the console alone. */
 export function createEventBus(
-	tapRecords?: (listener: IRecordTapListener, kinds?: readonly IRecordKind[]) => () => void,
+	tapRecords?: (listener: IRecordTapListener, kinds?: readonly IRecordKind[], landing?: boolean) => () => void,
 	report: IDiagEmitter = consoleDiag
 ): IEventBusInternal {
 	const listeners = new Map<IRuntimeEventName, IRuntimeEventListener<any>[]>();
@@ -44,7 +49,7 @@ export function createEventBus(
 					'[treflex] this event bus was constructed without a journal tap — "record" subscriptions need createRuntime\'s wiring.'
 				);
 			}
-			return tapRecords(handler, options?.kinds);
+			return tapRecords(handler, options?.kinds, options?.landing === true);
 		}
 		let arr = listeners.get(event);
 		if (!arr) {

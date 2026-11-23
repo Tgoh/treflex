@@ -2,7 +2,7 @@ import type { ISelector } from "../Types/ISelector";
 import type { IDiagService } from "./createDiagService";
 import type { IOwnedMemo } from "./createOwnedCache";
 import type { IReadHandler } from "./processSelector";
-import { host } from "../Solid/host";
+import { host } from "../Reactive/host";
 import { DEV } from "../Utility/devMode";
 import { createOwnedBucketCache, createOwnedMemo } from "./createOwnedCache";
 import { processSelector } from "./processSelector";

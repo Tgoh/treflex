@@ -27,7 +27,7 @@ The edit afterwards throws `TypeError` in strict code; sloppy-mode code loses it
 
 ### Refreshing rows
 
-Replacing a list of entities ends whatever was attached to the old rows: their running actions, bindings, timers and resources ([removal](./state-tree.md#removal-ends-everything-attached)). `reconcileRows` refreshes a list and keeps every row an incoming item matches:
+Replacing a list of entities ends whatever was attached to the old rows: their running actions, bindings, timers and resources ([removal](./state-tree.md#removal-ends-everything-attached)). `reconcileRows` refreshes a list, or a [record](#a-record-of-rows), and keeps every row an incoming item matches:
 
 ```ts
 function* assign(draft: IDocument, info: IDocumentInfo): IActionGenerator {
@@ -50,16 +50,34 @@ function* assignRow(row: IRow, item: IRowInfo): IActionGenerator {
 }
 ```
 
-`reconcileRows(current, incoming, key, { add, update })`, its options typed `IReconcileRowsOptions`:
+`reconcileRows(current, incoming, key, { add, update })`, its options typed `IReconcileRowsOptions`, works on a [crossing copy](#what-crosses-into-an-action) of `incoming`, so a `-0` in an item is `0` in state:
 
 - **A row whose key matches an item keeps its node and its `$Id`,** so its work, binding and held references survive, wherever the item moved it.
 - **An item nothing matched gets a new row from `add`,** which returns a row or a generator such as `entity(...)`.
 - **`update` runs on every row in the result,** new or matched, so one path fills both. It is required: `update: () => {}` keeps a matched row's contents.
 - **A row no item matched is removed,** and its work ends as with any removal.
-- **The list ends in the incoming order,** and it is the same array afterwards, in the tree or in a transient. It returns the rows it added, as draft nodes, in list order.
+- **The list ends in the incoming order,** and it is the same array afterwards, in the tree or in a transient. It returns the rows it added, as draft nodes, in the incoming order.
 - **One level at a time.** A row's own collection is a `reconcileRows` inside `update`, with its own key. Nothing matches by position.
 
 **Refresh by key, never by position.** Copying fetched fields onto the rows by index keeps each node but gives it another record's data when the server reorders, so the work running on a row goes on with the wrong record's data.
+
+#### A record of rows
+
+A record of rows, `Record<string, row>` keyed by id so a lookup is constant, refreshes by the same rules, and incoming rows already keyed the same way take no key function:
+
+```ts
+function* applySnapshot(draft: IThread, snapshot: IThreadSnapshot): IActionGenerator {
+    yield* reconcileRows(draft.Requests, snapshot.Requests, (item) => item.id, {
+        update: (row, item) => { row.status = item.status; }
+    });
+}
+
+function* applyRequests(draft: IThread, requests: Record<string, IRequestInfo>): IActionGenerator {
+    yield* reconcileRows(draft.Requests, requests, { update: assignRequest });
+}
+```
+
+A record has no order to keep: a matched row stays where it is in the record's key order, and a new row's key goes on the end, in the incoming order, except that a key that looks like an integer, such as `"5"`, sorts ahead of the rest, as JavaScript orders an object's keys. It is the same record afterwards.
 
 ## Rules
 
@@ -87,7 +105,7 @@ An `$Id` has rules of its own at the write ([making an entity](./state-tree.md#m
 
 ### What crosses into an action
 
-An action's draft is live. Everything else it receives is a copy of plain data, checked the same way a write is:
+An action's draft is live. Everything else it receives is a copy: of plain data, checked the same way a write is, or of a rejection, rebuilt from the form a record holds:
 
 | What | Copy | A value with no plain form |
 |---|---|---|
@@ -96,27 +114,30 @@ An action's draft is live. Everything else it receives is a copy of plain data, 
 | An effect's result | Not frozen, so the action can adjust it before writing it; a [`returns: "module"`](./effects.md#module-results) result isn't copied | `NonPlainDataError` at the yield, naming the type |
 | A read's result | Frozen, except `transient` and `pendingAsks` | `NonPlainDataError` at the yield ([derived reads](./derived-reads.md#reads-in-an-action)) |
 | An answer, a message payload | Frozen | `NonPlainDataError` at the sender |
+| What an implementation rejects with or throws, a resource method's included | Rebuilt from its [serialized form](./failure.md#the-actionerror-payload) ([effects](./effects.md#a-rejection-crosses-as-a-copy)) | Never refused: it arrives as its JSON round trip, changed or dropped |
 
-So nothing either side writes afterwards reaches the other. A key holding `undefined` is dropped from every copy, so a patch argument can't clear a field by carrying `undefined`. A positional `undefined` argument is delivered as `undefined`.
+So nothing either side writes afterwards reaches the other. A key holding `undefined` is dropped from every copy, so a patch argument can't clear a field by carrying `undefined`. A positional `undefined` argument is delivered as `undefined`. A `-0` crosses as `0`.
 
 **A `NonPlainDataError`** names the route in `what`, what it found in `kind`, and where in `path`: `action "save": an argument is not plain: Date at [0.When]`. It is raised wherever a value enters, before anything is written or sent, `createRuntime`'s seed included; a restore wraps it in `SnapshotRejectedError` as the `cause`. Send a plain form instead. **A `TypeError` writing to something an action received** is the frozen copy refusing: write it into the draft, where it lands as a node of its own, or spread it into a new value.
 
 ### Keys and the refresh step
 
-Without `add`, the new row is `entity(item)`, which the types allow only when an item has the row's fields.
+Without `add`, the new row is `entity(item)`, which the types allow only when an item has the row's fields, or when `IWithId<Item>` is assignable to the row type. The second holds over a generic `Item`, so a fold of `readonly T[]` into `Record<string, IWithId<T>>` needs no cast.
 
-The key function gets live rows and incoming items alike, so it reads a field both have. Keys compare as strings, so `5` matches `"5"`; `null`, `undefined` and `""` are no key.
+For a list, the key function gets live rows and incoming items alike, so it reads a field both have. For a record, the record's key is the row's key on both sides. A field on a row or an item that names a different key is data like any other: nothing compares it, `update` writes it if it chooses, and the row stays under the key that matched it. Keys compare as strings, so `5` matches `"5"`; `null`, `undefined` and `""` are no key.
 
 | Case | Result |
 |---|---|
-| The same key twice in either list | `ReconcileRowsKeyError`, before anything moves |
-| An incoming item with no key | `ReconcileRowsKeyError`, before anything moves |
-| A current row with no key | Can't match, so it's removed |
-| `current` isn't an array on the draft, or `update` is missing, or `add` returns something that isn't a row | `TypeError`, before anything moves |
+| The same key twice in an incoming list, or in a current list | `ReconcileRowsKeyError`, before anything moves |
+| An incoming item with no key, or an incoming record's key `""` | `ReconcileRowsKeyError`, before anything moves |
+| A current row with no key, or under a record's key `""` | Can't match, so it's removed |
+| `current` isn't an array or a record on the draft, or it's an entity, carrying an `$Id`, or `update` is missing, or `add` returns something that isn't a row | `TypeError`, before anything moves |
+| `current` is a list and `incoming` a record, which has no order for the list to end in, or an incoming record comes with a key function | `TypeError`, before anything moves |
+| An item keyed `"__proto__"` for a record, or an incoming record's own `"__proto__"` key, which `JSON.parse` makes | Skipped: a draft can't write that key, and a restore's walk skips it the same way |
 | `add` returns a row with a hand-written `$Id`, or one that collides with a live row | `HandWrittenIdError` or `EntityReplacedError`, before anything moves |
 | Plain rows with no `$Id` | Work the same: matched rows keep their nodes |
 
-**A refresh lands in one step.** Every `add` runs before anything moves, then the list is arranged, then `update` runs on each row inside the parent's step. So a view sees the list before or after, never between. A `settles: "sync"` effect such as `entity()` in `add` or `update` runs without ending the step. Anything that would wait throws `ReconcileRowsWaitError` at its yield: an effect that can suspend, a read such as `select` or `transient`, or an async function. Do the wait or the read before `reconcileRows`. A throw in `add` leaves the list untouched; a throw in `update` comes after the list is arranged, and what landed stays.
+**A refresh lands in one step.** Every `add` runs before anything moves, then the rows are arranged, removals included, then `update` runs on each row inside the parent's step. So a view sees the rows before or after, never between. A `settles: "sync"` effect such as `entity()` in `add` or `update` runs without ending the step. Anything that would wait throws `ReconcileRowsWaitError` at its yield: an effect that can suspend, a read such as `select` or `transient`, or an async function. Do the wait or the read before `reconcileRows`. A throw in `add` leaves the rows untouched; a throw in `update` comes after the rows are arranged, and what landed stays.
 
 ### What a write refuses or throws
 

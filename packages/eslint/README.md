@@ -5,9 +5,12 @@ The plugin's rules are [`treflex/no-discarded-generator`](#treflexno-discarded-g
 [`treflex/no-edit-after-write`](#treflexno-edit-after-write),
 [`treflex/no-hidden-open`](#treflexno-hidden-open),
 [`treflex/no-returned-promise`](#treflexno-returned-promise),
+[`treflex/no-main-state-in-lifecycle`](#treflexno-main-state-in-lifecycle),
 `treflex/no-global-open`, [`treflex/named`](#treflexnamed) and
 [`treflex/require-name`](#treflexrequire-name), after the setup below. Its
 command, [`treflex-eslint name`](#treflex-eslint-name), names a project's actions.
+For an app that wants every lifecycle callback to say why it stays, a recipe
+outside the plugin is [below](#a-reason-for-every-lifecycle-callback).
 
 ## Registering it
 
@@ -61,8 +64,10 @@ typescript 6. Its eslint 10 support arrived earlier, at 8.56.0.
   `npm install typescript` reaches for 7, hence `typescript@^6` above.
   `treflex` itself declares no typescript peer, so it installs in a
   typescript 7 project.
-- **eslint 9 or later**, a peer dependency, for the flat config the plugin's
-  `configs.recommended` is written in.
+- **eslint 9.1 or later**, a peer dependency, for the flat config the plugin's
+  `configs.recommended` is written in, and for `SourceCode#getDisableDirectives`,
+  which [`treflex/no-main-state-in-lifecycle`](#treflexno-main-state-in-lifecycle)
+  reads its opt-in's reason from and which 9.0 lacks.
 
 A rule that needs type information gets it from `projectService` above.
 Without it `ESLintUtils.getParserServices` throws saying so, rather than
@@ -473,3 +478,286 @@ returns. Not seen:
 - A value typed `any` or `unknown`. The runtime still refuses one that an
   action or a branch returns.
 - A promise inside the returned value, `return { saved: api.save(x) }`.
+
+## `treflex/no-main-state-in-lifecycle`
+
+```js
+"treflex/no-main-state-in-lifecycle": "error"
+```
+
+Reports a component starting main-state work from its lifecycle
+([where an action starts](../../docs/reference/views.md#where-an-action-starts)).
+Work started there runs again at every mount, a restore's included, and never
+runs in a test without views. The fix is to dispatch from the event behind the
+work: a handler, a receiver, the action that opens the screen
+([load a screen's data when its route opens](../../docs/patterns.md#load-a-screens-data-when-its-route-opens)),
+or the action that writes what an effect would watch.
+
+```tsx
+const thread = Thread.use();
+onSettled(() => void thread.load());                  // reported
+<button onClick={() => thread.open()}>Open</button>;  // fine
+```
+
+It reports a call on a feature handle, what an `X.use()` with no arguments
+returned, or a call of what `useDispatch()` returned, when the call's result is
+discarded and the call runs from:
+
+- either function of a split effect, `createEffect(compute, effect)` or
+  `createRenderEffect(compute, effect)`, or the `effect` or `error` of an
+  `{ effect, error }` bundle written in the effect's place. What the compute
+  returns is used, so only a call its body discards is reported; a cleanup the
+  effect returns, written there or a handle's method returned by reference, is
+  reported as the effect's cleanup;
+- a `createTrackedEffect` or `createReaction` callback, a bundle's in
+  `createReaction`'s place, or the cleanup it returns, and an `onCleanup`
+  callback;
+- Solid 1.9's `onMount`, `createComputed`, and a `createEffect` or
+  `createRenderEffect` with one argument, or with a literal or `undefined`
+  second, its initial value, the function `on(deps, fn)` hands one of them
+  included;
+- a `useEffect` or `useLayoutEffect` callback, or the cleanup it returns,
+  written there or a handle's method returned by reference,
+  `useEffect(() => thread.save, [])`;
+- the body of the component or hook that called `use()` or `useDispatch()`, a
+  render callback that is a JSX child, such as `<For>`'s or `<Show>`'s, and a
+  `createMemo` or `useMemo` callback, the function `on(deps, fn)` hands
+  `createMemo` included. What these return is used, so only a call their body
+  discards is reported;
+- inside any of these, an `onSettled` or `onFlush` callback, or the cleanup an
+  `onSettled` callback returns, reported as `onSettled` and `onSettled's
+  cleanup` when it is called in the body. Called in an event handler, they run
+  when the handler's work settles or flushes, and aren't reported;
+- inside any of these, a `setTimeout`, `setInterval`, `queueMicrotask`,
+  `requestAnimationFrame` or `requestIdleCallback` callback, a promise's `then`,
+  `catch` or `finally` callback, or a function run in place: by `untrack`,
+  `batch`, `startTransition`, the second element of
+  `const [pending, startTransition] = useTransition()`, an array's `forEach`
+  or `map`, or called immediately, so a dispatch a render's `rows.map(...)`
+  callback discards is reported from the body. Any `.map(fn)` counts as an
+  array's, by name and without types, as `forEach` does, so a lazy `map`, an
+  Effect's or an observable's, whose block body discards a call is reported;
+- a function of the component's own, `const load = () => ...` or
+  `function load() {}`, that one of these passes on or calls, directly or
+  through React's `useCallback` or `useEffectEvent`.
+
+Any other function ends the search unreported: an event handler, a listener a
+mount adds, a callback prop, a receiver.
+
+A handle's method passed by reference, not called, is judged by where it is
+passed, as a function written there would be: `onSettled(thread.load)`,
+`createEffect(() => props.id, thread.load)`, `onMount(thread.load)`,
+`onCleanup(save)` after `const save = thread.save`,
+`createEffect(on(() => props.id, thread.load))`, `setInterval(thread.poll, 5000)`
+in an effect and `fetchIt().then(thread.load)` in a mount are reported, and so
+is what `useDispatch()` returned, passed the same way.
+`addEventListener("focus", thread.refresh)` and `onClick={thread.open}` are
+events, and aren't, and `createMemo(thread.count)` and
+`createEffect(thread.messages, () => scrollToBottom())`'s compute are reads.
+
+A call is discarded when it is a statement of its own, alone or under `void`,
+`as` or TypeScript's non-null `!`; in such a statement, the right side of `&&`, `||` or `??`, either
+branch of `?:`, or any element of a comma list; or what an arrow or a `return`
+hands a caller that ignores it: a lifecycle call, a timer, a promise callback
+or `forEach`. `untrack`, `batch`, an array's `map` and a direct call hand the
+value on, and it is judged where they stand. An `await` of the call, or
+`.then`, `.catch` or `.finally` called on its result, counts anywhere, even when
+the outer value is used, since a selector returns a plain value. A call whose
+value is used is a read, and isn't reported; a selector called and discarded is.
+
+Work on state the component owns is allowed. A handle from `useComponentState`
+is never reported, nor is one from an `X.use()` where `X` is bound to a
+`createComponentFeature(...)(...)` call in the same module, or is a named or
+default import from a relative specifier whose module binds that name, or its
+default export, to one. The rule finds that module as the specifier as
+written, then with `.ts`, `.tsx`, `.mts`, `.js`, `.jsx` or `.mjs`, a `.js`
+specifier as `.ts` or `.tsx` and a `.mjs` one as `.mts`, then the folder's
+`index` with each of those. It doesn't follow a path alias or a bare specifier,
+a re-export or a barrel, or a member of a namespace import, `Grid.GridFeature`.
+It matches the module's text, not its syntax: `const Grid = createComponentFeature`,
+`export default createComponentFeature`, or `export default Grid` with such a
+`Grid`, with `createComponentFeature` spelled as written there. So a module that
+imports `createComponentFeature` under another name, or calls it off a
+namespace, isn't recognised. Neither
+`eslint --cache` nor an editor's cache tracks that module: an importer isn't
+linted again when only the feature module changes, so an uncached run is the
+check.
+
+The rule needs no type information. In the module it checks, it recognises the
+lifecycle calls, `onSettled`, `onFlush`, `createMemo`, `useMemo`, `on`, `untrack`, `batch`,
+`startTransition`, `useTransition`, `useCallback`, `useEffectEvent`,
+`useDispatch` and `createComponentFeature` by name: imported
+from any source under any alias, read off a namespace or default import such as
+`React.useEffect`, or as an unresolved global. The timers are recognised the
+same way and also as members of `window`, `globalThis` or `self`. A local
+function with one of these names is the app's own, and isn't recognised, and
+nor is a `useDispatch` imported from `react-redux` or `@reduxjs/toolkit`,
+which is Redux's. It follows a handle through a `const`, or a `let` or `var` written once:
+`const other = thread`, `const save = thread.save`,
+`const { save, load: l } = Thread.use()`, and `thread["save"]()`. Solid 1.9's
+names, `onMount`, `createComputed` and `on`, still count, from any source, so
+an app still on 1.9, or mid-port with an `onMount` of its own imported from a
+module, is covered.
+
+**Work caused by what is on screen,** such as marking a thread visited when its
+completion is shown, starts from the lifecycle by design. Once it is safe to
+start at every mount, an action that checks state, marked `leading`, or
+`latest` when it is keyed on what it loads, say so on the line before the
+reported call. For a callback over several lines,
+that is the dispatch's line, not the lifecycle call's:
+
+```tsx
+// eslint-disable-next-line treflex/no-main-state-in-lifecycle -- the completion on screen is the visit; markVisited checks state and is leading
+onSettled(() => void thread.markVisited());
+
+createEffect(completionShown, (shown) => {
+    // eslint-disable-next-line treflex/no-main-state-in-lifecycle -- the completion on screen is the visit; markVisited checks state and is leading
+    if (shown) void thread.markVisited();
+});
+```
+
+**The opt-in counts only with a reason** after ` -- `, as in both comments
+above; a comment on the line above the directive doesn't count. A
+`disable-next-line`, `disable-line` or range directive, `eslint-` or `oxlint-`,
+whose list names the rule with nothing after the dashes, still silences the
+call, and the rule reports the directive instead, saying a reason is required.
+Rules may be separated by commas or by spaces, as oxlint allows, and a bare
+` --` counts as no reason. The rule's name in the check and in its messages is
+the one it is registered under. A directive that names no rule, with no reason,
+on the line of a site the rule reports, is reported the same way. Under ESLint
+the report lands at the start of the directive's line, before the directive;
+under oxlint it shows at the end of the line above the directive, or at the
+file's start for a directive on line 1.
+
+Correct code it still reports, which takes the same comment with its reason:
+
+- A handle from a component feature the rule can't read: through a path alias,
+  a barrel or a namespace import, or made through a two-step factory,
+  `const make = createComponentFeature("G"); const Grid = make(actions)`.
+  Without types it can't be told from an entity feature.
+- An entity feature's handle over an entity that sits in component state, such
+  as a component feature's rows.
+- A dispatch through `useDispatch()` whose target is component state,
+  `dispatch(load, local.id)`.
+- A selector called and discarded to subscribe an effect to it: in a split
+  effect's compute, `createEffect(() => { thread.messages(); thread.draft(); }, () => scrollToBottom())`,
+  or in `createTrackedEffect`. Return the reads instead,
+  `() => [thread.messages(), thread.draft()]`, or pass the one selector,
+  `createEffect(thread.messages, () => scrollToBottom())`; neither is reported.
+- A `use()` called inside a handler through `runWithOwner`,
+  `onClick={() => runWithOwner(owner, () => void Thread.use().save())}`: the
+  function that called `use()` counts as the component's body.
+
+Not seen:
+
+- A handle passed in as a prop or an argument, held in an object, an array or
+  a signal, or reassigned, or returned by any other call: a wrapper hook such as
+  `const useThread = () => Thread.use()`, or `useContext`.
+- A function reached other than by a call or by being passed straight to one
+  of the calls above: through an object, a prop, a reassigned variable, an
+  alias of the function, or an import.
+- A dispatch a split effect's compute returns, or a method passed as the
+  compute, `createEffect(() => thread.load(id()), ...)` or
+  `createEffect(thread.load, ...)`: a compute's value is used, so without types
+  it reads as a selector. Solid raises nothing for it either, so review is the
+  only check.
+- A load an async memo returns, `createMemo(() => thread.load())`.
+- A bundle not written in the call, `createEffect(compute, handlers)`, a
+  method by reference as its property, `{ effect: thread.load }`, or a bundle
+  written with string keys, `{ "effect": () => ... }`.
+- The function forms of `createProjection`, `createSignal`, `createOptimistic`,
+  `createStore` and `createOptimisticStore`, and the callback of
+  `createReaction`'s `track`.
+- `createResource`, `useInsertionEffect`, a `useState`
+  initializer, `useState(() => { ... })`, a `ref` callback, a render prop passed
+  as an attribute, a `new Promise` executor, and a class component's lifecycle
+  methods, which it treats as events.
+- A dispatch whose promise is passed on, `void Promise.all([thread.load()])` or
+  `void Promise.all(ids.map((id) => thread.load(id)))`, or stored,
+  `const p = thread.load(); p.then(...)`.
+- `runtime.dispatch` through an imported runtime.
+- An entity feature whose imported module holds a commented-out
+  `createComponentFeature` binding of the same name, which the text match takes
+  for a component feature.
+- A range that names no rule, `/* eslint-disable */`, with no reason: it
+  silences the rule and isn't reported.
+- A reasonless directive on the same line as the `enable` that closes a
+  reasoned range: its report falls inside that range.
+- An inline config comment, `/* eslint treflex/no-main-state-in-lifecycle: "off" */`,
+  which turns the rule off for the file under ESLint, with nothing reported.
+  oxlint ignores inline config.
+
+## A reason for every lifecycle callback
+
+Not a treflex rule: an app's own policy, which an app made by `npm create treflex`
+already has. Each lifecycle callback says why it stays, since most lifecycle work
+has a better home: a value derived from state is a selector, and work an event
+causes starts in that event's handler. A callback is right where it keeps
+something outside the tree in step while the view is mounted, such as focus, a
+DOM listener or a third-party widget, where it works on the component's own
+state, or where what is on screen causes the work. An app not made from a
+template adds it in one of these forms; this package ships none of them.
+
+**Biome.** Copy `lifecycle.grit` from `create-treflex`'s `templates/solid` or
+`templates/react` beside `biome.json` and register it:
+
+```json
+"overrides": [{ "includes": ["src/**"], "plugins": ["./lifecycle.grit"] }]
+```
+
+A callback that stays takes
+`// biome-ignore lint/plugin/lifecycle: <what it keeps in step>`. Biome refuses
+a suppression with no reason as a parse error and keeps the call reported,
+holds its range and whole-file forms to the same, and reports a suppression
+that suppresses nothing. The plugin matches names, so it misses an aliased
+import and reports a local function or a member of any object of the same name,
+such as `props.onMount()`, and an `onSettled` in an event handler, which runs
+when the handler's work settles, not at mount; that call takes a reason too.
+
+**ESLint.** `no-restricted-syntax` on the lifecycle calls, with
+`@eslint-community/eslint-plugin-eslint-comments`' `require-description` so
+that the disable comment says why:
+
+```js
+import comments from "@eslint-community/eslint-plugin-eslint-comments/configs";
+
+const LIFECYCLE = "/^(onMount|onSettled|onCleanup|createEffect|createComputed|createRenderEffect|createTrackedEffect|createReaction|createResource|useEffect|useLayoutEffect)$/";
+const message =
+	"Most lifecycle work has a better home: a value derived from state is a selector, and work an event causes starts in that event's handler. A lifecycle callback stays where it keeps something outside the tree in step while the view is mounted, such as focus, a DOM listener or a third-party widget, where it works on the component's own state, or where what is on screen causes the work. Then it says why: // eslint-disable-next-line no-restricted-syntax -- <reason>";
+
+export default [
+	// ...the setup above
+	comments.recommended,
+	{
+		rules: {
+			"no-restricted-syntax": [
+				"error",
+				{ selector: `CallExpression[callee.name=${LIFECYCLE}]`, message },
+				{ selector: `CallExpression[callee.property.name=${LIFECYCLE}]`, message }
+			],
+			"@eslint-community/eslint-comments/require-description": ["error", { ignore: ["eslint-enable"] }]
+		}
+	}
+];
+```
+
+- **A later `no-restricted-syntax` entry replaces these options rather than
+  merging with them,** so an app's own restricted syntax elsewhere in the
+  config silently drops the lifecycle check. Keep every selector in one entry.
+- **`ignore: ["eslint-enable"]`,** since an `enable` has nothing to explain.
+- **The recommended config's `disable-enable-pair`** reports a `/* eslint-disable */`
+  that never ends, so a file-wide disable can't stand in for the reasons.
+
+Where the two forms differ:
+
+- **A nested `onCleanup`.** The Biome plugin skips an `onCleanup` inside another
+  reported callback; the ESLint form reports it, so a kept `onMount` with a
+  cleanup takes two comments.
+- **What else they cover.** `require-description` and `comments.recommended`
+  apply to every directive in the app, `treflex/*` ones included, where the
+  Biome form asks only its own suppressions for a reason.
+
+**oxlint** has no built-in way: it has no `no-restricted-syntax` and no rule
+requiring a directive's description, and `eslint-comments` doesn't run
+reliably under it. An app writes a small rule of its own on
+`sourceCode.getDisableDirectives()`.

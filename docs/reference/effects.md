@@ -35,20 +35,72 @@ const result = yield* fetchJson({ Url: "/api/rows", Method: "get" });
 import { implementation } from "treflex";
 
 export const implement = implementation(fetchJson, async (effect, action) => {
-    const response = await fetch(effect.Url, { method: effect.Method, signal: action?.signal });
-    return { Status: response.status, Body: await response.json() };
+    try {
+        const response = await fetch(effect.Url, { method: effect.Method, signal: action?.signal });
+        return { Status: response.status, Body: await response.json() };
+    } catch (error) {
+        return { Status: 0, Body: String(error) };
+    }
 });
 
 runtime.registerImplementation(implement);
 ```
 
-`implementation(declaration, fn)` types `fn` against its declaration and returns a tag that `runtime.registerImplementation(tag)` takes. `fn` receives the descriptor and the [action context](#the-action-context), and returns the result or a promise of it, which the runtime awaits. The context is optional in the type, because a test or a direct call may pass none, so read it as `action?.signal`.
+It catches what `fetch` throws and answers with data, as [a failure the app handles](#a-failure-the-app-handles) says. `implementation(declaration, fn)` types `fn` against its declaration and returns a tag that `runtime.registerImplementation(tag)` takes. `fn` receives the descriptor and the [action context](#the-action-context), and returns the result or a promise of it, which the runtime awaits. The context is optional in the type, because a test or a direct call may pass none, so read it as `action?.signal`.
 
 ### The data-only rule
 
 **Everything that crosses an implementation's boundary is plain data**, in both directions. Inside, an implementation may use anything: sockets, native APIs, module state. Convert at the boundary: return `{ Status, Headers: Record<string, string>, Body }`, never a `Response`; send a timestamp as epoch milliseconds; take `Dedupe: boolean`, never an `AbortController`.
 
 The runtime copies the input and the result at the yield, so neither side holds the other's objects; what counts as plain, and how each copy is made, is on the [write path](./write-path.md#what-crosses-into-an-action).
+
+### A rejection crosses as a copy
+
+What an implementation rejects with, or throws, reaches the action as a copy rebuilt from its [serialized form](./failure.md#the-actionerror-payload), the one a record holds. The copy is an instance of the nearest native error type up the original's prototype chain, where the environment has it: `Error`, `TypeError` or another native type, `AggregateError`, `SuppressedError`, `InternalError`, `DOMException`, or a `WebAssembly` error. An error from another realm arrives as this realm's type named by the nearest constructor up its chain that is built into its realm, so an app's class there named `TypeError` arrives as the type it extends. The copy carries the name, the message, the enumerable own fields as their JSON round trip, the `cause`, an `AggregateError`'s `errors`, a `SuppressedError`'s `error` and `suppressed`, and the original's stack. A field of the thrown error with no exact JSON form arrives changed or dropped, a `Date` as a string and a `Map` as `{}`, and a development build reports [`effect/rejection-field-lost`](./troubleshooting.md#effectrejection-field-lost).
+
+- **An instance of a class that isn't a native type or one of treflex's, an app's or a library's, arrives as the nearest class up its prototype chain that is one of treflex's own, or else as its native base.** It keeps its `name` and fields, and `instanceof` the class is false for it, so a `catch` that tests the class rethrows it. A development build reports [`effect/class-rejection`](./troubleshooting.md#effectclass-rejection).
+- **Another action's failure, reached through a `runtime.dispatch` the implementation awaited, arrives the same way.** An implementation whose caller branches on that failure catches it and answers with data.
+- **One of treflex's own errors arrives as itself:** an `EntityGoneError` from a `runtime.dispatch` the implementation awaited is still an `EntityGoneError` with its `id`, and another action's refusal still answers `isRefusal`.
+- **A value that isn't an error** arrives as its JSON form: one that isn't plain data, such as a `Response`, arrives as what `JSON.stringify` makes of it, and a function, a symbol or a `bigint` as `undefined`, and a development build reports `effect/class-rejection`. An object whose `Symbol.toStringTag` says `"Error"` is not an error unless it extends `Error`, on every engine. An error from another realm whose class defines `Symbol.toStringTag` is an error only on an engine that has `Error.isError`.
+
+A resource method's rejection crosses the same way. A refusal or a `NonPlainDataError` the runtime throws in itself at a yield is not copied.
+
+The object an implementation threw is kept nowhere: everything downstream of the action [carries the copy](./failure.md#when-an-action-throws). So what an implementation needs a caller to see is in its answer, or in the error's enumerable own fields, its `cause` or its message. Nothing else of the error survives.
+
+### A failure the app handles
+
+A failure the action branches on is part of the effect's answer type, and a `yield*` helper beside the effect throws the app's class in the action:
+
+```ts
+import { defineEffect, type IEffect } from "treflex";
+
+export interface ISaveRequest extends IEffect {
+    Type: "Api/Save";
+    Body: IForm;
+}
+
+export type ISaveAnswer =
+    | { Saved: true; Version: number }
+    | { Saved: false; Reason: "conflict" | "invalid" | "unreachable"; Message: string };
+
+const askSave = defineEffect<ISaveRequest, ISaveAnswer>("Api/Save");
+
+export class ConflictError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = "ConflictError";
+    }
+}
+
+export function* save(body: IForm) {
+    const answer = yield* askSave({ Body: body });
+    if (answer.Saved) return answer.Version;
+    if (answer.Reason === "conflict") throw new ConflictError(answer.Message);
+    throw new Error(answer.Message);
+}
+```
+
+An action calls `yield* save(form)`, never the effect, and catches `ConflictError` with `instanceof` at the call or as far up as it likes. An implementation catches what its library throws and answers with data: `Api/Save`'s returns one of the two answers, a failed `fetch` as `Reason: "unreachable"`, and throws only for what it didn't expect. For a transport that many calls share, one helper serves them all: the effect answers `{ Status, Body }`, and the helper throws the app's error for a status that isn't a success.
 
 ### When to add an effect
 
@@ -94,10 +146,13 @@ What a call site or the record relies on belongs to the declaration, because an 
 | `settles: "sync"` | The yield gives up no turn ([sync effects](#sync-effects)) |
 | `redact: true` | The effect's records keep only its `Type` |
 | `returns: "module"` | The result is not copied, and may carry module-level functions ([below](#module-results)) |
+| `idempotent: true` | The server tolerates the request arriving twice, so an action a restore [resumes](./restart-and-records.md#resume) at a wait on this type sends it again. Experimental |
 
 Any other option, or a bad value, throws `TypeError`.
 
-**Redaction** keeps a payload out of the record stream and the snapshot: the `effect` record holds only `Type`, the `response` holds no value, a failure records `Error: { Thrown: "redacted" }`, and the live extras a record tap receives carry no result or error. Declare it for effects whose descriptors or results carry secrets, such as a session token. A type is redacted only by its declaration, so any implementation or stub of it is redacted alike.
+**`idempotent`** is a promise about every request of the type, and nothing checks it. An action caught waiting on a type without it drops with `not-idempotent`. When only some of a type's requests carry a key the server dedupes on, such as a payment with an idempotency key beside one without, split them into two types and declare only the keyed one.
+
+**Redaction** keeps a payload out of the record stream and the snapshot: the `effect` record holds only `Type`, the `response` holds no value, a failure records `Error: { Thrown: "redacted" }`, and the live extras a record tap receives carry no result or error. Declare it for effects whose descriptors or results carry secrets, such as a session token. A type is redacted only by its declaration, so any implementation or stub of it is redacted alike. It covers the effect's own records only, and with [resume](./restart-and-records.md#what-a-save-holds-with-resume) on, what else is recorded can be saved too. An action's arguments are recorded in full unless the action is marked [`redactArgs`](./actions.md#the-redactargs-mark). Operation inputs are recorded in full. So are writes to state.
 
 #### Module results
 
@@ -111,7 +166,7 @@ Any other option, or a bad value, throws `TypeError`.
 
 ### Sync effects
 
-**A yield of a `settles: "sync"` type gives up no turn.** No waiting action resumes across it, and no timer, I/O callback or promise continuation from elsewhere runs. The yield still ends the step, so its writes are judged and flushed, and its records land. Inside [`reconcileRows`](./write-path.md#keys-and-the-refresh-step)'s `add` and `update` it doesn't end the step.
+**A yield of a `settles: "sync"` type gives up no turn.** No waiting action resumes across it, and no timer, I/O callback or promise continuation from elsewhere runs. The yield still ends the step: its writes are judged, its `step` record lands, and then they flush. Inside [`reconcileRows`](./write-path.md#keys-and-the-refresh-step)'s `add` and `update` it doesn't end the step.
 
 It is still an effect: recorded, stubbable, and not yieldable from a selector. Declare it only for value producers, such as ids, clocks and random numbers. Treflex ships one: `generateGuid`, which `entity()` yields.
 

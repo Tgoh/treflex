@@ -1,5 +1,5 @@
-import type { JSX } from "solid-js";
-import { createEffect, ErrorBoundary, on } from "solid-js";
+import type { JSX } from "@solidjs/web";
+import { createEffect, Errored } from "solid-js";
 
 export function Guarded(props: {
 	name: string;
@@ -8,18 +8,20 @@ export function Guarded(props: {
 	children: JSX.Element;
 }) {
 	return (
-		<ErrorBoundary
+		<Errored
 			fallback={(error, retry) => {
-				console.error(`[portal] the ${props.name} failed:`, error);
+				console.error(`[portal] the ${props.name} failed:`, error());
 				createEffect(
-					on(props.retryOn, retry, {
+					() => props.retryOn(),
+					() => retry(),
+					{
 						defer: true
-					})
+					}
 				);
 				return props.fallback(retry);
 			}}
 		>
 			{props.children}
-		</ErrorBoundary>
+		</Errored>
 	);
 }
